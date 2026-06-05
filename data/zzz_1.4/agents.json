@@ -1,0 +1,34 @@
+{
+  "_meta": {
+    "game_version": "1.4",
+    "description": "ZZZ agent display names (English PC client) → ZOD key. Keys are to_zod_key(display_name). Patch by adding entries; do not change existing keys (optimizer data will reference them).",
+    "last_updated": "2026-06-02"
+  },
+  "agents": {
+    "Anby Demara": "AnbyDemara",
+    "Anton": "Anton",
+    "Ben": "Ben",
+    "Billy Kid": "BillyKid",
+    "Burnice": "Burnice",
+    "Caesar": "Caesar",
+    "Corin": "Corin",
+    "Ellen": "Ellen",
+    "Grace": "Grace",
+    "Harumasa": "Harumasa",
+    "Jane Doe": "JaneDoe",
+    "Koleda": "Koleda",
+    "Lighter": "Lighter",
+    "Lucy": "Lucy",
+    "Miyabi": "Miyabi",
+    "Nekomata": "Nekomata",
+    "Nicole": "Nicole",
+    "Piper": "Piper",
+    "Qingyi": "Qingyi",
+    "Rina": "Rina",
+    "Soldier 11": "Soldier11",
+    "Soukaku": "Soukaku",
+    "Von Lycaon": "VonLycaon",
+    "Yanagi": "Yanagi",
+    "Zhu Yuan": "ZhuYuan"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "source": "AdeptiScanner-ZZZ ArtifactInfo.json (DataVersion 2.7, github.com/D1firehail/AdeptiScanner-ZZZ)",
+    "description": "ZZZ stat keys — NOT produced by to_zod_key. Use lowercase + trailing underscore for percentage stats (Adepti convention). Main stats are slot-contextual: slots 1-3 display 'HP'/'ATK'/'DEF' meaning flat; slots 4-6 display the same text but mean percentage. Substat OCR text includes '%' suffix to disambiguate.",
+    "last_updated": "2026-06-02"
+  },
+
+  "substats": {
+    "HP": "hp",
+    "ATK": "atk",
+    "DEF": "def",
+    "HP%": "hp_",
+    "ATK%": "atk_",
+    "DEF%": "def_",
+    "PEN": "pen",
+    "CRIT Rate%": "crit_",
+    "CRIT DMG%": "crit_dmg_",
+    "Anomaly Proficiency": "anomProf"
+  },
+
+  "main_stats_by_slot": {
+    "1": {
+      "HP": "hp"
+    },
+    "2": {
+      "ATK": "atk"
+    },
+    "3": {
+      "DEF": "def"
+    },
+    "4": {
+      "HP": "hp_",
+      "ATK": "atk_",
+      "DEF": "def_",
+      "CRIT Rate": "crit_",
+      "CRIT DMG": "crit_dmg_",
+      "Anomaly Proficiency": "anomProf"
+    },
+    "5": {
+      "HP": "hp_",
+      "ATK": "atk_",
+      "DEF": "def_",
+      "PEN": "pen_",
+      "Electric DMG Bonus": "electric_dmg_",
+      "Fire DMG Bonus": "fire_dmg_",
+      "Ice DMG Bonus": "ice_dmg_",
+      "Physical DMG Bonus": "physical_dmg_",
+      "Ether DMG Bonus": "ether_dmg_"
+    },
+    "6": {
+      "HP": "hp_",
+      "ATK": "atk_",
+      "DEF": "def_",
+      "Anomaly Mastery": "anomMas_",
+      "Impact": "impact_",
+      "Energy Regen": "enerRegen_"
+    }
+  },
+
+  "substat_step_values": {
+    "_note": "Per-upgrade step values for range-validation in B4. S-rank level 0-15, A-rank 0-12, B-rank 0-9.",
+    "S": { "hp": 112, "atk": 19, "def": 15, "hp_": 3, "atk_": 3, "def_": 4.8, "pen": 9, "crit_": 2.4, "crit_dmg_": 4.8, "anomProf": 9 },
+    "A": { "hp": 79,  "atk": 15, "def": 10, "hp_": 2, "atk_": 2, "def_": 3.2, "pen": 6, "crit_": 1.6, "crit_dmg_": 3.2, "anomProf": 6 },
+    "B": { "hp": 39,  "atk": 7,  "def": 5,  "hp_": 1, "atk_": 1, "def_": 1.6, "pen": 3, "crit_": 0.8, "crit_dmg_": 1.6, "anomProf": 3 }
+  }
+}

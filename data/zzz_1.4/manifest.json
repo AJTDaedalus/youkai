@@ -1,0 +1,14 @@
+{
+  "game": "Zenless Zone Zero",
+  "version": "1.4",
+  "client": "English PC",
+  "created": "2026-06-02",
+  "files": {
+    "agents.json": "Agent display names → ZOD keys (25 agents)",
+    "disc_sets.json": "Drive Disc set display names → ZOD keys (13 sets)",
+    "engines.json": "W-Engine display names → ZOD keys (30 engines, S/A/B)",
+    "stats.json": "Stat display names → ZOD keys with slot-legality metadata",
+    "navigation.yaml": "UI geometry: bounding boxes, grid layout, coordinate map"
+  },
+  "patch_instructions": "Add new entries to the relevant JSON. Do not rename existing ZOD keys — optimizer data persists keys by value. Test with: cd youkai-ocr && python -m pytest tests/"
+}

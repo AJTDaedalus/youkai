@@ -1,16 +1,46 @@
-# Ignore everything by default
-*
+# ── Python artifacts ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
 
-# Allow Git config/ignore files
-!.gitignore
-!CLAUDE.md
+# ── Scan output & user account data (never commit) ────────────────────────────
+archive/
+exports/
+*.export.json
 
-# Allow the main youkai Rust application files and assets
-!youkai/
-!youkai/**
+# ── Reference screenshots (development calibration images — local only) ───────
+# Remove the 'reference/' line below if you want to commit them.
+reference/
 
-# Allow OCR tool and planning docs
-!docs/
-!docs/**
-!youkai-ocr/
-!youkai-ocr/**
+# ── Raw packet captures (old research artifacts) ──────────────────────────────
+packet_research/
+
+# ── Image/binary assets NOT in youkai/assets/ ─────────────────────────────────
+screenshots/
+
+# ── Rust build artifacts ──────────────────────────────────────────────────────
+youkai/target/
+
+# ── OS/IDE noise ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── External reference clone (read-only, not our code) ────────────────────────
+irminsul/
+
+# ── OpenClaw / other agent workspace files ────────────────────────────────────
+AGENTS.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+.openclaw/
