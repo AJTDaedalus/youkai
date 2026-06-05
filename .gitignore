@@ -14,9 +14,9 @@ archive/
 exports/
 *.export.json
 
-# ── Reference screenshots (development calibration images — local only) ───────
-# Remove the 'reference/' line below if you want to commit them.
-reference/
+# ── Reference screenshots — committed as test fixtures ────────────────────────
+# These are developer-curated calibration images used by the test suite.
+# DO NOT add user scan screenshots or account data here.
 
 # ── Raw packet captures (old research artifacts) ──────────────────────────────
 packet_research/
