@@ -8,3 +8,9 @@
 # Allow the main youkai Rust application files and assets
 !youkai/
 !youkai/**
+
+# Allow OCR tool and planning docs
+!docs/
+!docs/**
+!youkai-ocr/
+!youkai-ocr/**
