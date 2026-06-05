@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "game_version": "1.4",
+    "description": "ZZZ W-Engine display names (English PC client) → ZOD key. Keys are to_zod_key(display_name). Grouped by rarity for readability; grouping has no semantic effect. Patch by adding entries.",
+    "last_updated": "2026-06-02"
+  },
+  "engines": {
+    "_comment_s_rank": "--- S-rank (signature / limited / standard gacha) ---",
+    "Bashful Demon": "BashfulDemon",
+    "Deep Sea Visitor": "DeepSeaVisitor",
+    "Final Curtain": "FinalCurtain",
+    "Fusion Compiler": "FusionCompiler",
+    "Hailstorm Shrine": "HailstormShrine",
+    "Precious Fossilized Core": "PreciousFossilizedCore",
+    "Rainforest Gourmet": "RainforestGourmet",
+    "Roaring Ride": "RoaringRide",
+    "The Brimstone": "TheBrimstone",
+    "The Restrained": "TheRestrained",
+    "Weeping Cradle": "WeepingCradle",
+
+    "_comment_a_rank": "--- A-rank ---",
+    "Big Cylinder": "BigCylinder",
+    "Bunny Band": "BunnyBand",
+    "Demara Battery Mark II": "DemaraBatteryMarkII",
+    "Door of Limitation": "DoorOfLimitation",
+    "Electro-Lip Gloss": "ElectroLipGloss",
+    "Hellfire Gears": "HellfireGears",
+    "Housekeeper": "Housekeeper",
+    "Kaboom the Cannon": "KaboomTheCannon",
+    "Original Transmorpher": "OriginalTransmorpher",
+    "Slice of Time": "SliceOfTime",
+    "Spring Embrace": "SpringEmbrace",
+    "Starlight Engine": "StarlightEngine",
+    "Steam Oven": "SteamOven",
+    "The Vault": "TheVault",
+
+    "_comment_b_rank": "--- B-rank ---",
+    "Cannibal Grin": "CannibalGrin",
+    "Gilded Blossom": "GildedBlossom",
+    "Peacekeeper": "Peacekeeper",
+    "Sharpened Stinger": "SharpenedStinger",
+    "Tusks of Fury": "TusksOfFury"
+  }
+}

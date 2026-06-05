@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "source": "AdeptiScanner-ZZZ ArtifactInfo.json (DataVersion 2.7, github.com/D1firehail/AdeptiScanner-ZZZ)",
+    "description": "ZZZ Drive Disc set display names (English PC client) → ZOD key. File covers all sets up to data v2.7; sets added after 1.4 are included so the scanner handles newer discs without a code change. Patch by adding entries; do not rename existing keys.",
+    "last_updated": "2026-06-02"
+  },
+  "disc_sets": {
+    "Woodpecker Electro": "WoodpeckerElectro",
+    "Puffer Electro": "PufferElectro",
+    "Shockstar Disco": "ShockstarDisco",
+    "Freedom Blues": "FreedomBlues",
+    "Hormone Punk": "HormonePunk",
+    "Soul Rock": "SoulRock",
+    "Swing Jazz": "SwingJazz",
+    "Chaos Jazz": "ChaosJazz",
+    "Proto Punk": "ProtoPunk",
+    "Inferno Metal": "InfernoMetal",
+    "Chaotic Metal": "ChaoticMetal",
+    "Thunder Metal": "ThunderMetal",
+    "Polar Metal": "PolarMetal",
+    "Fanged Metal": "FangedMetal",
+    "Branch & Blade Song": "BranchBladeSong",
+    "Astral Voice": "AstralVoice",
+    "Shadow Harmony": "ShadowHarmony",
+    "Phaethon's Melody": "PhaethonsMelody",
+    "Yunkui Tales": "YunkuiTales",
+    "King of the Summit": "KingOfTheSummit",
+    "Dawn's Bloom": "DawnsBloom",
+    "Moonlight Lullaby": "MoonlightLullaby",
+    "White Water Ballad": "WhiteWaterBallad",
+    "Shining Aria": "ShiningAria",
+    "Bunny in Wonderland": "BunnyInWonderland",
+    "Notes From the Chained": "NotesFromTheChained"
+  }
+}
