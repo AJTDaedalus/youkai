@@ -1,0 +1,15 @@
+archive/
+*.json
+reference/
+*.png
+*.jpg
+*.bmp
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env

@@ -1,0 +1,448 @@
+# ZZZ inventory navigation map — version 1.4 (English PC client)
+# Reference resolution: 1920×1080 windowed
+# All coordinates are in game-area pixels (origin = top-left of game window, NOT the OS window border)
+# Raw screenshot is 1922×1112; subtract (x=1, y=32) to convert to game-area coords.
+# Captured: 2026-06-01
+# References: screenshots/reference_1..8
+
+meta:
+  game_version: "1.4"
+  reference_resolution: [1920, 1080]
+  screenshot_offset: [1, 32]    # raw → game coords
+  capture_date: "2026-06-01"
+
+  oq_status:
+    OQ-ocr-4: resolved     # all panel geometries confirmed
+    OQ-ocr-7: resolved     # PORTRAIT-ONLY: small circular face portrait appears to the right
+                           # of the slot badge when equipped; ABSENT when not equipped.
+                           # See location_detection note below.
+  location_detection: >
+    NOTE (D21): portrait template matching (A3) is risky at the ~30px circle size.
+    Primary recommended approach: scan agent Equipment tab (ref_7/8) per agent to
+    cross-reference disc/engine stats → set location. See DECISIONS.md D21.
+    A3 portrait templates are still built as a fallback, but Equipment-tab
+    cross-reference is the primary location-detection path.
+
+# ─────────────────────────────────────────────
+# GRID (shared geometry — disc and engine inventories use identical layout)
+# ─────────────────────────────────────────────
+shared_grid: &shared_grid
+  columns: 9
+  rows_visible: 4
+  col_pitch: 135          # px between column centers
+  row_pitch: 175          # px between row centers (measured from "Lv." text clusters)
+  cell_0_0_center: [166, 242]   # [x, y] of top-left cell center
+  grid_bbox: [98, 155, 1315, 865]
+  cell_half_size: [67, 87]      # half-width, half-height for click targeting
+
+# ─────────────────────────────────────────────
+# DRIVE DISC INVENTORY  (ref_1, ref_5)
+# ─────────────────────────────────────────────
+disc_inventory:
+  # Navigation is NOT automated. User must manually open this screen before starting a scan.
+  # (Mirrors AdeptiScanner-ZZZ approach — confirmed from source review 2026-06-02.)
+  nav_path: "MANUAL — user opens Inventory → Drive Discs before running scanner"
+  title_anchor: "Drive Disc Storage"    # text visible at top-left; used to confirm correct screen
+
+  grid: *shared_grid    # same geometry as engine inventory
+
+  sort:
+    recommended_sort: "TODO — confirm sort key during live session"
+
+  scroll:
+    # Grid traversal: synthetic mouse CLICKS on each cell center (NOT arrow keys —
+    # confirmed non-functional in ZZZ). Clicking the bottom-most visible row triggers
+    # game auto-scroll. Scroll completion detected by screenshot hash comparison.
+    method: mouse_click_cells
+    scroll_trigger: click_bottom_row
+    scroll_complete_detection: screenshot_hash_diff
+    scroll_wait_ms: 1500
+    end_detection: "no hash change after clicking bottom row = end of inventory"
+
+  # Pressing Esc during scan halts automation (S-OCR-3 kill-switch)
+  kill_key: Escape
+
+  detail_panel:
+    # Active when any grid cell is selected. Coordinates in game-area px at 1920×1080.
+    panel_bbox: [1421, 100, 1860, 870]
+
+    fields:
+      # ── Identity ───────────────────────────────────────────
+      # Full title text is "<SetName> [<slot>]", e.g. "Notes From the Chained [1]"
+      # Strip the trailing " [N]" suffix to get the pure set name for fuzzy-matching.
+      set_name_with_slot:
+        bbox: [1421, 270, 1660, 385]
+        preprocess: white_text_on_dark
+
+      # Small circular slot badge below the title (white digit on dark circle).
+      # Cross-check for the slot number extracted from set_name_with_slot.
+      slot_badge:
+        bbox: [1421, 338, 1453, 413]
+        preprocess: white_text_on_dark
+
+      # Equipped-agent indicator: small round portrait to the right of the slot badge.
+      # PRESENT (brightness > threshold) → disc is equipped; match against portrait templates.
+      # ABSENT (dark zone) → disc is unequipped; location = "".
+      # bbox covers the portrait circle area only.
+      equipped_portrait:
+        bbox: [1453, 338, 1513, 413]
+        preprocess: portrait_circle
+        note: "OQ-ocr-7 resolved. Primary location detection via Equipment-tab scan (D21)."
+
+      # ── Rarity & level ─────────────────────────────────────
+      # Gold/purple/blue circle with "S"/"A"/"B" letter → identify by circle background color.
+      rarity_badge:
+        bbox: [1421, 402, 1452, 436]
+        preprocess: color_sample
+        colors: {S: [245, 200, 33], A: [160, 80, 220], B: [80, 140, 200]}
+
+      # "Lv. 15/15" — read the first integer only (current level).
+      level:
+        bbox: [1451, 402, 1582, 436]
+        preprocess: white_text_on_dark
+
+      # ── Main stat ──────────────────────────────────────────
+      main_stat_name:
+        bbox: [1421, 490, 1720, 527]
+        preprocess: white_text_on_dark
+
+      main_stat_value:
+        bbox: [1720, 490, 1855, 527]
+        preprocess: white_text_on_dark
+
+      # ── Sub-stats (up to 4 rows) ───────────────────────────
+      # Name field contains orange "+N" upgrade-count suffix — strip it before matching.
+      substat_1:
+        name_bbox:  [1421, 566, 1760, 607]
+        value_bbox: [1760, 566, 1855, 607]
+        preprocess: white_text_on_dark
+
+      substat_2:
+        name_bbox:  [1421, 617, 1760, 658]
+        value_bbox: [1760, 617, 1855, 658]
+        preprocess: white_text_on_dark
+
+      substat_3:
+        name_bbox:  [1421, 668, 1760, 709]
+        value_bbox: [1760, 668, 1855, 709]
+        preprocess: white_text_on_dark
+
+      substat_4:
+        name_bbox:  [1421, 720, 1760, 760]
+        value_bbox: [1760, 720, 1855, 760]
+        preprocess: white_text_on_dark
+
+      # ── Lock state ─────────────────────────────────────────
+      # Padlock icon — template-match locked vs unlocked.
+      lock_icon:
+        bbox: [1421, 820, 1472, 862]
+        preprocess: template_match
+
+# ─────────────────────────────────────────────
+# W-ENGINE INVENTORY  (ref_2, ref_6)
+# ─────────────────────────────────────────────
+engine_inventory:
+  nav_path: "MANUAL — user opens Inventory → W-Engines before running scanner"
+  title_anchor: "W-Engine Storage"
+
+  grid: *shared_grid    # identical 9-col / 175px-pitch geometry confirmed
+
+  sort:
+    recommended_sort: "TODO"
+
+  scroll:
+    method: mouse_click_cells
+    scroll_trigger: click_bottom_row
+    scroll_complete_detection: screenshot_hash_diff
+    scroll_wait_ms: 1500
+    end_detection: "no hash change after clicking bottom row = end of inventory"
+
+  kill_key: Escape
+
+  detail_panel:
+    panel_bbox: [1421, 100, 1860, 870]
+
+    fields:
+      engine_name:
+        bbox: [1421, 270, 1760, 368]
+        preprocess: white_text_on_dark
+
+      # Small round portrait(s) directly below the engine name.
+      # Equipped engine shows one agent portrait; unequipped shows none.
+      # Same detection logic as disc equipped_portrait.
+      equipped_portrait:
+        bbox: [1421, 368, 1510, 408]
+        preprocess: portrait_circle
+
+      rarity_badge:
+        bbox: [1421, 402, 1452, 436]
+        preprocess: color_sample
+        colors: {S: [245, 200, 33], A: [160, 80, 220], B: [80, 140, 200]}
+
+      # "Lv. 60/60" — read current level (first integer).
+      level:
+        bbox: [1451, 402, 1582, 436]
+        preprocess: white_text_on_dark
+
+      # Refinement stars: ★★☆☆☆ → read filled stars = refinement 1-5.
+      # Stars appear to the right of the level text (y≈402-436, x≈1582-1770).
+      refinement_stars:
+        bbox: [1582, 402, 1770, 436]
+        preprocess: star_count
+
+      # "Base ATK   684" — primary stat, always ATK for W-Engines.
+      base_atk_value:
+        bbox: [1720, 490, 1855, 527]
+        preprocess: white_text_on_dark
+
+      # Secondary stat — name varies by engine (Impact, PEN Ratio, CRIT Rate, etc.)
+      secondary_stat_name:
+        bbox: [1421, 565, 1720, 603]
+        preprocess: white_text_on_dark
+
+      secondary_stat_value:
+        bbox: [1720, 565, 1855, 603]
+        preprocess: white_text_on_dark
+
+      # W-Engine effect label — e.g. "Passionate Construction", "Data Flood".
+      # Read the label line; the full effect body is not needed for ZOD output.
+      effect_label:
+        bbox: [1421, 740, 1760, 775]
+        preprocess: white_text_on_dark
+
+      lock_icon:
+        bbox: [1421, 820, 1472, 862]
+        preprocess: template_match
+
+# ─────────────────────────────────────────────
+# AGENT ROSTER  (ref_3, ref_4, ref_7, ref_8)
+# ─────────────────────────────────────────────
+agent_roster:
+  nav_path: "TODO — record from live session"
+
+  # Top strip of agent portrait circles used to navigate between agents.
+  # Approximately y=32-75, spanning full width. Click to select an agent.
+  roster_strip:
+    bbox: [0, 32, 1920, 75]
+    note: "Click a portrait to open that agent's page."
+
+  # ── Base Stats tab (ref_3) ────────────────────────────────
+  base_stats_tab:
+    tab_label: "Base Stats"
+    tab_bbox: [790, 1030, 985, 1075]    # yellow when active
+
+    fields:
+      # Faction name in small text above the agent name.
+      faction:
+        bbox: [955, 228, 1730, 260]
+        preprocess: white_text_on_dark
+
+      # Agent display name (large bold white text). Fuzzy-match → ZOD key.
+      agent_name:
+        bbox: [955, 278, 1350, 330]
+        preprocess: white_text_on_dark
+
+      # Promotion dots/stars below the agent name (filled = unlocked promotion).
+      # ZOD field: ascension (0-6).
+      # TODO: confirm visual appearance of promotion indicator in live session.
+      ascension_dots:
+        bbox: [955, 332, 1350, 360]
+        preprocess: TODO
+
+      # "Lv. 60" — current level. The greyed-out "60" to the right is the cap.
+      level:
+        bbox: [955, 452, 1100, 497]
+        preprocess: white_text_on_dark
+
+      # "MAX" badge — present when at max promotion level.
+      max_badge:
+        bbox: [1100, 455, 1175, 495]
+        preprocess: white_text_on_dark
+
+      # Element badge: "Ice", "Fire", etc.
+      element:
+        bbox: [1200, 499, 1355, 535]
+        preprocess: white_text_on_dark
+
+      # Specialty badge: "Defense", "Attack", "Anomaly", etc.
+      specialty:
+        bbox: [1355, 499, 1560, 535]
+        preprocess: white_text_on_dark
+
+      # Stats grid — 5 rows × 2 columns.
+      # Left column (stat name + value), right column (stat name + value).
+      # Row bboxes are approximate; refine in B1 with real frames.
+      stats:
+        hp:
+          bbox: [955, 585, 1415, 618]
+          preprocess: white_text_on_dark
+        atk:
+          bbox: [1415, 585, 1895, 618]
+          preprocess: white_text_on_dark
+        def:
+          bbox: [955, 635, 1415, 668]
+          preprocess: white_text_on_dark
+        impact:
+          bbox: [1415, 635, 1895, 668]
+          preprocess: white_text_on_dark
+        crit_rate:
+          bbox: [955, 690, 1415, 720]
+          preprocess: white_text_on_dark
+        crit_dmg:
+          bbox: [1415, 690, 1895, 720]
+          preprocess: white_text_on_dark
+        anomaly_mastery:
+          bbox: [955, 745, 1415, 775]
+          preprocess: white_text_on_dark
+        anomaly_proficiency:
+          bbox: [1415, 745, 1895, 775]
+          preprocess: white_text_on_dark
+        pen_ratio:
+          bbox: [955, 800, 1415, 838]
+          preprocess: white_text_on_dark
+        energy_regen:
+          bbox: [1415, 800, 1895, 838]
+          preprocess: white_text_on_dark
+
+      # "Fully Equipped" indicator — present when all 6 disc slots + engine are filled.
+      fully_equipped:
+        bbox: [955, 856, 1230, 890]
+        preprocess: white_text_on_dark
+
+  # ── Skills tab (ref_4) ────────────────────────────────────
+  skills_tab:
+    tab_label: "Skills"
+    tab_bbox: [985, 1030, 1165, 1075]
+
+    fields:
+      # Mindscape Cinema counter — "CINEMA N/6" shown bottom-left of character art.
+      # N = number of cinema nodes unlocked (= ZOD constellation 0-6).
+      mindscape_cinema:
+        bbox: [35, 980, 200, 1030]
+        preprocess: white_text_on_dark
+        note: "Read the first integer (0-6) from 'CINEMA N/6' label."
+
+      # Core Passive nodes: A-F hexagonal grid.
+      # Each node is either lit (teal glow) or dark. Count lit nodes = core rank (0-6).
+      # Positions are approximate — the grid is centered in the right half of the screen.
+      core_nodes:
+        A: {bbox: [965, 178, 1120, 350], preprocess: brightness_threshold}
+        B: {bbox: [965, 270, 1120, 415], preprocess: brightness_threshold}
+        C: {bbox: [1140, 178, 1310, 350], preprocess: brightness_threshold}
+        D: {bbox: [1140, 270, 1310, 415], preprocess: brightness_threshold}
+        E: {bbox: [1325, 178, 1490, 350], preprocess: brightness_threshold}
+        F: {bbox: [1325, 270, 1490, 415], preprocess: brightness_threshold}
+        note: "A-F order matches ZZZ unlock sequence. Highest lit node = core rank."
+
+      # 5 skill icons in a row below the A-F grid. Order: Basic, Dodge, Assist, Special, Chain.
+      # Level number appears below/on each icon.
+      skill_icons:
+        basic_attack:
+          bbox: [920, 430, 1035, 540]
+          level_bbox: [920, 510, 1035, 545]
+          preprocess: white_text_on_dark
+        dodge:
+          bbox: [1040, 430, 1155, 540]
+          level_bbox: [1040, 510, 1155, 545]
+          preprocess: white_text_on_dark
+        assist:
+          bbox: [1160, 430, 1275, 540]
+          level_bbox: [1160, 510, 1275, 545]
+          preprocess: white_text_on_dark
+        special_attack:
+          bbox: [1280, 430, 1395, 540]
+          level_bbox: [1280, 510, 1395, 545]
+          preprocess: white_text_on_dark
+        chain_attack:
+          bbox: [1400, 430, 1515, 540]
+          level_bbox: [1400, 510, 1515, 545]
+          preprocess: white_text_on_dark
+
+  # ── Equipment tab (ref_7, ref_8) — PRIMARY location-detection path ────
+  # Navigate here after reading base stats + skills to map equipped items → location field.
+  equipment_tab:
+    tab_label: "Equipment"
+    tab_bbox: [1165, 1030, 1370, 1075]
+
+    # 6 disc slots arranged in a rough hexagon around the center agent portrait.
+    # When a slot is clicked, the disc detail panel opens on the LEFT side of the screen.
+    # Slot positions are approximate (hexagonal arrangement, center ≈ x=1100, y=530).
+    # TODO: refine slot centers from ref_7 during B1.
+    disc_slots:
+      slot_1: {center: [1035, 310], bbox: [990, 265, 1085, 360]}   # top-right area
+      slot_2: {center: [1180, 330], bbox: [1135, 285, 1230, 380]}   # right-center
+      slot_3: {center: [1185, 500], bbox: [1140, 455, 1235, 550]}   # lower-right
+      slot_4: {center: [1035, 720], bbox: [990, 675, 1085, 770]}    # bottom-center
+      slot_5: {center: [870,  530], bbox: [825, 485, 920, 575]}     # left-center
+      slot_6: {center: [875,  320], bbox: [830, 275, 925, 370]}     # upper-left
+      note: "TODO: verify from ref_7 pixel analysis during B1."
+
+    # W-Engine slot (center of the hexagon).
+    engine_slot:
+      center: [1038, 515]
+      bbox: [985, 460, 1093, 570]
+      note: "TODO: verify from ref_7."
+
+    # When a slot is clicked (ref_9/ref_10), a disc detail panel opens in the CENTER.
+    # Confirmed from pixel analysis 2026-06-04 (ref_9 = Bunny in Wonderland [1],
+    # ref_10 = Astral Voice [1]).
+    #
+    # IMPORTANT — VARIABLE LAYOUT: field y-positions shift with title line count.
+    #   1-line title (e.g. "Astral Voice [1]"):  main stat name at y≈284
+    #   2-line title (e.g. "Bunny in Wonderland [1]"): main stat name at y≈316 (+32px)
+    # Fixed-coordinate crops are unreliable. USE STRUCTURE-FIRST OCR PARSING instead:
+    #   1. OCR the full panel (x=610-965, y=120-620) with PSM 6.
+    #   2. Find "Main Stat" text anchor → name+value follow on the next non-empty line.
+    #   3. Find "Sub-Stats" text anchor → up to 4 name/value rows follow.
+    #   4. Stop at "Set Effect" anchor (not needed for ZOD output).
+    #
+    # Lock icon appears on disc THUMBNAILS in the left selection grid (to the right of
+    # the "Lv. N" text — present=locked, absent=unlocked). Read lock state from the
+    # inventory scan (C2/D2), not from this panel.
+    slot_detail_panel:
+      panel_bbox: [610, 120, 965, 620]
+
+      # Fixed fields (title and rarity/level row — these DO have stable positions):
+      fixed_fields:
+        # Full title "SetName [N]" — strip " [N]" suffix for set name, parse N for slot.
+        # x-range confirmed; y-top is always ≈120. Title may be 1 or 2 lines.
+        set_name_with_slot:
+          bbox: [610, 120, 965, 210]
+          preprocess: white_text_on_dark
+
+        # Rarity circle (gold/purple/blue) at left edge of level row (just below title).
+        rarity_badge:
+          bbox: [610, 210, 648, 260]
+          preprocess: color_sample
+          colors: {S: [245, 200, 33], A: [160, 80, 220], B: [80, 140, 200]}
+
+        # "Lv. 15/15" — read first integer only (current level).
+        level:
+          bbox: [648, 210, 965, 260]
+          preprocess: white_text_on_dark
+
+      # Variable fields — use structure-first OCR on the full body crop:
+      body_crop_for_parsing:
+        bbox: [610, 260, 965, 620]   # below level row; contains Main Stat + Sub-Stats
+        preprocess: white_text_on_dark
+        parse_strategy: >
+          OCR full crop with PSM 6. Find "Main Stat" line → next line = "Name  Value".
+          Find "Sub-Stats" line → next 1-4 lines = "Name [+N]  Value" each.
+          Stop parsing at "Set Effect". Values are right-aligned (x≈920-965 in game coords).
+
+      # Substat row y-offsets from the "Sub-Stats" header, for implementations that
+      # prefer crop-per-row over full-panel OCR (confirmed from ref_9/ref_10):
+      substat_row_pitch: 52    # px between substat rows
+      value_x_range: [920, 965]   # right-aligned value column (game coords)
+
+# ─────────────────────────────────────────────
+# CALIBRATION ANCHORS
+# ─────────────────────────────────────────────
+# Stable UI elements sampled during A4 window-calibration to derive scale+offset.
+# TODO: identify reliable same-color anchor elements during live session.
+calibration_anchors:
+  - name: "top_bar_background"
+    ref_point: [960, 20]
+    expected_color_rgb: [0, 0, 0]
+    tolerance: 20
+    note: "TODO: replace with a more distinctive anchor after live session."
