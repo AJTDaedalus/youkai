@@ -598,7 +598,7 @@ impl YoukaiApp {
         ui.horizontal(|ui| {
             // LEFT COLUMN: Terminal Logs & Signal Intrusion
             ui.vertical(|ui| {
-                ui.set_width(350.0_f32);
+                ui.set_width(360.0_f32);
                 
                 ui.label(
                     RichText::new("// ACTIVE INTRUSION PIPELINE")
@@ -663,6 +663,22 @@ impl YoukaiApp {
                             // Align Status and Telemetry to the bottom of the left column
                             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                                 ui.vertical(|ui| {
+                                    // Three Status lines
+                                    self.terminal_stat_row(ui, "Drive Discs Cracked", app_state.updated.items_updated);
+                                    self.terminal_stat_row(ui, "Agent Accounts Hacked", app_state.updated.characters_updated);
+                                    
+                                    let compile_complete = app_state.updated.items_updated.is_some() && app_state.updated.characters_updated.is_some();
+                                    let compile_str = if compile_complete { "COMPLETE" } else { "INCOMPLETE" };
+                                    let compile_color = if compile_complete { Color32::from_rgb(0xff, 0x00, 0x90) } else { Color32::from_rgb(0x80, 0x85, 0x90) };
+                                    ui.label(
+                                        RichText::new(format!("Extracted data compiled: [{}]", compile_str))
+                                            .color(compile_color)
+                                            .monospace()
+                                            .size(10.0_f32)
+                                    );
+
+                                    ui.add_space(8.0_f32);
+
                                     // Animated Loading/Progress Bar (Status Bar)
                                     let progress_bar = if app_state.capturing {
                                         let ticks = (ui.input(|i| i.time * 4.0) as usize) % 11;
@@ -677,22 +693,6 @@ impl YoukaiApp {
                                             .color(Color32::from_rgb(0xff, 0x00, 0x90))
                                             .monospace()
                                             .strong()
-                                    );
-
-                                    ui.add_space(8.0_f32);
-
-                                    // Three Status lines
-                                    self.terminal_stat_row(ui, "Drive Discs Cracked", app_state.updated.items_updated);
-                                    self.terminal_stat_row(ui, "Agent Accounts Hacked", app_state.updated.characters_updated);
-                                    
-                                    let compile_complete = app_state.updated.items_updated.is_some() && app_state.updated.characters_updated.is_some();
-                                    let compile_str = if compile_complete { "COMPLETE" } else { "INCOMPLETE" };
-                                    let compile_color = if compile_complete { Color32::from_rgb(0xff, 0x00, 0x90) } else { Color32::from_rgb(0x80, 0x85, 0x90) };
-                                    ui.label(
-                                        RichText::new(format!("Extracted data compiled: [{}]", compile_str))
-                                            .color(compile_color)
-                                            .monospace()
-                                            .size(10.0_f32)
                                     );
 
                                     ui.add_space(8.0_f32);
