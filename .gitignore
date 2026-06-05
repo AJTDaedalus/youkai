@@ -1,0 +1,10 @@
+# Ignore everything by default
+*
+
+# Allow Git config/ignore files
+!.gitignore
+!CLAUDE.md
+
+# Allow the main youkai Rust application files and assets
+!youkai/
+!youkai/**
