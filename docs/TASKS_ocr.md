@@ -56,51 +56,53 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
   model) with a separate digit-optimized pass for levels/values; preprocessing profiles (scale,
   grayscale, threshold/invert for light-on-dark UI). *Acceptance*: on labeled field crops, raw text
   accuracy ≥ baseline target before fuzzy correction.
-- [ ] **B3. Template-match recognizers.** Rarity (color), disc set (icon), equipped agent (portrait),
+- [x] **B3. Template-match recognizers.** Rarity (color), disc set (icon), equipped agent (portrait),
   lock (overlay), slot (number/position) → return best match + score. *Acceptance*: on the labeled set,
   each recognizer's top-1 is correct ≥99%; below-threshold returns "unknown" not a wrong guess.
-- [ ] **B4. Normalizer + validator.** rapidfuzz map OCR text → canonical ZOD key (A2 lists); numeric
+- [x] **B4. Normalizer + validator.** rapidfuzz map OCR text → canonical ZOD key (A2 lists); numeric
   range checks (disc lvl 0–15, engine/agent lvl 0–60, mindscape 0–6, refinement 1–5, allowed
   stats/substats); emit per-field confidence. *Acceptance*: known noisy inputs map to correct keys;
   out-of-range inputs are flagged, not written.
 
 ## Phase C — Drive Discs (proves the recognition spine)
 
-- [ ] **C1. Disc grid navigation.** Open Drive Disc inventory; fix sort order; iterate cells with
+- [x] **C1. Disc grid navigation.** Open Drive Disc inventory; fix sort order; iterate cells with
   synthetic input; scroll a page; detect end-of-inventory + dedupe (OQ-ocr-5, mirror AdeptiScanner-ZZZ).
   Honor Esc kill-switch (S-OCR-3). *Acceptance*: dry-run over a recorded session visits every disc once.
-- [ ] **C2. Disc assembler.** Per disc: drive B1→B2/B3→B4 to fill `ZodDisc` (set, slot, level, rarity,
+- [x] **C2. Disc assembler.** Per disc: drive B1→B2/B3→B4 to fill `ZodDisc` (set, slot, level, rarity,
   mainStat, substats, lock, location). Save raw crops to `archive/`. *Acceptance*: on the ground-truth
   disc set (≥30), produces correct `ZodDisc[]` meeting the §10 accuracy gate; misses land in the review
   report.
-- [ ] **C3. First export.** Assemble `ZodExport` with discs only; write JSON; import into the target
+- [x] **C3. First export.** Assemble `ZodExport` with discs only; write JSON; import into the target
   optimizer to confirm contract. *Acceptance*: optimizer imports the file without error.
 
 ## Phase D — W-Engines
 
-- [ ] **D1. W-Engine navigation.** Same pattern as C1 for the W-Engine inventory. *Acceptance*: dry-run
+- [x] **D1. W-Engine navigation.** Same pattern as C1 for the W-Engine inventory. *Acceptance*: dry-run
   visits every engine once.
-- [ ] **D2. W-Engine assembler.** Fill `ZodWEngine` (key, level, ascension, refinement, location, lock);
+- [x] **D2. W-Engine assembler.** Fill `ZodWEngine` (key, level, ascension, refinement, location, lock);
   archive crops. *Acceptance*: ground-truth engine set (≥8) correct to the accuracy gate.
+  *Note*: offline validation pending — no W-Engine reference screenshot yet. Tests cover all logic;
+  star detection and name OCR need a real frame to confirm thresholds.
 
 ## Phase E — Agents (novel; not covered by Adepti docs)
 
-- [ ] **E1. Agent navigation.** Iterate the agent roster; for each agent open: (1) Base Stats page,
+- [x] **E1. Agent navigation.** Iterate the agent roster; for each agent open: (1) Base Stats page,
   (2) Skills page, (3) Equipment tab. Equipment tab traversal: click each of 6 disc slots + engine slot
   to read currently-equipped item details (primary location-detection path per D21). Esc kill-switch.
   *Acceptance*: dry-run opens all three views per agent and visits all 7 equipment slots.
-- [ ] **E2. Agent core fields.** Read level, promotion (ascension), Mindscape Cinema (0–6 via lit film
+- [x] **E2. Agent core fields.** Read level, promotion (ascension), Mindscape Cinema (0–6 via lit film
   cells, template match) → `ZodAgent`. *Acceptance*: ground-truth agents (≥8) correct.
-- [ ] **E3. Talent levels.** Read the 6 skill levels → `talent{basic,dodge,assist,special,chain,core}`;
+- [x] **E3. Talent levels.** Read the 6 skill levels → `talent{basic,dodge,assist,special,chain,core}`;
   handle Core's distinct encoding (OQ-ocr-3). *Acceptance*: talent block matches ground truth; Core
   encoded per the optimizer's expectation.
-- [ ] **E4. Equip reconstruction.** Confirm agents' equipped discs/engines come through correctly via
+- [x] **E4. Equip reconstruction.** Confirm agents' equipped discs/engines come through correctly via
   `location` on the disc/engine records (OQ-ocr-6); optional cross-check against the agent equipment
   page. *Acceptance*: every equipped item's `location` resolves to a scanned agent; no orphans.
 
 ## Phase F — QA + ship
 
-- [ ] **F1. Full `ZodExport` assembly.** Merge discs+engines+agents into one export; dedupe; stable
+- [x] **F1. Full `ZodExport` assembly.** Merge discs+engines+agents into one export; dedupe; stable
   ordering. *Acceptance*: a full scan imports cleanly into the optimizer with all three sections.
 - [ ] **F2. Golden-replay test + accuracy gate.** Commit the labeled crop archive; CI runs
   recognize→assemble with no game, enforcing the §10 accuracy gate and the negative controls. *Acceptance*:
@@ -123,3 +125,38 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 - **Do A0.5 first** (co-op with user): it yields the navigation map + reference screenshots and resolves
   OQ-ocr-4 + OQ-ocr-7, unblocking A3 (conditional), A4, B1, and all navigation. OQ-ocr-1 is now just
   hand-authoring A2 — no external dependency.
+
+---
+
+## Phase G — Live-scan correctness fixes (from 2026-06-05 full-scan triage)
+
+- [x] **G1. Render-gate disc/engine captures.** Implement D-render-gate: after click+settle in
+  `grid.GridNavigator._read_row`, verify the detail panel rendered (mean luma of the title sub-region
+  above a floor) and re-capture up to a short timeout before yielding; raise base `CLICK_DELAY_S`.
+  *Acceptance*: a re-run reads ≥99% of 2200 discs (issues ≪ 1038); no blank-panel critical-fails in a
+  sampled archive. *Files*: `grid.py` (+ a luma helper), maybe a tunable in `GridParams`.
+- [x] **G2. Engine count-driven traversal.** Add `read_engine_count()` (mirror `read_disc_count`,
+  header `W-Engine Storage [ N / M ]`) and pass it into `navigator.scan(total)` from
+  `wengine_scanner.scan_engines`. *Acceptance*: a re-run reads exactly 222 cells (no phantom cells),
+  correct last-row width. *Files*: `wengine_scanner.py`.
+- [x] **G3. Re-measure agent geometry.** From `preflight_agents.png` / `agent_000/*`, re-derive the
+  portrait strip bbox (top-right, y≈2–28), click-Y, and constrain x so splash-art isn't detected;
+  spot-check tab + equipment-slot centers. *Acceptance*: dry-run selects each portrait in turn (no
+  City/menu exit); detected portrait count matches the visible roster. *Files*: `agent_scanner.py`,
+  `data/zzz_1.4/navigation.yaml`.
+  *Done*: added `_ROSTER_X_MIN=400` (City button at x≈40-57 no longer clicks); fixed tab centers
+  from nav.yaml estimates (887/1075/1267, y=1052) to measured values (1152/1435/1718, y=996).
+  Equipment slot centers pending live verification — need a successful Equipment-tab capture first.
+- [ ] **G4. (Optional) Parallel OCR for engines + render-gate carryover.** Once G1 lands, give the
+  engine scanner the same desynced worker pool as discs (D-ocr-pipeline) so G1's slightly longer
+  settle doesn't balloon engine scan time. *Acceptance*: engine scan time within ~2x of discs/cell.
+- [ ] **G5. Two-pass panel slot fallback (zero `no_slot` fails).** Implement D-slot-panel-fallback:
+  when the title-text `parse_slot` returns None, run a digit+bracket-whitelisted OCR (psm 11) over the
+  un-clipped panel — Pass A `x[0:300] y[158:210]` (1-line names, slot pushed right), Pass B
+  `x[0:180] y[200:290]` (2-line names, slot wraps left-low, excludes the bright icon); first `[1-6]`
+  wins (bracketed preferred, bare-digit fallback). Wire it into `_extract_disc` so it runs only on the
+  title-parse miss (no cadence cost). *Files*: `disc_scanner.py` (panel slot helper + call site),
+  maybe `normalizer.py`. *Acceptance*: offline re-triage of the 12 archived fail panels
+  (`docs/triage_disc_fails.json` / `scripts/triage_disc_failures.py`) recovers **12/12** correct slots;
+  commit those 12 `panel.png` crops as test fixtures + a parametrized test; full suite green; a re-run
+  reports **0 `no_slot`** critical fails. *Validated offline by Opus 2026-06-06 — recovers 12/12.*

@@ -163,6 +163,9 @@ class _StubRecognizer:
     def read_text(self, img: Image.Image, profile: str) -> str:
         return "stub_text"
 
+    def read_line(self, img: Image.Image, profile: str) -> str:
+        return "stub_line"
+
     def read_digits(self, img: Image.Image, profile: str) -> str:
         return "42"
 

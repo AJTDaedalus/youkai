@@ -221,15 +221,21 @@ agent_roster:
   nav_path: "TODO — record from live session"
 
   # Top strip of agent portrait circles used to navigate between agents.
-  # Approximately y=32-75, spanning full width. Click to select an agent.
+  # Measured y=32-75, peak luma at y=45-60, click target y=53.
+  # Left side (x<400) contains City/Home UI buttons — portrait detection starts at x=400.
   roster_strip:
     bbox: [0, 32, 1920, 75]
-    note: "Click a portrait to open that agent's page."
+    x_min_portraits: 400
+    click_y: 53
+    note: "Ignore x<400 (UI buttons). Click portrait center x at y=53."
 
   # ── Base Stats tab (ref_3) ────────────────────────────────
+  # Tab bar measured 2026-06-05 from live archive (agent_000/base_stats.png):
+  # Active (yellow) Base Stats button: x=1011-1294, y=964-1028, center (1152, 996).
+  # Skills text x=1362-1445; Equipment text x=1569-1738. Equal-width tabs.
   base_stats_tab:
     tab_label: "Base Stats"
-    tab_bbox: [790, 1030, 985, 1075]    # yellow when active
+    tab_bbox: [1011, 964, 1294, 1028]   # measured; yellow when active
 
     fields:
       # Faction name in small text above the agent name.
@@ -312,7 +318,7 @@ agent_roster:
   # ── Skills tab (ref_4) ────────────────────────────────────
   skills_tab:
     tab_label: "Skills"
-    tab_bbox: [985, 1030, 1165, 1075]
+    tab_bbox: [1294, 964, 1577, 1028]    # estimated from equal-width spacing; text at x=1362-1445
 
     fields:
       # Mindscape Cinema counter — "CINEMA N/6" shown bottom-left of character art.
@@ -362,7 +368,7 @@ agent_roster:
   # Navigate here after reading base stats + skills to map equipped items → location field.
   equipment_tab:
     tab_label: "Equipment"
-    tab_bbox: [1165, 1030, 1370, 1075]
+    tab_bbox: [1577, 964, 1900, 1028]    # estimated from equal-width spacing; text at x=1569-1738
 
     # 6 disc slots arranged in a rough hexagon around the center agent portrait.
     # When a slot is clicked, the disc detail panel opens on the LEFT side of the screen.

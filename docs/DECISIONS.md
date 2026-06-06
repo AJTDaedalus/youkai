@@ -398,3 +398,151 @@ Portrait template matching (A3) is **demoted to fallback only**: if the Equipmen
 **Rejected**: Portrait-only matching as primary — high failure risk at 30px; wrong matches produce silent errors.
 
 **Effect on TASKS**: A3 becomes conditional + lower priority. Equipment-tab navigation added to Phase E (E1 reworked to include Equipment tab traversal; E4 now covered by this approach).
+
+---
+
+## D-scroll-top: scroll-to-top via scrollbar thumb, not grid hashing (2026-06-05)
+
+**Context**: `GridNavigator._scroll_to_top()` must rewind the Drive Disc inventory to disc #1 before scanning. Ten attempts (v1–v10; see `docs/HANDOFF_scroll_to_top.md`) failed — every one either looped forever or required a fixed overshoot count that can't cover a ~2200-disc inventory.
+
+**Root cause (the real one)**: all ten attempts detected "stopped moving" with **exact `md5`** of a grid region. md5 flips on a single changed pixel, and ZZZ continuously animates a breathing **selection-glow** (plus capture-timing jitter), so the hash *never* repeats even when the viewport is stationary. The "persistent visual change at the top" (handoff open-question #1) is that glow pulse. The attempts kept hunting for a static *region* inside the animated grid; the correct fix was to pick a signal outside the grid entirely.
+
+**Decision**: detect scroll position from the **scrollbar thumb**. The scrollbar groove (reference x≈1360–1372) is a near-black channel containing only two static arrows and the thumb. It is untouched by selection-glow, hover, and icon animation — it changes *only* when the viewport scrolls. `_scrollbar_thumb_top()` returns the thumb's top edge in reference-Y; at the top it rests at y≈238 (threshold `SCROLLBAR_TOP_Y = 250`). `_scroll_to_top()` now wheel-ups in bursts and stops when the thumb reaches the top or stops rising.
+
+**Why robust**: the thumb gives an *absolute* position, so wheel-up bursts (overshoot is harmless — ZZZ pins the view at the top) cannot skip the detection, only add wall-clock cost. Common case (already near top) exits in <2 s; full-bottom of a 2200-disc inventory is bounded by `SCROLL_TO_TOP_MAX_BURSTS`.
+
+**Rejected**:
+- *Tolerant (MAE) image diff over the grid* — would have worked (absorbs glow pulse) but the selection highlight is still a moving confound and the threshold needs per-rig tuning. The scrollbar is strictly cleaner: zero confounds, absolute readout.
+- *Fixed wheel-event count (v6)* — can't size for an unknown, very large inventory.
+- *Click-row-0 auto-scroll-up* — couples scrolling to selection changes, which is what poisoned the hash in the first place.
+
+**Constants** (`grid.py`, reference 1920×1080): groove bbox `(1358,232,1373,872)`, bright thresh 18, top-Y 250, stall 2 px, burst 6, max bursts 80. Measured from `archive/live_20260605/preflight_discs.png` (confirmed at-top). If the thumb-at-top Y differs on another rig, only `SCROLLBAR_TOP_Y` needs adjustment; the relative "stopped rising" backstop covers minor mis-tuning.
+
+---
+
+## D-scan-traversal: edge-row-aware grid traversal + tolerant panel fingerprint (2026-06-05)
+
+**Context**: `scan()` read discs diagonally — the grid scrolled mid-scan. The scanner reads the detail panel (the *selected* disc), so any unintended scroll corrupts which disc maps to which index.
+
+**Confirmed mechanic** (user + AdeptiScanner-ZZZ source): clicking the **top** visible row scrolls up unless it is the first inventory row; clicking the **bottom** visible row scrolls down unless it is the last; middle rows never scroll.
+
+**Decision**: traverse with that mechanic. Start at the top (scrollbar rewind guarantees it → row 0 safe), read rows 0..rows_visible-2 in place, use the bottom row purely as a scroll trigger, and re-read the second-to-last row after each scroll until its discs stop changing. Detect scroll completion / end-of-inventory by a **tolerant** detail-panel fingerprint (downscaled grayscale, mean-MAE), never exact hashing.
+
+**Why tolerant fingerprint**: every prior exact-hash scheme (grid region or panel) was defeated by the breathing selection-glow and capture jitter — a single changed pixel flips an md5. A downscaled-MAE comparison absorbs that noise while still separating distinct discs. The panel region is also clear of the grid's selection glow.
+
+**Rejected**:
+- *Transplant AdeptiScanner's C# wholesale* — keep our better infrastructure (natural Bezier clicks, scrollbar rewind); port only the row-management insight.
+- *Exact panel hash* — brittle (see above); a false "changed" at the bottom would loop forever emitting duplicates.
+- *AdeptiScanner's click-probe top-confirmation* — unnecessary; our scrollbar thumb is a cleaner "are we at the top?" signal.
+
+**Known limits**: assumes scroll-to-top reaches the absolute top; two pixel-identical discs straddling a trim boundary could be over-trimmed (same edge AdeptiScanner has). See `docs/LOG_ocr.md`.
+
+---
+
+## D-scan-count: deterministic grid traversal from the disc count (2026-06-05)
+
+**Supersedes the content-detection part of D-scan-traversal.** Using detail-panel fingerprints to decide "did we scroll" / "is this row empty" failed: measured on real panels, the **minimum** MAE between *different* discs is 0.57 (median ≈ 6). ZZZ has many near-identical/duplicate discs, so no content threshold can separate "same disc" from "different disc" reliably → infinite re-capture loop.
+
+**Decision**: read the current disc count from the "Drive Disc Storage [ N / M ]" header (OCR, regex) and traverse a deterministic `ceil(N/9)` rows, truncating the last row to its real width. No content comparison in the control flow → no possible loop, exact end, correct partial last row. The scrollbar thumb only *confirms* each down-scroll landed (alignment), never decides termination.
+
+**Kept**: edge-row-aware traversal (top/middle safe at the top, bottom row = scroll trigger), natural Bezier clicks, scrollbar rewind. **Removed**: panel fingerprint + tolerant row matching.
+
+**Fallback**: if the count can't be read, scroll until the thumb pins at the bottom (`_scan_by_thumb`) — imprecise last-row width but loop-safe.
+
+**Risk**: depends on the header count OCR (clean large text; verified =2200). If miscounted, the row math is off — sanity-check the count against discs yielded.
+
+---
+
+## D-ocr-pipeline: desynced capture + OCR worker pool, OCR-paced clicking (2026-06-05)
+
+**Context**: navigation + reads confirmed correct (verified from saved frames). Bottleneck is OCR: 7 serial tesseract calls/disc ≈ 2.7 s/disc ≈ 1.5 h for 2200 discs. The old flow OCR'd on the navigation thread, stalling per row.
+
+**Decision**: producer/consumer pipeline. Navigation (main thread) captures frames and feeds a **bounded** job queue; a pool of OCR worker threads drains it in parallel (pytesseract shells out per call → threads parallelise; recognizer is stateless/shared). The bound gives backpressure so **navigation never clicks faster than OCR drains** — bounding memory and keeping clicks human-paced. `_read_row` became a per-cell generator so backpressure pauses *between discs*. A `CAPTURE_MIN_INTERVAL_S` floor keeps cadence human even when OCR is fast (anti-ban). Results keyed by cell_idx, reassembled in order.
+
+**Why (anti-ban tension)**: making OCR fast would otherwise uncap the click rate into bot-like territory. Capping capture to OCR throughput + a cadence floor keeps input human while still ~Nx faster. Natural Bezier clicks unchanged.
+
+**Rejected**: capture-everything-then-OCR (3 GB of frames); in-process tesseract / fewer-calls-per-disc (good complementary speedups, deferred — lower ceiling than parallelism, can add later); caching identical panels (unsafe given near-identical discs).
+
+---
+
+## D-render-gate: verify the detail panel rendered before accepting a capture (2026-06-05)
+
+**Problem**: the live full scan dropped ~1038/2200 discs. Root cause (LOG 2026-06-05 triage):
+ZZZ fades the detail panel in on every selection change; the D-ocr-pipeline cadence
+(`CLICK_DELAY_S=0.09`, ~0.4 s/disc) captures **before render completes** → blank/dim panels
+(`disc_2100` blank, `disc_1200` mid-fade) → `set_conf<30` critical-fail. Speeding up clicking
+outran the render.
+
+**Decision**: stop trusting a single fixed-delay capture. After click + base settle, capture and
+**gate on render**: measure mean luma of the panel/title region; if below a floor (blank/mid-fade),
+sleep a short step and re-capture, up to a timeout, then proceed with the best frame. Also raise the
+base `CLICK_DELAY_S`. This is adaptive (pays render time only when needed) and preserves the
+anti-ban human cadence floor.
+
+**Rejected**: (a) blind large fixed delay everywhere — wastes time on fast-rendering panels and is
+still not guaranteed; (b) re-OCR the archived blank panels — the disc was never on screen, so the
+pixels don't exist; retry must be live; (c) content-hash "did it change" gating — already rejected
+(D-scan-count) because near-identical discs defeat it.
+
+**Risk**: a luma floor must distinguish "blank panel" from "legitimately dark disc art" — gate on the
+**title/text** sub-region (always bright text when rendered), not the art.
+
+---
+
+## D-count-everywhere: W-Engine scanner adopts the count-driven traversal (2026-06-05)
+
+**Problem**: `wengine_scanner` called `navigator.scan()` with no count → `_scan_by_thumb` fallback;
+the live run read 225 cells for 222 engines (3 phantom empties, no exact last-row width).
+
+**Decision**: read `W-Engine Storage [ N / M ]` (mirror `disc_scanner.read_disc_count`, same header
+style, confirmed present in `preflight_engines.png`) and pass `total` to `navigator.scan(total)`.
+Reserve `_scan_by_thumb` strictly for the count-unreadable fallback, as on discs.
+
+---
+
+## D-agent-geom: agent navigation coordinates require live re-measurement (2026-06-05)
+
+**Problem**: agent portrait detection scanned `(0,32,1920,75)` @ Y=53 — a full-width band *below*
+the real portrait strip (top-right, ~x810–1300, y≈2–28). It locked onto character splash-art and the
+stats panel, clicked off-target, and eventually hit **City**, exiting the menu. The agent geometry
+was never validated against a live frame (first run to reach Phase E).
+
+**Decision**: treat all Phase-E coordinates (portrait strip bbox + click-Y, tab centers, equipment
+slot centers, base/skills field bboxes) as **unvalidated** until measured from real archived agent
+frames (`preflight_agents.png`, `agent_000/*`). Constrain the portrait x-range so splash-art can't be
+detected; re-derive the strip Y from the actual thumbnails. Gate the next live agent run on this.
+
+---
+
+## D-slot-panel-fallback: recover the slot from the un-clipped panel, two-pass, when title parse fails (2026-06-06, Opus)
+
+**Context**: After G1 (render-gate) + the tolerant slot regex, 12 structural disc `no_slot`
+fails persist (8 Fanged Metal, 4 Dawn's Bloom) — root-caused offline (LOG 2026-06-06). The
+slot is *visible and correct* on every one; only the title-text OCR fails to yield it, for two
+distinct layout reasons: long names clip the title `[N]` past `_TITLE_BBOX` x=1660 (Fanged
+Metal), or wrap `"Name [N]"` to two lines where psm-6 + watermark noise drops the `[` (Dawn's
+Bloom).
+
+**Options weighed**:
+- *Detail-panel slot badge* (hexagon `③`): rejected — its Y shifts with title line-count and the
+  metallic ring OCRs as a spurious `1`; fixed-bbox single-char reads 2/12.
+- *Widen `_TITLE_BBOX`*: rejected — the disc icon art starts ~x1651, inside the slot x-range, so
+  widening injects icon noise.
+- *Grid-cell thumbnail slot digit* (fixed offset from the known cell center, set/layout-independent):
+  the most robust source in principle, but **cannot be validated offline** (no archived full frames
+  for the failing discs; `live_20260606` captured the wrong window). Recorded as the future-proofing
+  path, not adopted now.
+- **Two-pass panel slot OCR** (chosen): run a digit+bracket-whitelisted pass (psm 11) over the
+  *un-clipped* panel — Pass A (x[0:300] y[158:210]) catches 1-line names whose slot is pushed right;
+  Pass B (x[0:180] y[200:290], excluding the bright icon) catches 2-line names whose slot wraps
+  left-low. First `[1-6]` wins, bracketed preferred. **Offline-validated 12/12** against the archived
+  panels; a single unified crop only reaches 7/12.
+
+**Choice**: add this as a tier-3 fallback inside `parse_slot`/`_extract_disc` (tier-1 title text
+unchanged; runs only on the ~0.5% that fail it, so no cadence cost). Implement as **G5** with the 12
+archived panels committed as test fixtures.
+
+**Risk / known limit**: the two crop windows are tuned to current ZZZ panel geometry (1-line vs
+2-line title). A future set with an even longer name (3-line title?) or a re-laid panel would need
+re-tuning — at which point migrate to the thumbnail-digit source (validate live then). The fallback
+is gated to `no_slot` cases only, so it can never *worsen* a currently-passing disc.
