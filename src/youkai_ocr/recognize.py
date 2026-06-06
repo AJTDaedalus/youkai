@@ -79,6 +79,10 @@ class TextRecognizer(Protocol):
         """Return raw recognized text from *img* after preprocessing *profile*."""
         ...
 
+    def read_line(self, img: Image.Image, profile: str) -> str:
+        """Single-line optimized pass (psm 7); better than read_text for short crops."""
+        ...
+
     def read_digits(self, img: Image.Image, profile: str) -> str:
         """Digit-optimized pass; returns only ``[0-9.%+]`` characters."""
         ...
@@ -87,6 +91,7 @@ class TextRecognizer(Protocol):
 # ── Tesseract backend ─────────────────────────────────────────────────────────
 
 _GENERAL_CONFIG = "--oem 1 --psm 6"
+_LINE_CONFIG = "--oem 1 --psm 7"
 _DIGIT_CONFIG = "--oem 1 --psm 7 -c tessedit_char_whitelist=0123456789.%+"
 _DIGIT_STRIP = re.compile(r"[^\d.%+]")
 
@@ -99,15 +104,23 @@ class TesseractRecognizer:
     """
 
     def __init__(self, lang: str = "eng") -> None:
+        import sys
         import pytesseract  # noqa: PLC0415 — intentional deferred import
+
+        # Auto-detect default Windows install path if not already in PATH.
+        if sys.platform == "win32":
+            from pathlib import Path
+            default = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+            if default.exists() and pytesseract.pytesseract.tesseract_cmd == "tesseract":
+                pytesseract.pytesseract.tesseract_cmd = str(default)
 
         try:
             pytesseract.get_tesseract_version()
         except Exception as exc:
             raise RuntimeError(
                 "Tesseract is not installed or not in PATH. "
-                "Install it (e.g. `apt install tesseract-ocr` or the Windows installer) "
-                "and ensure the binary is on PATH."
+                "Install from https://github.com/UB-Mannheim/tesseract/wiki "
+                "then retry (the default install path is detected automatically)."
             ) from exc
 
         self._tess = pytesseract
@@ -117,6 +130,12 @@ class TesseractRecognizer:
         processed = preprocess(img, profile)
         return self._tess.image_to_string(
             processed, lang=self._lang, config=_GENERAL_CONFIG
+        ).strip()
+
+    def read_line(self, img: Image.Image, profile: str) -> str:
+        processed = preprocess(img, profile)
+        return self._tess.image_to_string(
+            processed, lang=self._lang, config=_LINE_CONFIG
         ).strip()
 
     def read_digits(self, img: Image.Image, profile: str) -> str:

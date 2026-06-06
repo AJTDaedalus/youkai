@@ -36,6 +36,9 @@ Thumbs.db
 # ── External reference clone (read-only, not our code) ────────────────────────
 irminsul/
 
+# ── Local agent/session state (not shared) ────────────────────────────────────
+.claude/
+
 # ── OpenClaw / other agent workspace files ────────────────────────────────────
 AGENTS.md
 HEARTBEAT.md
