@@ -169,6 +169,9 @@ class _StubRecognizer:
     def read_digits(self, img: Image.Image, profile: str) -> str:
         return "42"
 
+    def read_slot(self, img: Image.Image, profile: str) -> str:
+        return "[3]"
+
 
 def test_stub_satisfies_protocol():
     assert isinstance(_StubRecognizer(), TextRecognizer)

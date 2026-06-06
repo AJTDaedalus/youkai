@@ -754,3 +754,41 @@ from cell center) is recorded as the future-proofing option but is **not offline
 - Engine archive = stale 225-cell over-run (G2 implemented, never re-run live); agent
   archive = 2 agents only, stalled on the pre-G3 City-button bug. Both need a fresh live
   run to validate G2/G3.
+
+---
+
+## 2026-06-06 — G5 implemented + scanner core committed (Opus)
+
+Picked up the handoff. Order of work: commit core → empty archive → implement G5.
+
+**Scanner core committed** (`0f6f776`, feature/ocr). The ~3k lines that were untracked
+(`grid/disc_scanner/agent_scanner/wengine_scanner/matchers/normalizer/input_utils/__main__`
++ all new tests + the triage script + `triage_disc_fails.json`) are now in git. Added
+`.claude/` to `.gitignore` (local session state). The work is no longer one `git clean`
+from gone.
+
+**Archive emptied** for the next live test (`archive/live_20260605` + `live_20260606`
+removed, 426 MB freed). Before deleting, copied the 12 fail panels out to
+`tests/fixtures/disc_slot_panels/*.png` (1.4 MB, plain git) so the G5 gate survives the wipe.
+
+**G5 — D-slot-panel-fallback implemented:**
+- `recognize.py`: `TextRecognizer.read_slot` (psm 11, whitelist `0123456789[]`) + stub/Protocol.
+- `normalizer.py`: `parse_panel_slot(*texts)` — full-bracket `[N]` (N∈1-6) preferred across
+  passes, then partial-bracket (`6]`, `16]`, `[6`) fallback. No bare-digit pick (would mis-grab
+  the leading `1` in Dawn's Bloom's `16]`).
+- `disc_scanner.py`: `parse_slot_from_panel(panel, recognizer)` — scales the panel-local
+  windows (Pass A `0,158,300,210`; Pass B `0,200,180,290`) to the actual panel size, OCRs both,
+  parses. Wired into `_extract_disc` **only when tier-1 `parse_slot(title)` returns None** →
+  zero cadence cost, cannot regress a passing disc. Also de-duplicated the panel crop (computed
+  once, reused for the fallback and the archive save).
+
+**Acceptance:** `tests/test_disc_slot_fallback.py` recovers **12/12** (8 Fanged Metal via Pass A,
+4 Dawn's Bloom via Pass B) + pure `parse_panel_slot` unit cases. Full suite **237 passed,
+4 skipped** (archive-dependent tests skip now that the archive is empty).
+
+**Still open (carried from the triage, needs the user / a live run):**
+- The **live `0 no_slot` re-run** is the one unmet G5 clause — needs a clean capture.
+- `live_20260606` captured the **wrong window** (Xbox Game Pass launcher, not the game).
+  Window-targeting must be fixed before the next live run.
+- G2 (engine count traversal) and G3 (agent geometry) were implemented but never re-run live;
+  their archives are stale. Next live pass should validate all three (G2/G3/G5) at once.

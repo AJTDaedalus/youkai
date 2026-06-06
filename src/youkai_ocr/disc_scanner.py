@@ -25,6 +25,7 @@ from .normalizer import (
     normalize_substat,
     parse_level,
     parse_numeric,
+    parse_panel_slot,
     parse_slot,
 )
 from .recognize import TextRecognizer, make_recognizer
@@ -61,6 +62,18 @@ def read_disc_count(
 
 
 # ── Field bboxes in 1920×1080 reference coords (disc_inventory.detail_panel) ─
+
+# Full detail panel (also saved to archive/). Reference origin = (1421, 100);
+# the G5 panel-slot windows below are panel-local (relative to this origin).
+_PANEL_BBOX = (1421, 100, 1860, 870)
+_PANEL_W = _PANEL_BBOX[2] - _PANEL_BBOX[0]   # 439
+_PANEL_H = _PANEL_BBOX[3] - _PANEL_BBOX[1]   # 770
+
+# G5 slot-recovery windows, panel-local. Pass A catches 1-line names whose
+# "[N]" is pushed right (past the clipped title bbox); Pass B catches 2-line
+# names whose "[N]" wraps down-left (x capped at 180 to exclude the bright icon).
+_PANEL_SLOT_PASS_A = (0, 158, 300, 210)
+_PANEL_SLOT_PASS_B = (0, 200, 180, 290)
 
 _TITLE_BBOX = (1421, 270, 1660, 385)
 _RARITY_BBOX = (1421, 402, 1452, 436)
@@ -105,6 +118,28 @@ def _crop(frame: Image.Image, calib: CalibrationResult, ref_bbox: tuple) -> Imag
     ))
 
 
+def parse_slot_from_panel(
+    panel: Image.Image, recognizer: TextRecognizer
+) -> Optional[int]:
+    """G5 tier-3 slot fallback: two-pass digit+bracket OCR over the un-clipped panel.
+
+    *panel* is the detail-panel crop (reference bbox ``_PANEL_BBOX``) at any
+    calibration scale; the panel-local windows are scaled to its actual size.
+    Runs only when the title-text ``parse_slot`` (tier-1) returns None, so it
+    adds no cadence cost to the common path and cannot regress a passing disc.
+    """
+    sx = panel.width / _PANEL_W
+    sy = panel.height / _PANEL_H
+
+    def _win(box: tuple[int, int, int, int]) -> Image.Image:
+        x0, y0, x1, y1 = box
+        return panel.crop((int(x0 * sx), int(y0 * sy), int(x1 * sx), int(y1 * sy)))
+
+    pass_a = recognizer.read_slot(_win(_PANEL_SLOT_PASS_A), "white_text_on_dark")
+    pass_b = recognizer.read_slot(_win(_PANEL_SLOT_PASS_B), "white_text_on_dark")
+    return parse_panel_slot(pass_a, pass_b)
+
+
 def _lock_strip(
     frame: Image.Image, calib: CalibrationResult, cell_cx: int, cell_cy: int
 ) -> Image.Image:
@@ -137,7 +172,12 @@ def _extract_disc(
     title_crop = _crop(frame, calib, _TITLE_BBOX)
     title_text = recognizer.read_text(title_crop, "white_text_on_dark").replace("\n", " ").strip()
 
+    panel_crop = _crop(frame, calib, _PANEL_BBOX)
     slot = parse_slot(title_text)
+    if slot is None:
+        # Tier-3 fallback: long names clip/wrap the title "[N]"; recover it from
+        # the un-clipped panel (G5 / D-slot-panel-fallback). Runs only on miss.
+        slot = parse_slot_from_panel(panel_crop, recognizer)
     conf["slot"] = 100.0 if slot else 0.0
 
     set_key, set_conf = normalize_disc_set(title_text)
@@ -196,7 +236,7 @@ def _extract_disc(
     if archive_dir is not None:
         dd = archive_dir / f"disc_{disc_idx:04d}"
         dd.mkdir(parents=True, exist_ok=True)
-        _crop(frame, calib, (1421, 100, 1860, 870)).save(dd / "panel.png")
+        panel_crop.save(dd / "panel.png")
         title_crop.save(dd / "title.png")
         rarity_crop.save(dd / "rarity.png")
         level_crop.save(dd / "level.png")

@@ -150,7 +150,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 - [ ] **G4. (Optional) Parallel OCR for engines + render-gate carryover.** Once G1 lands, give the
   engine scanner the same desynced worker pool as discs (D-ocr-pipeline) so G1's slightly longer
   settle doesn't balloon engine scan time. *Acceptance*: engine scan time within ~2x of discs/cell.
-- [ ] **G5. Two-pass panel slot fallback (zero `no_slot` fails).** Implement D-slot-panel-fallback:
+- [x] **G5. Two-pass panel slot fallback (zero `no_slot` fails).** Implement D-slot-panel-fallback:
   when the title-text `parse_slot` returns None, run a digit+bracket-whitelisted OCR (psm 11) over the
   un-clipped panel — Pass A `x[0:300] y[158:210]` (1-line names, slot pushed right), Pass B
   `x[0:180] y[200:290]` (2-line names, slot wraps left-low, excludes the bright icon); first `[1-6]`
@@ -160,3 +160,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
   (`docs/triage_disc_fails.json` / `scripts/triage_disc_failures.py`) recovers **12/12** correct slots;
   commit those 12 `panel.png` crops as test fixtures + a parametrized test; full suite green; a re-run
   reports **0 `no_slot`** critical fails. *Validated offline by Opus 2026-06-06 — recovers 12/12.*
+  *Done 2026-06-06*: `recognize.read_slot` (psm 11, whitelist `0-9[]`), `normalizer.parse_panel_slot`
+  (full-bracket `[N]` preferred → partial-bracket fallback), `disc_scanner.parse_slot_from_panel`
+  wired into `_extract_disc` only on tier-1 miss. 12 panels committed to
+  `tests/fixtures/disc_slot_panels/`; `tests/test_disc_slot_fallback.py` asserts 12/12. Full suite
+  237 passed / 4 skipped (archive-dependent skips). **Live `0 no_slot` re-run still pending** a clean
+  capture (the only remaining acceptance clause — needs the window-targeting fix below).

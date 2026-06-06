@@ -52,6 +52,11 @@ def _load() -> None:
 # garbling the slot digit itself as ':', '.', etc.).
 _SLOT_RE = re.compile(r"[\[(](\d)[\])\s!,.]?")
 _SLOT_RE_FALLBACK = re.compile(r"[\[(][^\d]{1,3}([1-6])")
+# Panel-slot fallback (G5): the digit+bracket OCR of the un-clipped panel yields
+# strings like "[3]4" (bracketed slot + noise) or "6]"/"16]" (partial bracket).
+# Prefer a fully-bracketed [N]; fall back to a digit adjacent to one bracket.
+_PANEL_SLOT_FULL = re.compile(r"\[([1-6])\]")
+_PANEL_SLOT_PARTIAL = re.compile(r"([1-6])\]|\[([1-6])")
 _LV_RE = re.compile(r"Lv[.\s]*(\d+)")
 _UPGRADE_RE = re.compile(r"\s*\+\d+\s*$")
 _NUMERIC_STRIP = re.compile(r"[^\d.,]")
@@ -77,6 +82,25 @@ def parse_slot(text: str) -> Optional[int]:
         return int(m.group(1))
     m = _SLOT_RE_FALLBACK.search(text)
     return int(m.group(1)) if m else None
+
+
+def parse_panel_slot(*texts: str) -> Optional[int]:
+    """Parse a slot 1-6 from one or more digit+bracket OCR passes (G5 fallback).
+
+    A fully-bracketed ``[N]`` in any pass wins (preferred over noise digits like
+    the trailing rarity in ``"[3]4"``). Otherwise a digit adjacent to a single
+    bracket (``"6]"``, ``"16]"``, ``"[6"``) is accepted. Returns None if no pass
+    contains a bracketed slot digit.
+    """
+    for text in texts:
+        m = _PANEL_SLOT_FULL.search(text)
+        if m:
+            return int(m.group(1))
+    for text in texts:
+        m = _PANEL_SLOT_PARTIAL.search(text)
+        if m:
+            return int(m.group(1) or m.group(2))
+    return None
 
 
 def normalize_substat(text: str) -> tuple[str, float]:

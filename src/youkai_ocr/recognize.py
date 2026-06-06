@@ -87,12 +87,23 @@ class TextRecognizer(Protocol):
         """Digit-optimized pass; returns only ``[0-9.%+]`` characters."""
         ...
 
+    def read_slot(self, img: Image.Image, profile: str) -> str:
+        """Sparse-text pass whitelisted to digits + brackets (psm 11).
+
+        Returns the raw recognized text (e.g. ``"[3]4"``); the caller parses
+        the bracketed slot digit out of it.
+        """
+        ...
+
 
 # ── Tesseract backend ─────────────────────────────────────────────────────────
 
 _GENERAL_CONFIG = "--oem 1 --psm 6"
 _LINE_CONFIG = "--oem 1 --psm 7"
 _DIGIT_CONFIG = "--oem 1 --psm 7 -c tessedit_char_whitelist=0123456789.%+"
+# Sparse-text pass restricted to digits + brackets — used by the disc slot
+# panel fallback (G5), where the slot "[N]" sits alone in a noisy sub-region.
+_SLOT_CONFIG = "--oem 1 --psm 11 -c tessedit_char_whitelist=0123456789[]"
 _DIGIT_STRIP = re.compile(r"[^\d.%+]")
 
 
@@ -144,6 +155,12 @@ class TesseractRecognizer:
             processed, lang=self._lang, config=_DIGIT_CONFIG
         ).strip()
         return _DIGIT_STRIP.sub("", raw)
+
+    def read_slot(self, img: Image.Image, profile: str) -> str:
+        processed = preprocess(img, profile)
+        return self._tess.image_to_string(
+            processed, lang=self._lang, config=_SLOT_CONFIG
+        ).strip()
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
