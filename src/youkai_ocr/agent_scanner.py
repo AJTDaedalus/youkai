@@ -1,13 +1,14 @@
-"""E1–E3: Agent roster navigator and assembler.
+"""E1–E4 + H1–H3: Agent roster navigator and assembler.
 
-E1 — AgentNavigator: detects agent portraits in the roster strip and
-     iterates each agent across Base Stats → Skills → Equipment tabs,
-     clicking every disc/engine slot.
+H3 — Equipment-tab slot geometry (re-measured from reference_7) + render-gates.
+H2 — scan_roster_grid: grid-based traversal (detect → pHash-dedupe → scroll →
+     repeat until no new owned agents); testable in isolation.
+H1 — detect_owned_agent_cells: ownership filter via HSV saturation over the
+     2-column roster grid on the agent menu screen.
 E2 — _extract_base_stats: reads agent key, level, ascension.
 E3 — _extract_skills: reads mindscape cinema and six talent levels.
 
-Equipment-tab frames (7 per agent) are archived for E4 cross-reference
-but not parsed here.
+Equipment-tab frames (7 per agent) are archived for E4 cross-reference.
 
 Usage::
 
@@ -15,12 +16,16 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 import re
 import time
 from pathlib import Path
 from threading import Event
-from typing import Callable, Optional
+from typing import Callable, Generator, Optional
 
+_log = logging.getLogger(__name__)
+
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -44,42 +49,85 @@ _TAB_BASE_STATS = (1152, 996)
 _TAB_SKILLS     = (1435, 996)
 _TAB_EQUIPMENT  = (1718, 996)
 
-# 6 disc slots + 1 engine slot (hexagonal arrangement, navigation.yaml disc_slots)
+# ── Agent-menu grid constants (H1 — navigation.yaml agent_menu, 1920×1080 ref coords) ──
+# 2-column roster grid on the right side of the agent menu screen (ref_12/13/14).
+# Raw screenshots (1922×1112) include 32px chrome; ref coords = raw - (1, 32).
+# Ownership filter: 75th-percentile HSV-S over the full column width > threshold.
+# Owned portraits are colorful (high S); locked/EMPTY portraits are grayscale (low S).
+
+_AGENT_GRID_LEFT_COL    = (1277, 1537)   # (x0, x1) for left column sampling band
+_AGENT_GRID_RIGHT_COL   = (1537, 1797)   # (x0, x1) for right column sampling band
+_AGENT_GRID_ROW_CENTERS = [144, 402, 660, 918]  # cy of each visible row
+_AGENT_GRID_ROW_STRIDE  = 258            # px between row centers
+_AGENT_GRID_ROW_HALF_H  = 100           # ±px around cy for saturation crop
+_AGENT_SAT_P75_THRESH   = 15            # 75th-percentile S > this → owned
+
+# 6 disc slots + 1 engine slot, re-measured from reference_7 (H3).
+# Engine center raw(1418,590) → game(1417,558).  Disc slots from blob/row-scan analysis.
+# TODO(H6): verify slot 2/5 centers in live session (middle-right/left may need ±50px tune).
 _DISC_SLOT_CENTERS: list[tuple[int, int]] = [
-    (1035, 310),   # slot 1 — top right
-    (1180, 330),   # slot 2 — right center
-    (1185, 500),   # slot 3 — lower right
-    (1035, 720),   # slot 4 — bottom center
-    (870,  530),   # slot 5 — left center
-    (875,  320),   # slot 6 — upper left
+    (1730, 363),   # slot 1 — upper-right
+    (1785, 483),   # slot 2 — right-center  (TODO: verify live)
+    (1715, 708),   # slot 3 — lower-right
+    (1087, 708),   # slot 4 — lower-left
+    (1125, 544),   # slot 5 — left-center   (TODO: verify live)
+    (1088, 363),   # slot 6 — upper-left
 ]
-_ENGINE_SLOT_CENTER = (1038, 515)
+_ENGINE_SLOT_CENTER = (1417, 558)
 _ALL_SLOT_CENTERS   = _DISC_SLOT_CENTERS + [_ENGINE_SLOT_CENTER]  # 7 total
+
+# ── Equipment-tab render gates (H3) ──────────────────────────────────────────
+# Gate 1: after Equipment-tab click — verify the hexagon is rendered.
+# The engine slot is bright white (luma≈210 in ref_7); dark on skills/base-stats (luma≈14).
+_EQUIP_GATE_CENTER   = (1417, 558)   # engine slot center, game coords
+_EQUIP_GATE_RADIUS   = 20            # px sampling half-window
+_EQUIP_GATE_LUMA_MIN = 150           # threshold: >150 → hexagon visible
+_EQUIP_GATE_RETRIES  = 2             # attempts before logging fail
+_EQUIP_GATE_RETRY_S  = 0.40         # extra settle on re-attempt
+
+# Gate 2: after each slot click — verify the disc/engine selection panel opened.
+# When a disc slot is clicked, ZZZ opens the disc-selection view (ref_8).
+# The panel area at game(610,120,965,210) has a dark background (dark_frac≈0.16 in ref_8
+# vs 0.01 in ref_7 where the bright agent portrait is visible).
+_SLOT_PANEL_BBOX          = (610, 120, 965, 210)   # same as _EQUIP_TITLE_BBOX
+_SLOT_PANEL_DARK_FRAC_MIN = 0.08    # dark pixels (luma<30) / total > this → panel open
+_SLOT_PANEL_RETRY_S       = 0.30    # extra settle on re-attempt
 
 # Base Stats tab field bboxes
 _AGENT_NAME_BBOX     = (955, 278, 1350, 330)
-_LEVEL_BBOX          = (955, 452, 1100, 497)
+_LEVEL_BBOX          = (1060, 460, 1200, 495)  # "Lv. N" badge (re-measured H4)
 _ASCENSION_DOTS_BBOX = (955, 332, 1350, 360)
 
-# Skills tab field bboxes
+# Skills tab field bboxes (re-measured from reference_4 in H4)
 _MINDSCAPE_BBOX = (35, 980, 200, 1030)
 _SKILL_LEVEL_BBOXES: list[tuple[int, int, int, int]] = [
-    (920, 510, 1035, 545),    # basic attack
-    (1040, 510, 1155, 545),   # dodge
-    (1160, 510, 1275, 545),   # assist
-    (1280, 510, 1395, 545),   # special attack
-    (1400, 510, 1515, 545),   # chain attack
+    ( 930, 750, 1065, 780),   # basic attack
+    (1110, 750, 1245, 780),   # dodge
+    (1295, 750, 1425, 780),   # assist
+    (1470, 750, 1605, 780),   # special attack
+    (1650, 750, 1785, 780),   # chain attack
 ]
-# Approximate bboxes for core node icons A-F (hexagonal grid).
-# Detection uses the 30×30 center crop to avoid inter-node overlap.
+# Core node bboxes A-F: re-measured from reference_4 via teal connected-component
+# centroids (H4). Detection samples the 30×30 crop at the bbox center, which lands
+# on the bright teal ring (not the dark interior) at these corrected positions.
 _CORE_NODE_BBOXES: list[tuple[int, int, int, int]] = [
-    (965, 178, 1120, 350),    # A
-    (965, 270, 1120, 415),    # B
-    (1140, 178, 1310, 350),   # C
-    (1140, 270, 1310, 415),   # D
-    (1325, 178, 1490, 350),   # E
-    (1325, 270, 1490, 415),   # F
+    (1079, 278, 1139, 338),   # A — center (1109, 308)
+    (1031, 446, 1091, 506),   # B — center (1061, 476)
+    (1281, 279, 1341, 339),   # C — center (1311, 309)
+    (1237, 443, 1297, 503),   # D — center (1267, 473)
+    (1487, 278, 1547, 338),   # E — center (1517, 308)
+    (1438, 445, 1498, 505),   # F — center (1468, 475)
 ]
+
+# ── Traversal ─────────────────────────────────────────────────────────────────
+
+AGENT_MAX              = 60      # hard cap (mirrors SCAN_MAX_ROWS in grid.py)
+_BACK_ARROW            = (75, 38)    # TODO: verify from live session (ref_3 detail page)
+_AGENT_SCROLL_CENTER   = (1537, 660) # grid center for wheel scroll
+_SCROLL_TICKS_PER_PAGE = 4           # TODO: refine from H0 live probe
+_AGENT_SCROLL_WAIT_S   = 0.60        # settle after scroll
+_PHASH_SIZE            = 16          # hash grid dimension (16×16 = 256 bits)
+_PHASH_CROP_HALF       = 64          # ±px around cell center for portrait hash crop
 
 # ── Timing ─────────────────────────────────────────────────────────────────────
 
@@ -173,6 +221,86 @@ def _find_agent_portraits(frame: Image.Image, calib: CalibrationResult) -> list[
     ]
 
 
+def detect_owned_agent_cells(
+    frame: Image.Image,
+    calib: CalibrationResult,
+) -> list[tuple[int, int]]:
+    """Return click-centers (ref_x, ref_y) of owned agent cells visible in this frame.
+
+    Scans the 2-column roster grid on the right side of the agent menu screen.
+    A cell is *owned* when its 75th-percentile HSV saturation exceeds the threshold —
+    owned portraits are colorful; locked / EMPTY placeholders are desaturated.
+
+    Returns ref-coord centers suitable for use with calib.to_screen().
+    """
+    arr = np.array(frame.convert("RGB"))
+    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    frame_h, frame_w = hsv.shape[:2]
+
+    owned: list[tuple[int, int]] = []
+    cols = [
+        (_AGENT_GRID_LEFT_COL,  (_AGENT_GRID_LEFT_COL[0]  + _AGENT_GRID_LEFT_COL[1])  // 2),
+        (_AGENT_GRID_RIGHT_COL, (_AGENT_GRID_RIGHT_COL[0] + _AGENT_GRID_RIGHT_COL[1]) // 2),
+    ]
+
+    for ref_cy in _AGENT_GRID_ROW_CENTERS:
+        py0 = max(0, int((ref_cy - _AGENT_GRID_ROW_HALF_H) * calib.scale_y))
+        py1 = min(frame_h, int((ref_cy + _AGENT_GRID_ROW_HALF_H) * calib.scale_y))
+
+        for (ref_x0, ref_x1), ref_cx in cols:
+            px0 = int(ref_x0 * calib.scale_x)
+            px1 = int(ref_x1 * calib.scale_x)
+            crop_s = hsv[py0:py1, px0:px1, 1]
+            if float(np.percentile(crop_s, 75)) > _AGENT_SAT_P75_THRESH:
+                owned.append((ref_cx, ref_cy))
+
+    return owned
+
+
+def _read_skill_badge(badge_crop: Image.Image) -> int | None:
+    """Read current skill level from the "N / 12" pill badge via blob-width analysis.
+
+    The badge uses a stylized bold-italic game font that Tesseract cannot reliably
+    OCR.  Instead we 3× upscale, threshold at 180 to isolate bright-white pixels,
+    restrict to the left 52 % (current level), then classify by connected-component
+    widths and fill-ratios:
+      - 1 narrow blob  → 1
+      - 2 blobs, b2 narrow (w<48)            → 11
+      - 2 blobs, b2 wide + high fill (>0.66) → 10  ('0' is round)
+      - 2 blobs, b2 wide + lower fill         → 12  ('2' has concave curves)
+    Returns None when the badge cannot be classified (callers fall back to 0).
+    """
+    arr = np.array(badge_crop.convert("RGB"))
+    h, w = arr.shape[:2]
+    arr_up = cv2.resize(arr, (w * 3, h * 3), interpolation=cv2.INTER_LANCZOS4)
+    gray = cv2.cvtColor(arr_up, cv2.COLOR_RGB2GRAY)
+    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+    left_w = int(binary.shape[1] * 0.52)
+    left_region = binary[:, :left_w]
+    n_labels, _, stats, centroids = cv2.connectedComponentsWithStats(left_region)
+    blobs = [
+        (stats[i], centroids[i])
+        for i in range(1, n_labels)
+        if stats[i, cv2.CC_STAT_AREA] > 200
+    ]
+    blobs.sort(key=lambda x: x[1][0])
+    if not blobs:
+        return None
+    if len(blobs) == 1:
+        return 1 if blobs[0][0][cv2.CC_STAT_WIDTH] < 48 else None
+    b1_w = blobs[0][0][cv2.CC_STAT_WIDTH]
+    b2 = blobs[1][0]
+    b2_w, b2_h, b2_a = (b2[cv2.CC_STAT_WIDTH], b2[cv2.CC_STAT_HEIGHT],
+                         b2[cv2.CC_STAT_AREA])
+    if b1_w < 48:   # first character is narrow '1'
+        if b2_w < 48:
+            return 11
+        fill = b2_a / (b2_w * b2_h) if b2_w * b2_h > 0 else 0.0
+        return 10 if fill > 0.66 else 12
+    return None
+
+
 def _detect_core_rank(skills_frame: Image.Image, calib: CalibrationResult) -> int:
     """Count lit (teal-glowing) core nodes A–F → int 0-6.
 
@@ -210,6 +338,33 @@ def _count_ascension_dots(base_frame: Image.Image, calib: CalibrationResult) -> 
         elif not b:
             in_region = False
     return min(count, 6)
+
+
+# ── Equipment render-gate predicates (H3) ────────────────────────────────────
+
+def _equip_tab_rendered(frame: Image.Image, calib: CalibrationResult) -> bool:
+    """True if the Equipment tab hexagon is visible (engine slot is bright white).
+
+    Samples mean luma of the engine-slot area.  Returns False on the skills / base-stats
+    tabs where that region is the dark background (luma≈14 vs ≈210 on equipment).
+    """
+    cx, cy = _EQUIP_GATE_CENTER
+    r = _EQUIP_GATE_RADIUS
+    crop = _crop(frame, calib, (cx - r, cy - r, cx + r, cy + r))
+    return float(np.array(crop.convert("L"), dtype=float).mean()) > _EQUIP_GATE_LUMA_MIN
+
+
+def _slot_panel_rendered(frame: Image.Image, calib: CalibrationResult) -> bool:
+    """True if the disc/engine selection panel opened after a slot click.
+
+    When a slot is clicked the Equipment view switches to the disc-selection screen (ref_8):
+    a dark-background panel replaces the bright agent portrait at the panel bbox.
+    Checks dark-pixel fraction (luma<30): ≈0.16 when panel is open vs ≈0.01 when not.
+    """
+    crop = _crop(frame, calib, _SLOT_PANEL_BBOX)
+    arr = np.array(crop.convert("L"))
+    dark_frac = float((arr < 30).mean())
+    return dark_frac > _SLOT_PANEL_DARK_FRAC_MIN
 
 
 # ── Field extractors ───────────────────────────────────────────────────────────
@@ -258,14 +413,13 @@ def _extract_skills(
     mindscape = int(m.group(1)) if m else 0
     conf["mindscape"] = 85.0 if m else 30.0
 
-    # Five numbered skill levels (basic, dodge, assist, special, chain)
+    # Five numbered skill levels (basic, dodge, assist, special, chain).
+    # OCR cannot handle the stylized bold-italic badge font; use blob classifier.
     skill_levels: list[int] = []
     skill_names = ("basic", "dodge", "assist", "special", "chain")
     for name, bbox in zip(skill_names, _SKILL_LEVEL_BBOXES):
         crop = _crop(skills_frame, calib, bbox)
-        text = recognizer.read_line(crop, "white_text_on_dark")
-        m2 = _SKILL_DIGIT_RE.search(text)
-        lvl = int(m2.group()) if m2 else 0
+        lvl = _read_skill_badge(crop) or 0
         skill_levels.append(lvl)
         conf[f"skill_{name}"] = 85.0 if 1 <= lvl <= 12 else 30.0
 
@@ -389,14 +543,90 @@ def resolve_locations(
     return orphans
 
 
-# ── AgentNavigator (E1) ───────────────────────────────────────────────────────
+# ── Portrait pHash (H2) ───────────────────────────────────────────────────────
+
+def _portrait_phash(
+    frame: Image.Image,
+    calib: CalibrationResult,
+    ref_cx: int,
+    ref_cy: int,
+) -> str:
+    """Average hash of the portrait crop centered at (ref_cx, ref_cy).
+
+    Resize to _PHASH_SIZE × _PHASH_SIZE, compare each pixel to the mean.
+    Returns a binary string of length _PHASH_SIZE².
+    """
+    half = _PHASH_CROP_HALF
+    crop = _crop(frame, calib, (ref_cx - half, ref_cy - half, ref_cx + half, ref_cy + half))
+    small = np.array(
+        crop.convert("L").resize((_PHASH_SIZE, _PHASH_SIZE), Image.LANCZOS),
+        dtype=float,
+    )
+    bits = small > small.mean()
+    return "".join("1" if b else "0" for b in bits.flatten())
+
+
+# ── Grid-based roster traversal generator (H2) ────────────────────────────────
+
+def scan_roster_grid(
+    capture_fn: CaptureFunc,
+    calib: CalibrationResult,
+    scroll_fn: Callable[[], None],
+    kill_event: Event,
+    agent_max: int = AGENT_MAX,
+) -> Generator[tuple[int, int], None, None]:
+    """Yield (cx, cy) for each new owned agent cell in the roster grid.
+
+    Traversal loop:
+      1. Capture current grid frame.
+      2. Detect owned cells (H1 saturation filter).
+      3. Compute pHash for each; yield only un-seen cells (dedupe).
+      4. After all new cells on this page are yielded: scroll_fn() → repeat.
+      5. Stop when a page produces no new owned cells (locked tail or wrap-around)
+         or when agent_max is reached.
+
+    Caller must handle per-agent navigation (click cell, tabs, back-arrow) between
+    consecutive yields. scroll_fn() is called only after every cell on the current
+    page has been processed (i.e. when control returns from the last yield).
+    """
+    seen: set[str] = set()
+    yielded = 0
+    while not kill_event.is_set():
+        frame = capture_fn()
+        owned = detect_owned_agent_cells(frame, calib)
+
+        new_cells: list[tuple[int, int]] = []
+        for cx, cy in owned:
+            h = _portrait_phash(frame, calib, cx, cy)
+            if h not in seen:
+                seen.add(h)
+                new_cells.append((cx, cy))
+
+        if not new_cells:
+            return  # locked tail or all-seen wrap-around
+
+        for cx, cy in new_cells:
+            if kill_event.is_set() or yielded >= agent_max:
+                return
+            yield cx, cy
+            yielded += 1
+
+        scroll_fn()
+
+
+# ── AgentNavigator (E1 / H2) ──────────────────────────────────────────────────
 
 class AgentNavigator:
     """Click-driven agent roster iterator.
 
     Detects all agent portraits in the roster strip from an initial frame,
-    then clicks each portrait and navigates Base Stats → Skills → Equipment
-    tabs.  On the Equipment tab, clicks all 6 disc slots then the engine slot.
+    Grid-based roster traversal (H2): detects owned cells per page via
+    detect_owned_agent_cells(), dedupes by portrait pHash, scrolls down one
+    page after all new agents on a page are processed, and stops when no new
+    owned cells appear (locked tail or wrap-around).
+
+    Navigates each agent: cell click → Base Stats → Skills → Equipment tabs
+    (7 slot clicks) → back-arrow → next agent.
 
     Yields (agent_idx, base_frame, skills_frame, equipment_frames) for each
     agent.  equipment_frames has 7 elements: [disc_1..disc_6, engine].
@@ -427,21 +657,34 @@ class AgentNavigator:
         sx, sy = self._ref_to_screen(ref_x, ref_y)
         natural_click(self._mouse_ctrl(), sx, sy)
 
+    def _scroll_page_down(self) -> None:
+        """Scroll the agent roster grid down by one page via mouse wheel."""
+        mouse = self._mouse_ctrl()
+        sx, sy = self._ref_to_screen(*_AGENT_SCROLL_CENTER)
+        mouse.position = (sx, sy)
+        time.sleep(0.05)
+        for _ in range(_SCROLL_TICKS_PER_PAGE):
+            mouse.scroll(0, -1)
+            time.sleep(0.05)
+        time.sleep(_AGENT_SCROLL_WAIT_S)
+
     def scan(self):
-        """Yield (agent_idx, base_frame, skills_frame, equipment_frames) per agent.
+        """Grid-based roster traversal. Yields (agent_idx, base_frame, skills_frame, equipment_frames).
 
-        Portrait positions are sampled once from the first captured frame.
-        Stops on Esc or when all detected portraits are visited.
+        Uses scan_roster_grid() for detect/dedupe/scroll loop; handles per-agent
+        tab navigation and back-arrow between agents.
+        Game must be on the agent menu (grid visible) before calling scan().
+        Stops on Esc, locked tail, or AGENT_MAX.
         """
-        init_frame = self._capture()
-        portrait_xs = _find_agent_portraits(init_frame, self._calib)
-
-        for agent_idx, portrait_x in enumerate(portrait_xs):
+        agent_idx = 0
+        for cx, cy in scan_roster_grid(
+            self._capture, self._calib, self._scroll_page_down, self._kill
+        ):
             if self._kill.is_set():
                 return
 
-            # Select this agent
-            self._click(portrait_x, _ROSTER_CENTER_Y)
+            # Select this agent from the roster grid
+            self._click(cx, cy)
             time.sleep(jitter(_PORTRAIT_CLICK_DELAY_S))
 
             # Base Stats tab
@@ -460,9 +703,21 @@ class AgentNavigator:
             if self._kill.is_set():
                 return
 
-            # Equipment tab — click every disc slot then the engine slot
+            # Equipment tab — click with render-gate (H3)
             self._click(*_TAB_EQUIPMENT)
             time.sleep(jitter(_TAB_CLICK_DELAY_S))
+
+            equip_gate_ok = False
+            for attempt in range(_EQUIP_GATE_RETRIES):
+                _frame_test = self._capture()
+                if _equip_tab_rendered(_frame_test, self._calib):
+                    equip_gate_ok = True
+                    break
+                if attempt + 1 < _EQUIP_GATE_RETRIES:
+                    time.sleep(_EQUIP_GATE_RETRY_S)
+            if not equip_gate_ok:
+                _log.warning("equip_gate_fail agent=%d — hexagon not rendered after %d tries",
+                             agent_idx, _EQUIP_GATE_RETRIES)
 
             equipment_frames: list[Image.Image] = []
             for slot_center in _ALL_SLOT_CENTERS:
@@ -470,9 +725,22 @@ class AgentNavigator:
                     return
                 self._click(*slot_center)
                 time.sleep(jitter(_SLOT_CLICK_DELAY_S))
-                equipment_frames.append(self._capture())
+                slot_frame = self._capture()
+                # Slot render-gate: one retry if panel didn't open (timing)
+                if not _slot_panel_rendered(slot_frame, self._calib):
+                    time.sleep(_SLOT_PANEL_RETRY_S)
+                    slot_frame = self._capture()
+                    if not _slot_panel_rendered(slot_frame, self._calib):
+                        _log.debug("slot_panel_miss agent=%d slot=%d — empty or timing",
+                                   agent_idx, _ALL_SLOT_CENTERS.index(slot_center))
+                equipment_frames.append(slot_frame)
+
+            # Return to agent menu grid for next agent
+            self._click(*_BACK_ARROW)
+            time.sleep(jitter(_TAB_CLICK_DELAY_S))
 
             yield agent_idx, base_frame, skills_frame, equipment_frames
+            agent_idx += 1
 
 
 # ── Public scanner ────────────────────────────────────────────────────────────
