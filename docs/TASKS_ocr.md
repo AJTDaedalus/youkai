@@ -166,3 +166,110 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
   `tests/fixtures/disc_slot_panels/`; `tests/test_disc_slot_fallback.py` asserts 12/12. Full suite
   237 passed / 4 skipped (archive-dependent skips). **Live `0 no_slot` re-run still pending** a clean
   capture (the only remaining acceptance clause — needs the window-targeting fix below).
+
+---
+
+## Phase H — Agent roster redesign + tandem hardening (plan: `docs/DESIGN_agents.md`, 2026-06-06, Opus)
+
+> Fixes the only subsystem blocking `scan-all`. Root causes (evidence in DESIGN_agents §2 / LOG
+> 2026-06-06): RC-1 roster strip y-band too low (under-detect), RC-2 never scrolls (no count
+> header), RC-3 **Equipment tab never reached** + slot centers ~350px too far left. Discs/engines
+> are NOT in scope — do not touch G1/G2/G5. **Precondition:** fix the window-targeting bug
+> (`live_20260606` grabbed the Game Pass launcher) before any live task (H0/H6).
+
+> **SUPERSEDED 2026-06-06 by ref_12 (D27):** the agent *menu* roster is a 2D GRID (like the
+> inventories), not the top strip. H0/H1/H2 are reframed around grid traversal; the strip-detection /
+> horizontal-scroll approach is dropped. RC-1/RC-2 are largely moot — reuse `grid.py`. (RC-3 stands.)
+
+- [ ] **H0. Live probe — agent-grid scroll stride (OQ-H1).** *(needs game, ~5 min)* On the agent
+  menu (ref_12), confirm the right-side roster grid scrolls vertically and by how much per
+  scroll-trigger (click-bottom-row vs wheel vs scrollbar — mirror the disc grid). *Files*: none
+  (notes → `LOG_ocr.md`). *Acceptance*: scroll mechanism + row stride documented; before/after frame
+  in `archive/probe_scroll/`. (Lower priority now — grid reuse means this is a tuning detail, not a blocker.)
+
+- [x] **H1. Agent-grid cell detection + ownership filter (D27/D28).** The grid is **sheared**
+  (diagonal/parallelogram, not rectilinear) so don't assume fixed col/row pitch — detect cells by
+  **saturation-thresholded blob detection** over the right-side grid region: owned = colored portrait
+  (high saturation) + gold rarity star; **skip** unowned (padlock on star, desaturated/grayscale,
+  "Lv. 1") and the "EMPTY CHARACTER" placeholder. This finds cell click-centers AND filters ownership
+  in one pass. Also measure `Base`/`Skills`/`Equipment` button centers + selected-agent signature
+  (ref_12), and the bottom-bar `Storage`/`Agents` centers (ref_11). Record under
+  `navigation.yaml:agent_menu`. *Fixtures*: ref_12 (owned page), ref_13 (mid-scroll), ref_14 (locked
+  tail + EMPTY). *Acceptance*: detector returns only owned cells on each fixture (zero locked/EMPTY),
+  plus the 3 detail buttons. *Files*: `navigation.yaml`, `agent_scanner.py`, `tests/`.
+
+- [x] **H2. Roster traversal: scroll + dedupe + loop-around end (D27/D28).** Reuse `grid.py`'s
+  scroll/stability/dedupe **loop** (not its rectilinear cell model): detect owned cells (H1) → visit
+  each un-seen → scroll down one page → repeat. No scroll-to-top (none reliable; user-confirmed) —
+  dedupe owned cells by perceptual hash and **end when a page yields no new owned agent** (hit the
+  locked tail OR wrapped/looped back to a seen agent). Cap `AGENT_MAX=60`. Per cell: select → Base →
+  Skills → Equipment (H3) → back-arrow → next. *Acceptance*: a dry-run over the ref_12→13→14 frame
+  sequence visits each unique owned agent exactly once, skips all locked/EMPTY, and terminates at the
+  locked tail. *Files*: `agent_scanner.py`, reuse `grid.py`. Depends on H1; H0 only refines stride.
+  *Done 2026-06-06*: `_portrait_phash()` (16×16 average hash), `scan_roster_grid()` (testable
+  generator with injectable scroll_fn), `AgentNavigator._scroll_page_down()` (wheel scroll),
+  `AgentNavigator.scan()` rewritten to use grid-based loop with back-arrow nav. 10 tests in
+  `tests/test_agent_traversal.py`: full dry-run yields 20 agents (8+8+4), 3 scrolls, clean
+  termination; pHash dedup, kill_event, agent_max cap all green. Suite 256 passed.
+
+- [x] **H3. Equipment tab: reach it + fix slot geometry + render-gate (RC-3).** Re-measure the slot
+  hexagon from `reference_7` (engine center ≈ (1418,590); derive the 6 disc centers) → update
+  `_DISC_SLOT_CENTERS`/`_ENGINE_SLOT_CENTER` + `navigation.yaml:equipment_tab`. Add a render-gate
+  after the Equipment-tab click (assert hexagon rendered — center engine-ring luma/template) and
+  after each slot click (assert detail/select panel opened); re-capture-then-log on gate fail.
+  Re-anchor `_EQUIP_TITLE_BBOX` against `reference_8`. *Acceptance*: offline, the gate predicate
+  returns True on `reference_7` and False on a Skills-tab frame (`agent_000/skills.png`); slot
+  centers land inside the ref_7 slot circles (assert via bbox membership). *Files*: `agent_scanner.py`,
+  `navigation.yaml`, `tests/`.
+  *Done 2026-06-06*: slot centers re-measured (RC-3 fixed, hexagon was 330px too far left).
+  Engine game(1417,558), slots 1-6 game(1730/1785/1715/1087/1125/1088, 363/483/708/708/544/363).
+  `_equip_tab_rendered` (luma>150) and `_slot_panel_rendered` (dark_frac>0.08) wired into scan()
+  with retry+logging. 11 tests in `tests/test_agent_h3.py` all pass. Slots 2/5 marked TODO for
+  live verification (±50px uncertainty). `_EQUIP_TITLE_BBOX` confirmed correct against ref_8
+  (246 bright cols, dark_frac=0.16).
+
+- [x] **H4. Validate per-agent extraction offline (G-D).** Build fixtures from
+  `reference_{3,4,9,10}` (mirror G5's `tests/fixtures/` pattern) and assert via
+  `scan_single_frame_agent` / `_extract_equip_frame`: key=Zhao, level=60, ascension dots, mindscape,
+  skills = (12,10,11,12,11) from ref_4, core rank, and equip title→(set,slot)/engine key from
+  ref_9/10. Fix bboxes/heuristics until green; route still-uncertain heuristics (ascension/core) to
+  low-confidence. *Acceptance*: parametrized fixture test passes; values match the frames. *Files*:
+  `agent_scanner.py`, `normalizer.py` (if needed), `tests/`.
+  *Done 2026-06-06*: 24/24 tests green. Key fixes: added 'Zhao' to agents.json; _LEVEL_BBOX
+  corrected (y=452→460, x=955→1060); _SKILL_LEVEL_BBOXES y-corrected (510-545→750-780); Tesseract
+  can't read ZZZ stylized skill badge font → replaced OCR with `_read_skill_badge()` blob-width
+  classifier (LANCZOS4 3× + threshold 180 + fill-ratio: 5/5 correct); _CORE_NODE_BBOXES
+  re-derived from teal CC centroids in ref_4 (all 6 nodes detect LIT).
+
+- [ ] **H5. Tandem hardening — persistence + preflight assert + resume (G-E).** In
+  `cli.py:_cmd_scan_all`: tee stdout to `archive/<run>/scan.log`; write `archive/<run>/results.json`
+  (per-phase counts, issues, merged export). Add a per-phase preflight screen-assertion (disc/engine
+  header present; agent page signature present) that aborts the phase loudly if the wrong screen is
+  open. Add per-phase output files so a failed agent phase can resume without rescanning discs.
+  Keep the manual `input()` gates between the three menus (non-goal to automate). *Acceptance*: a
+  (mocked) scan-all writes log + results.json; a forced wrong-screen preflight aborts that phase
+  with a clear message; suite green. *Files*: `cli.py`. Depends on H2–H4.
+
+- [ ] **H6. Live acceptance — one clean `scan-all` (G-A..G-E).** *(needs game; after window-target
+  fix)* Full roster traversed (count ≈ visible owned roster), Equipment-tab gate passes for every
+  agent, and ≥1 disc + ≥1 engine receive a `location` via `resolve_locations`. Archive the run
+  (now self-documenting via H5). *Acceptance*: merged `ZodExport` validates; `scan.log` shows
+  roster count > 3 and zero Equipment-gate failures; spot-check 3 agents' fields against the game.
+  Depends on all of H0–H5.
+
+- [ ] **H7. Single auto-navigating `scan-all` (menu hub driver).** *(plan: D26)* Add a navigation
+  layer that drives the whole pipeline from the main-menu hub, replacing the manual `input()` gates
+  (keep them behind `--manual-nav`). Primitives: `assert_screen(signature)` render-gates for
+  main-menu / W-Engine / Disc / agent-page; `active_storage_tab()` = brightest of the 4 top-right
+  category-tab bboxes (handles the pulse-glow); `return_to_main()` via the back-arrow. Flow:
+  main → Storage → engine tab (scan) → disc tab (scan) → back → Agents → Base → agent page (H2 roster
+  scan) → `resolve_locations` → merged export, all persisted per H5.
+  - **H7a (blocked on ref_11/ref_12 readability):** measure `Storage`/`Agents` (ref_11) and `Base`
+    (ref_12) button centers + main-menu/agent-menu signatures → `navigation.yaml`. *The OneDrive copies
+    dehydrated mid-session (present 13:00, gone 13:05); need them re-synced/readable.*
+  - **H7b (unblocked now):** measure the 4 Storage category-tab bboxes + active-glow threshold from
+    `reference_1`/`reference_2`; implement `active_storage_tab()` + a fixture test (disc-active on
+    ref_1, engine-active on ref_2).
+  - **H7c:** wire the driver + `assert_screen`/`return_to_main` into `cli.py:_cmd_scan_all`.
+  *Acceptance*: a (mocked-frame) driver test walks the full transition graph and asserts each gate;
+  live, one `scan-all` completes hands-off from the main menu. Depends on H2–H5; H7a blocks the live leg.

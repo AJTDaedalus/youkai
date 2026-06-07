@@ -250,21 +250,17 @@ def test_extract_base_stats_unrecognised_agent():
 # ── _extract_skills ───────────────────────────────────────────────────────────
 
 def test_extract_skills_normal():
-    """Mindscape + 5 skill levels read from recogniser; core rank from dark frame (=0)."""
+    """Mindscape from recogniser; skill levels from blob classifier (0 on dark frame); core=0."""
     calib = _identity_calib()
     frame = _dark_frame()
-    rec = _MockRecognizer(
-        "CINEMA 3/6",  # mindscape
-        "10", "10", "10", "12", "12",  # basic, dodge, assist, special, chain
-    )
+    # Skill levels now use _read_skill_badge() (pixel-based), not the recogniser.
+    # A dark frame has no badge blobs → all skills fall back to 0.
+    rec = _MockRecognizer("CINEMA 3/6")
     mindscape, talent, conf = _extract_skills(frame, calib, rec)
     assert mindscape == 3
     assert conf["mindscape"] == 85.0
-    assert talent.basic   == 10
-    assert talent.dodge   == 10
-    assert talent.assist  == 10
-    assert talent.special == 12
-    assert talent.chain   == 12
+    assert talent.basic   == 0   # dark frame — no badge blobs detectable
+    assert talent.dodge   == 0
     assert talent.core    == 0   # dark frame → no teal nodes
 
 

@@ -792,3 +792,172 @@ removed, 426 MB freed). Before deleting, copied the 12 fail panels out to
   Window-targeting must be fixed before the next live run.
 - G2 (engine count traversal) and G3 (agent geometry) were implemented but never re-run live;
   their archives are stale. Next live pass should validate all three (G2/G3/G5) at once.
+
+---
+
+## 2026-06-06 — Agent subsystem investigation + Phase H plan (Opus 4.8)
+
+Built the architectural plan for the agent roster + tandem scan. Read `agent_scanner.py`,
+`cli.py:_cmd_scan_all`, `navigation.yaml:agent_roster`, `grid.py` scroll pattern, the live archive
+`agent_00{0,1,2}/`, and reference frames `reference_{3,4,7,8,9,10}`. Artifacts:
+`docs/DESIGN_agents.md`, Phase H in `docs/TASKS_ocr.md`, D22–D25 in `docs/DECISIONS.md`.
+
+**Three root causes found (all from assumed, never-verified geometry):**
+- **RC-1** roster strip y-band `(0,32,1920,75)` sits *below* the portraits (ref_3: portraits ≈
+  y=8–42) → under-detection (3 of ~8).
+- **RC-2** `AgentNavigator.scan()` samples frame 1 only, never scrolls; no `[N/M]` header to drive
+  count traversal → most of the roster unreachable.
+- **RC-3 (decisive, overturns the handoff):** the live `equip_slot_*.png` are **Skills-tab**
+  captures, not Equipment. Proof: `agent_000/equip_slot_0.png` still has **Skills** highlighted +
+  A–F core nodes visible; `equip_slot_6.png` is the Skills **"Core Skill Enhancement"** popup. The
+  `_TAB_EQUIPMENT=(1718,996)` click never activated Equipment, so slot-center clicks hit Skills-tab
+  core nodes. Independently, slot centers are **~350px too far left**: ref_7 puts the slot hexagon
+  at x≈1410 (engine center ≈ (1418,590)) vs coded engine (1038,515). `navigation.yaml` still carried
+  an un-actioned `TODO: refine slot centers from ref_7`.
+
+⇒ The handoff's "per-agent flow works, G3 fixed the tabs" is true only for Base Stats→Skills. The
+location cross-reference (the whole point of the tandem scan) has **never run on real equipment
+data**. Meta-fix: render-gate every nav step (D23) so a wrong-screen capture fails loudly instead
+of banking 3 dirs of useless frames.
+
+**Next (Sonnet):** start at **H0** (tiny live scroll-mechanism probe — needs the window-targeting
+fix first), then H1→H6. Offline tasks H1/H3/H4 can proceed now against the reference frames without
+the game.
+
+### 2026-06-06 (cont.) — ref_11/ref_12 reviewed; roster pivots to grid; user picks full-auto+equip-location
+
+- **ref_11 (main menu):** persistent bottom bar with `Storage` + `Agents` buttons → hub for H7 auto-nav.
+- **ref_12 (agent menu):** roster is a **2D GRID** (right side) + `Base`/`Skills`/`Equipment` buttons —
+  NOT the detail-page top strip the plan assumed. ⇒ **D27**: traverse via `grid.py` reuse; RC-1/RC-2
+  dissolve, only RC-3 remains. H0/H1/H2 reframed.
+- **User decisions:** full automation **including** the Equipment tab; `location` via the
+  **Equipment-tab cross-reference** (D21 stands). Phase H keeps H3/H4 in full; "simplify agents" closed.
+- Files ref_11/ref_12 live in `screenshots/` (the `reference/` copies dehydrated via OneDrive mid-session).
+
+### 2026-06-06 (cont.) — ref_13/14: agent grid is sheared + has unowned/locked cells → D28
+
+- Agent grid scrolls vertically over multiple pages (doesn't fit one screen); layout is **sheared**
+  (diagonal), so fixed-pitch cell model won't fit → detect cells by saturation blob detection.
+- Grid lists **unowned** agents too: padlock on rarity star + grayscale + "Lv. 1" + an "EMPTY
+  CHARACTER" placeholder → **skip** these (user rule). Owned = colored + gold star.
+- No reliable scroll-to-top; traverse one direction + pHash dedupe, end when a page yields no new
+  owned agent (locked tail or loop-around). ⇒ **D28**; H1/H2 updated.
+
+### 2026-06-06 (cont.) — H1 complete: detect_owned_agent_cells() + navigation.yaml + fixture tests
+
+**Task: H1** — agent-grid cell detection + ownership filter.
+
+**Algorithm validated** (all 3 fixtures, identity calib, game-area frames 1920×1080):
+- Grid: 2 columns, 4 rows. Left col x=1277-1537, right col x=1537-1797. Row centers [144,402,660,918].
+- Ownership: HSV saturation 75th-percentile over full column band (260px wide × 200px tall) > 15 → owned.
+- ref_12 (all owned): 8/8 ✓ · ref_13 (scrolled, all owned): 8/8 ✓ · ref_14 (locked top): 4/4 ✓
+
+**Raw→game coord note:** ref screenshots are 1922×1112 (includes 32px chrome). `grab_window()` returns
+the 1920×1080 client area only. Constants live in game/ref coords; tests crop raw screenshots via
+`Image.crop((1, 32, 1921, 1112))` before calling the detector.
+
+**Files changed:**
+- `src/youkai_ocr/agent_scanner.py`: added `import cv2`; added `_AGENT_GRID_*` constants + `detect_owned_agent_cells()`.
+- `data/zzz_1.4/navigation.yaml`: added `agent_menu` section (grid params, detail tabs, bottom nav stub).
+- `tests/test_agent_grid.py`: 6 fixture tests, all green.
+
+**Test run:** `pytest tests/test_agent_grid.py tests/test_agent_scanner.py` → 44 passed.
+
+## 2026-06-06 — H2: Roster traversal loop (Sonnet)
+
+Implemented grid-based roster traversal replacing the single-frame strip approach.
+
+**Changes:**
+- `src/youkai_ocr/agent_scanner.py`:
+  - Added traversal constants: `AGENT_MAX=60`, `_BACK_ARROW=(75,38)` (TODO verify live),
+    `_AGENT_SCROLL_CENTER`, `_SCROLL_TICKS_PER_PAGE=4`, `_AGENT_SCROLL_WAIT_S`, `_PHASH_SIZE=16`,
+    `_PHASH_CROP_HALF=64`.
+  - Added `_portrait_phash()`: 16×16 average hash of portrait crop; stable, length-256, distinct
+    for different agents.
+  - Added `scan_roster_grid()`: testable module-level generator with injectable `capture_fn` and
+    `scroll_fn`. Detects owned cells (H1), computes pHashes, dedupes via `seen` set, yields `(cx, cy)`
+    for each new cell, calls `scroll_fn()` after each page. Stops when no new cells or `agent_max`
+    reached.
+  - `AgentNavigator._scroll_page_down()`: wheel-scroll `_SCROLL_TICKS_PER_PAGE` ticks over grid center.
+  - `AgentNavigator.scan()` rewritten: iterates `scan_roster_grid()`; per agent: click cell → Base →
+    Skills → Equipment (7 slots) → back-arrow → next.
+- `tests/test_agent_traversal.py`: 10 tests — pHash unit tests (stable, length, distinct); dry-run
+  traversal: full 3-page sequence yields 20 agents (8+8+4), 3 scrolls, clean termination;
+  pHash dedup (no revisit on 2nd ref_14); kill_event; agent_max cap; locked-cell exclusion.
+
+**Test run:** full suite 256 passed / 4 skipped / 1 pre-existing fail
+(`test_read_disc_count_from_real_header` expects 2205, game now at 2210 — not H2 scope).
+
+**Next:** H3 (Equipment tab geometry + render-gate).
+
+## 2026-06-06 — H3: Equipment-tab slot geometry + render-gates (Sonnet)
+
+**Root cause fixed:** `_DISC_SLOT_CENTERS` and `_ENGINE_SLOT_CENTER` were ~330px too far
+left (RC-3). Old values centered around game(1000-1100, 400-700); actual hexagon is centered
+around game(1417, 558).
+
+**Measurements from reference_7 (blob analysis + row scan):**
+- Engine: raw(1418,590) → game(1417,558). Confirmed via pixel luma (210) and H3 task hint.
+- Slot 1 (upper-right): game(1730, 363)  — row scan at raw y=395, x=1731
+- Slot 2 (right-center): game(1785, 483)  — row scan x=1784-1788 at raw y=490-540 (TODO: live verify)
+- Slot 3 (lower-right): game(1715, 708)  — row scan at raw y=740, x=1716
+- Slot 4 (lower-left): game(1087, 708)   — row scan at raw y=740, x=1088
+- Slot 5 (left-center): game(1125, 544)  — blob centroid (TODO: live verify)
+- Slot 6 (upper-left): game(1088, 363)   — row scan at raw y=395, x=1089
+
+**Render-gate calibration:**
+- `_equip_tab_rendered`: luma at engine center > 150 (ref_7: 210, skills: 14) ✓
+- `_slot_panel_rendered`: dark_frac > 0.08 in panel bbox (ref_8: 0.16, ref_7: 0.01) ✓
+
+**Files changed:**
+- `src/youkai_ocr/agent_scanner.py`: updated `_DISC_SLOT_CENTERS`, `_ENGINE_SLOT_CENTER`,
+  added `_EQUIP_GATE_*` / `_SLOT_PANEL_*` constants, `_equip_tab_rendered()`,
+  `_slot_panel_rendered()`, wired both into `AgentNavigator.scan()` with retry + `_log`.
+- `data/zzz_1.4/navigation.yaml`: updated `equipment_tab.disc_slots`, `engine_slot`,
+  added `render_gate` sub-section.
+- `tests/test_agent_h3.py`: 11 tests — gate True/False on ref_7/ref_8/skills, all 6 disc slot
+  centers verified colorful in ref_7 (sat > 50 in ±40px window), engine verified bright+white.
+
+**Test run:** 11/11 H3 tests passed; full suite pending.
+
+**Remaining uncertainties:** slot 2 and slot 5 centers have ±50px uncertainty — need live
+verification (H6). The 6-slot layout is 2-column (x≈1088, x≈1720) × 3-row not a
+regular hexagon (engine is not at geometric centroid of slot ring).
+
+**Next:** H4 (validate per-agent extraction offline from reference_{3,4,9,10}).
+
+---
+
+## 2026-06-06 — H4: Offline per-agent extraction validation (Sonnet)
+
+**Task:** Validate `scan_single_frame_agent` + `_extract_equip_frame` against reference_{3,4,9,10}. Fix bboxes/heuristics until green.
+
+**Ground truth confirmed from reference images:**
+- ref_3 (Zhao Base Stats): key='Zhao', level=60, ascension=low-confidence
+- ref_4 (Zhao Skills): mindscape=0 (CINEMA 0/6), skills=(12,10,11,12,11), core=6 (all A-F lit)
+- ref_9 (disc info): BunnyInWonderland, slots 1-6
+- ref_10 (disc+engine info): AstralVoice discs, engine=TheRestrained
+
+**Fixes applied:**
+
+1. **`data/zzz_1.4/agents.json`**: Added `"Zhao": "Zhao"` — was missing, fuzzy match returned 'ZhuYuan'.
+
+2. **`_LEVEL_BBOX`**: (955, 452, 1100, 497) → (1060, 460, 1200, 495). Old bbox sampled the stat table. New bbox correctly reads "Lv. 60" from the badge.
+
+3. **`_SKILL_LEVEL_BBOXES`**: y=510-545 → y=750-780 (correct area for the 5 skill level badges). Actual badges span x=(930-1065, 1110-1245, 1295-1425, 1470-1605, 1650-1785).
+
+4. **Skill OCR → blob classifier**: Tesseract cannot read the stylized bold-italic ZZZ skill badge font (returned '1' or '1Z' for '12'). Replaced with `_read_skill_badge()`: 3× LANCZOS4 upscale, threshold at 180, left-50%-restrict, connected-component width + fill-ratio analysis:
+   - 1 narrow blob → 1
+   - 2 blobs, b2 narrow (w<48) → 11
+   - 2 blobs, b2 wide + fill>0.66 → 10 ('0' is rounder than '2')
+   - 2 blobs, b2 wide + fill≤0.66 → 12
+   Validated: 5/5 correct on all skill badges (including yellow dodge badge at 10).
+
+5. **`_CORE_NODE_BBOXES`**: Old bboxes had y=178-415 (wrong). Re-derived from connected-component centroids of teal pixels in ref_4. Correct ring centers: A(1109,308), B(1061,476), C(1311,309), D(1267,473), E(1517,308), F(1468,475). All 6 nodes now detect as LIT (G>140, G-R>50). Core rank = 6.
+
+**Files changed:**
+- `data/zzz_1.4/agents.json`: added 'Zhao'
+- `src/youkai_ocr/agent_scanner.py`: _LEVEL_BBOX, _SKILL_LEVEL_BBOXES, _CORE_NODE_BBOXES corrected; `_read_skill_badge()` added; `_extract_skills()` uses blob classifier instead of OCR for skill badges.
+- `tests/test_agent_h4.py`: 24 tests — key/level/mindscape/skills(5)/core/ascension-range from ref_3+ref_4; 12 equip slot tests from ref_9+ref_10. All pass.
+
+**Test run:** 24/24 H4 tests passed.
