@@ -134,3 +134,77 @@ def test_export_creates_parent_dirs():
         path = Path(td) / "nested" / "dir" / "export.json"
         export_engines([_make_engine()], path)
         assert path.exists()
+
+
+# ── T5: on_item callback ──────────────────────────────────────────────────────
+
+def test_scan_engines_on_item_called_once_per_engine_monotonically(monkeypatch):
+    """on_item is called exactly once per engine with monotonically increasing scanned."""
+    from threading import Event
+    import youkai_ocr.wengine_scanner as ws
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    N = 5
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            for i in range(N):
+                yield i, 0, f"frame{i}"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def __init__(self, idx): self.idx = idx
+        def to_dict(self): return {}
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        return Stub(cell_idx), {"key": 99.0}
+
+    monkeypatch.setattr(ws, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ws, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ws, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ws, "read_engine_count", lambda *a, **k: N)
+    monkeypatch.setattr(ws, "_extract_engine", fake_extract)
+
+    calls: list[tuple[int, int | None]] = []
+    ws.scan_engines(
+        lambda: "preflight", calib=None, grid=DEFAULT_GRID,
+        on_item=lambda s, t: calls.append((s, t)),
+    )
+
+    assert len(calls) == N
+    scanned_values = [s for s, _ in calls]
+    assert scanned_values == list(range(1, N + 1)), f"not monotonically increasing: {scanned_values}"
+    assert all(t == N for _, t in calls), "total should equal N for all calls"
+
+
+def test_scan_engines_on_item_omitted_no_error(monkeypatch):
+    """on_item=None (default) causes no error."""
+    from threading import Event
+    import youkai_ocr.wengine_scanner as ws
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            for i in range(2):
+                yield i, 0, f"frame{i}"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def __init__(self, idx): self.idx = idx
+        def to_dict(self): return {}
+
+    monkeypatch.setattr(ws, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ws, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ws, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ws, "read_engine_count", lambda *a, **k: 2)
+    monkeypatch.setattr(ws, "_extract_engine",
+                        lambda f, c, cx, cy, r, a, i: (Stub(i), {"key": 99.0}))
+
+    engines, _ = ws.scan_engines(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+    assert len(engines) == 2

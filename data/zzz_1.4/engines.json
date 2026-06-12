@@ -20,6 +20,8 @@
 
     "_comment_a_rank": "--- A-rank ---",
     "Big Cylinder": "BigCylinder",
+    "Box Cutter": "BoxCutter",
+    "Grill O'Wisp": "GrillOWisp",
     "Bunny Band": "BunnyBand",
     "Demara Battery Mark II": "DemaraBatteryMarkII",
     "Door of Limitation": "DoorOfLimitation",
@@ -39,6 +41,22 @@
     "Gilded Blossom": "GildedBlossom",
     "Peacekeeper": "Peacekeeper",
     "Sharpened Stinger": "SharpenedStinger",
-    "Tusks of Fury": "TusksOfFury"
+    "Tusks of Fury": "TusksOfFury",
+
+    "_comment_b_rank_series": "--- B-rank bracket series (standard pool; F2 golden-set gap fix) ---",
+    "[Lunar] Decrescent": "LunarDecrescent",
+    "[Lunar] Noviluna": "LunarNoviluna",
+    "[Lunar] Pleniluna": "LunarPleniluna",
+    "[Magnetic Storm] Alpha": "MagneticStormAlpha",
+    "[Magnetic Storm] Bravo": "MagneticStormBravo",
+    "[Magnetic Storm] Charlie": "MagneticStormCharlie",
+    "[Reverb] Mark I": "ReverbMarkI",
+    "[Reverb] Mark II": "ReverbMarkII",
+    "[Reverb] Mark III": "ReverbMarkIII",
+    "[Vortex] Arrow": "VortexArrow",
+    "[Vortex] Hatchet": "VortexHatchet",
+    "[Vortex] Revolver": "VortexRevolver",
+    "[Identity] Base": "IdentityBase",
+    "[Identity] Inflection": "IdentityInflection"
   }
 }

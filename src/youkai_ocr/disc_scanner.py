@@ -15,6 +15,7 @@ from threading import Lock, Thread
 from typing import Callable, Optional
 
 from PIL import Image
+from rapidfuzz import fuzz
 
 from .capture import CalibrationResult
 from .grid import DEFAULT_GRID, GridNavigator, GridParams, make_kill_listener
@@ -99,6 +100,24 @@ _FLAT_TO_PERCENT: dict[str, str] = {
     "atk": "atk_",
     "def": "def_",
 }
+_PERCENT_TO_FLAT: dict[str, str] = {v: k for k, v in _FLAT_TO_PERCENT.items()}
+
+# Plausible substat value ranges (B4 range validators; F2 golden-set finding).
+# ZZZ substats roll fixed increments of the base value, 1–6 rolls on an S disc,
+# so value ∈ [base, base×6]. Bounds are padded (×8 upper) to avoid rejecting a
+# legitimate read on A/B discs; they only arbitrate between conflicting OCR
+# scales (decimal-point loss reads "2.4" as "24" — 10× out, far past the pad).
+_SUBSTAT_RANGE: dict[str, tuple[float, float]] = {
+    "hp": (112, 896), "atk": (19, 152), "def": (15, 120),
+    "hp_": (3, 24), "atk_": (3, 24), "def_": (4.8, 38.4),
+    "crit_": (2.4, 19.2), "crit_dmg_": (4.8, 38.4),
+    "pen": (9, 72), "anomProf": (9, 72),
+}
+
+
+def _value_plausible(stat_key: str, val: float) -> bool:
+    rng = _SUBSTAT_RANGE.get(stat_key)
+    return rng is None or (rng[0] <= val <= rng[1])
 
 # Minimum confidence for accepting a field match (below → emit to issues).
 _LOW_CONF_THRESHOLD = 70.0
@@ -215,22 +234,70 @@ def _extract_disc(
     conf["main_stat"] = main_conf
 
     # ── Substats ──────────────────────────────────────────────────────────
+    # Row contract (golden-replay/F2): a real substat row always has a numeric
+    # value; the row after the last substat is the dim "Set Effect" header.
+    # Never break on a single empty OCR read — short names ("HP") and dim rows
+    # ("PEN") read empty on the bright pass and were silently dropped pre-F2.
     substats: list[ZodSubstat] = []
     for i, (name_bbox, val_bbox) in enumerate(_SUBSTAT_BBOXES):
         name_crop = _crop(frame, calib, name_bbox)
         val_crop = _crop(frame, calib, val_bbox)
-        name_text = recognizer.read_text(name_crop, "white_text_on_dark").strip()
-        val_text = recognizer.read_line(val_crop, "white_text_on_dark").strip()
+        name_text = recognizer.read_line(name_crop, "white_text_on_dark").strip()
+        dim_pass = False
+        if not name_text or name_text in {"-", "--"}:
+            name_text = recognizer.read_line(name_crop, "white_text_on_dark_dim").strip()
+            dim_pass = True
+        if name_text and fuzz.partial_ratio(name_text.lower(), "set effect") >= 75:
+            break   # footer header — end of the substat list
+        # Read the value at two scales and vote: the decimal point vanishes
+        # unpredictably at either scale ("4.8%" → "48%" native, "2.4%" → "24"
+        # at 2×). Agreement wins; a conflict is arbitrated by _SUBSTAT_RANGE.
+        val_big = val_crop.resize((val_crop.width * 2, val_crop.height * 2), Image.LANCZOS)
+        t1 = recognizer.read_line(val_crop, "white_text_on_dark").strip()
+        t2 = recognizer.read_line(val_big, "white_text_on_dark").strip()
+        v1, v2 = parse_numeric(t1), parse_numeric(t2)
+        pct_seen = "%" in t1 or "%" in t2
 
-        if not name_text or name_text in {"-", "--", ""}:
-            break
+        if not name_text and v1 is None and v2 is None:
+            break   # genuinely empty row — end of the substat list
+        stat_key, stat_conf = normalize_substat(name_text) if name_text else ("", 0.0)
+        if dim_pass:
+            stat_conf = min(stat_conf, 65.0)   # surfaced in issues for review
 
-        stat_key, stat_conf = normalize_substat(name_text)
-        val = parse_numeric(val_text) or 0.0
-        if "%" in val_text and stat_key in _FLAT_TO_PERCENT:
-            stat_key = _FLAT_TO_PERCENT[stat_key]
+        # Percent upgrade only when the value is plausible as a percent —
+        # OCR noise can add a stray '%' to a flat read ("112" → hp_ 112).
+        key = stat_key
+        if pct_seen and stat_key in _FLAT_TO_PERCENT:
+            pct_key = _FLAT_TO_PERCENT[stat_key]
+            check = v2 if v2 is not None else v1
+            if check is not None and _value_plausible(pct_key, check):
+                key = pct_key
+
+        if v1 is not None and v1 == v2:
+            val = v1
+        elif v1 is None and v2 is None:
+            val = 0.0
+            stat_conf = min(stat_conf, 30.0)   # value unreadable — flag
+        else:
+            in_range = [v for v in (v2, v1) if v is not None and _value_plausible(key, v)]
+            if in_range:
+                val = in_range[0]
+                stat_conf = min(stat_conf, 65.0)   # scales disagreed — flag
+            else:
+                val = v2 if v2 is not None else v1
+                stat_conf = min(stat_conf, 30.0)
+        # Reverse a percent-key resolution when the value says flat: a dim
+        # name read ("HP" → "Hi") can fuzzy-match hp_ directly, but a value
+        # like 112 with no '%' in sight is unambiguously the flat stat.
+        if not pct_seen and not _value_plausible(key, val):
+            flat_key = _PERCENT_TO_FLAT.get(key)
+            if flat_key and _value_plausible(flat_key, val):
+                key = flat_key
+        if val is not None and not _value_plausible(key, val):
+            stat_conf = min(stat_conf, 30.0)   # out-of-range — never silent
+
         conf[f"substat_{i + 1}"] = stat_conf
-        substats.append(ZodSubstat(key=stat_key, value=val))
+        substats.append(ZodSubstat(key=key, value=val))
 
     # ── Archive ────────────────────────────────────────────────────────────
     if archive_dir is not None:
@@ -272,11 +339,14 @@ def scan_discs(
     grid: GridParams = DEFAULT_GRID,
     engine: str = "tesseract",
     on_first_item: Optional[callable] = None,
+    on_item: Optional[callable] = None,
 ) -> tuple[list[ZodDisc], list[dict]]:
     """Scan the disc inventory. Game must already be on the disc inventory screen.
 
     on_first_item: optional callback(disc, conf) called after the first item is
     assembled. Raise RuntimeError from it to abort the scan early.
+    on_item: optional callback(scanned, total) called after each cell is processed.
+    total is the count from the storage header (int) or None if unreadable.
 
     Returns (discs, issues). issues lists per-disc problems for the review report.
     """
@@ -320,6 +390,9 @@ def scan_discs(
                 with lock:
                     results[cell_idx] = (None, {"_error": str(exc)})
                     done[0] += 1
+                    n = done[0]
+                if on_item is not None:
+                    on_item(n, total_discs)
                 continue
             with lock:
                 results[cell_idx] = (disc, conf)
@@ -327,6 +400,8 @@ def scan_discs(
                 n = done[0]
             print(f"\r  read {n}{'/' + str(total_discs) if total_discs else ''} discs…",
                   end="", flush=True)
+            if on_item is not None:
+                on_item(n, total_discs)
             if cell_idx == 0 and on_first_item is not None:
                 try:
                     on_first_item(disc, conf)

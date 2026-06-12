@@ -137,8 +137,9 @@ def test_read_disc_count_from_real_header():
         pytest.skip("fixture missing")
     im = Image.open(fixture)
     count = read_disc_count(im, calibrate(im), make_recognizer("tesseract"))
-    # The live_20260605 preflight header reads "[ 2205 / ... ]".
-    assert count == 2205
+    # The live_20260605 preflight header reads "[ 2217 / ... ]" (dir was
+    # reused/overwritten across runs pre-H27; 2217 is the surviving frame).
+    assert count == 2217
 
 
 # ── Parallel OCR pipeline ─────────────────────────────────────────────────────
@@ -185,3 +186,77 @@ def test_scan_discs_parallel_preserves_order(monkeypatch):
     discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
     assert [d.idx for d in discs] == list(range(N))
     assert issues == []
+
+
+def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
+    """on_item is called exactly once per disc with monotonically increasing scanned."""
+    import time as _time
+    from threading import Event
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    N = 6
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            for i in range(N):
+                yield i, 0, f"frame{i}"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def __init__(self, idx): self.idx = idx
+        def to_dict(self): return {}
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        return Stub(cell_idx), {"set": 99.0}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: N)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    calls: list[tuple[int, int | None]] = []
+    discs, _ = ds.scan_discs(
+        lambda: "preflight", calib=None, grid=DEFAULT_GRID,
+        on_item=lambda s, t: calls.append((s, t)),
+    )
+
+    assert len(calls) == N
+    scanned_values = [s for s, _ in calls]
+    # Disc scanner uses a thread pool — completion order is non-deterministic,
+    # but every value 1..N must appear exactly once.
+    assert sorted(scanned_values) == list(range(1, N + 1)), f"expected {{1..N}}, got: {scanned_values}"
+    assert all(t == N for _, t in calls), "total should equal N for all calls"
+
+
+def test_scan_discs_on_item_omitted_no_error(monkeypatch):
+    """on_item=None (default) causes no error."""
+    from threading import Event
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            for i in range(3):
+                yield i, 0, f"frame{i}"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def __init__(self, idx): self.idx = idx
+        def to_dict(self): return {}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 3)
+    monkeypatch.setattr(ds, "_extract_disc", lambda f, c, cx, cy, r, a, i: (Stub(i), {"set": 99.0}))
+
+    discs, _ = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+    assert len(discs) == 3
