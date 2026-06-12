@@ -1,0 +1,2578 @@
+{
+  "discs": [
+    {
+      "src": "disc_0000",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 94.1,
+        "substat_3": 100.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "NotesFromTheChained",
+        "slot_key": "1",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "hp",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 18.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "atk_",
+            "value": 9.0
+          },
+          {
+            "key": "atk",
+            "value": 38.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0074",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 65.0,
+        "substat_2": 100.0,
+        "substat_3": 100.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "MoonlightLullaby",
+        "slot_key": "2",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "pen",
+            "value": 36.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "anomProf",
+            "value": 18.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0148",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.7,
+        "substat_2": 100.0,
+        "substat_3": 94.1,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "KingOfTheSummit",
+        "slot_key": "4",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "hp",
+            "value": 448.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def_",
+            "value": 9.6
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0222",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 94.1,
+        "substat_3": 100.0,
+        "substat_4": 94.7
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ShadowHarmony",
+        "slot_key": "2",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def",
+            "value": 45.0
+          },
+          {
+            "key": "crit_",
+            "value": 7.2
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0296",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 65.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "4",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "crit_dmg_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "atk",
+            "value": 19.0
+          },
+          {
+            "key": "def",
+            "value": 30.0
+          },
+          {
+            "key": "crit_",
+            "value": 7.2
+          },
+          {
+            "key": "pen",
+            "value": 18.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0370",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.7,
+        "substat_2": 100.0,
+        "substat_3": 100.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "AstralVoice",
+        "slot_key": "6",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "enerRegen_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "atk_",
+            "value": 6.0
+          },
+          {
+            "key": "def",
+            "value": 30.0
+          },
+          {
+            "key": "atk",
+            "value": 57.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0444",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.7,
+        "substat_2": 94.1,
+        "substat_3": 100.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "WoodpeckerElectro",
+        "slot_key": "6",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "hp_",
+            "value": 6.0
+          },
+          {
+            "key": "atk",
+            "value": 57.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0518",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 94.1,
+        "substat_3": 94.7,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ChaoticMetal",
+        "slot_key": "3",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "pen",
+            "value": 18.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 9.6
+          },
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "anomProf",
+            "value": 18.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0592",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.7,
+        "substat_2": 60.0,
+        "substat_3": 94.1,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "YunkuiTales",
+        "slot_key": "3",
+        "level": 9,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def_",
+            "value": 9.6
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0666",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 65.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ShadowHarmony",
+        "slot_key": "6",
+        "level": 4,
+        "rarity": 4,
+        "main_stat_key": "enerRegen_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "def_",
+            "value": 4.8
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0740",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 94.7,
+        "substat_4": 65.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "WhiteWaterBallad",
+        "slot_key": "5",
+        "level": 3,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "atk",
+            "value": 19.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0814",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 60.0,
+        "substat_3": 65.0,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ChaosJazz",
+        "slot_key": "3",
+        "level": 3,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0888",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 65.0,
+        "substat_2": 60.0,
+        "substat_3": 100.0,
+        "substat_4": 94.7
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "BunnyInWonderland",
+        "slot_key": "3",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_0962",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.1,
+        "substat_2": 100.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "WhiteWaterBallad",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1036",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.1,
+        "substat_2": 65.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "DawnsBloom",
+        "slot_key": "2",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1110",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 94.1,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "YunkuiTales",
+        "slot_key": "1",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "hp",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1184",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 94.1,
+        "substat_2": 100.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "PhaethonsMelody",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1258",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 65.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ShadowHarmony",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "enerRegen_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1332",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "2",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1406",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 65.0,
+        "substat_2": 100.0,
+        "substat_3": 65.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "anomProf",
+            "value": 9.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1480",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1554",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 60.0,
+        "substat_3": 94.1
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "AstralVoice",
+        "slot_key": "2",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1628",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 65.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "AstralVoice",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "anomProf",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1702",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 65.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "AstralVoice",
+        "slot_key": "5",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "electric_dmg_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1776",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 94.7,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "AstralVoice",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1850",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 65.0,
+        "substat_2": 100.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ProtoPunk",
+        "slot_key": "1",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "hp",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "def_",
+            "value": 4.8
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1924",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 94.7,
+        "substat_4": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "WoodpeckerElectro",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "anomMas_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_1998",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 65.0,
+        "substat_3": 94.1
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "FreedomBlues",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_2072",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 0.0,
+        "substat_1": 65.0,
+        "substat_2": 100.0,
+        "substat_3": 100.0
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "SwingJazz",
+        "slot_key": "3",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "src": "disc_2146",
+      "ok": true,
+      "conf": {
+        "slot": 100.0,
+        "set": 95.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 65.0,
+        "substat_3": 94.7
+      },
+      "fail": "",
+      "disc": {
+        "set_key": "ChaoticMetal",
+        "slot_key": "5",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "location": "",
+        "lock": false,
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          }
+        ]
+      }
+    }
+  ],
+  "engines": [
+    {
+      "src": "engine_0000",
+      "ok": true,
+      "conf": {
+        "key": 95.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "HellfireGears",
+        "level": 60,
+        "ascension": 5,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0030",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "TheVault",
+        "level": 60,
+        "ascension": 5,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0060",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "StarlightEngine",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0090",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "BoxCutter",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0120",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "TheVault",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0150",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "rarity": 0.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "GrillOWisp",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0180",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "LunarNoviluna",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    },
+    {
+      "src": "engine_0210",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "rarity": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "refinement": 80.0,
+        "lock": 80.0
+      },
+      "engine": {
+        "key": "ReverbMarkIII",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1,
+        "location": "",
+        "lock": false
+      }
+    }
+  ],
+  "agents": [
+    {
+      "src": "agent_000",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Zhao",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_001",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 65.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Lucia",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 8,
+          "dodge": 1,
+          "assist": 8,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_002",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Yuzuha",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 12,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 2
+        }
+      }
+    },
+    {
+      "src": "agent_003",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "YeShunguang",
+        "level": 60,
+        "constellation": 2,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 10,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_004",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "JuFufu",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_005",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 65.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Yixuan",
+        "level": 60,
+        "constellation": 4,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 12,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_006",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 45.0,
+        "skill_assist": 45.0,
+        "skill_special": 45.0,
+        "skill_chain": 45.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "PanYinhu",
+        "level": 60,
+        "constellation": 6,
+        "ascension": 5,
+        "talent": {
+          "basic": 8,
+          "dodge": 5,
+          "assist": 5,
+          "special": 5,
+          "chain": 5,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_007",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Vivian",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 11,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_008",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Astra",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 12,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_009",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 45.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Jane",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 5,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_010",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Miyabi",
+        "level": 60,
+        "constellation": 2,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_011",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Yanagi",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_012",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 40.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "OrphieMagus",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 1,
+          "dodge": 7,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_013",
+      "ok": true,
+      "conf": {
+        "key": 93.3,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Soldier0Anby",
+        "level": 60,
+        "constellation": 2,
+        "ascension": 5,
+        "talent": {
+          "basic": 11,
+          "dodge": 1,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_014",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 40.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Burnice",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 8,
+          "dodge": 7,
+          "assist": 11,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_015",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 45.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Caesar",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 5,
+          "dodge": 1,
+          "assist": 12,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_016",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 40.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Dialyn",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 11,
+          "dodge": 7,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_017",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 45.0,
+        "skill_assist": 65.0,
+        "skill_special": 90.0,
+        "skill_chain": 65.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Qingyi",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 5,
+          "assist": 8,
+          "special": 10,
+          "chain": 8,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_018",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "ZhuYuan",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 11,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_019",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 65.0,
+        "skill_assist": 45.0,
+        "skill_special": 90.0,
+        "skill_chain": 65.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Seth",
+        "level": 60,
+        "constellation": 6,
+        "ascension": 5,
+        "talent": {
+          "basic": 11,
+          "dodge": 8,
+          "assist": 5,
+          "special": 11,
+          "chain": 8,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_020",
+      "ok": true,
+      "conf": {
+        "key": 85.7,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Trigger",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 10,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_021",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 45.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Pulchra",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 8,
+          "dodge": 5,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_022",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 45.0,
+        "skill_assist": 45.0,
+        "skill_special": 90.0,
+        "skill_chain": 45.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Lucy",
+        "level": 60,
+        "constellation": 6,
+        "ascension": 5,
+        "talent": {
+          "basic": 8,
+          "dodge": 5,
+          "assist": 5,
+          "special": 12,
+          "chain": 5,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_023",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 65.0,
+        "skill_assist": 65.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Anton",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 10,
+          "dodge": 8,
+          "assist": 8,
+          "special": 12,
+          "chain": 12,
+          "core": 5
+        }
+      }
+    },
+    {
+      "src": "agent_024",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 45.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Rina",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 8,
+          "dodge": 5,
+          "assist": 11,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_025",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Nicole",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 11,
+          "dodge": 11,
+          "assist": 12,
+          "special": 12,
+          "chain": 10,
+          "core": 6
+        }
+      }
+    },
+    {
+      "src": "agent_026",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Anby",
+        "level": 55,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 4
+        }
+      }
+    },
+    {
+      "src": "agent_027",
+      "ok": true,
+      "conf": {
+        "key": 95.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 90.0,
+        "skill_assist": 90.0,
+        "skill_special": 90.0,
+        "skill_chain": 90.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Soukaku",
+        "level": 50,
+        "constellation": 6,
+        "ascension": 4,
+        "talent": {
+          "basic": 12,
+          "dodge": 12,
+          "assist": 11,
+          "special": 12,
+          "chain": 12,
+          "core": 3
+        }
+      }
+    },
+    {
+      "src": "agent_028",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 40.0,
+        "skill_assist": 65.0,
+        "skill_special": 90.0,
+        "skill_chain": 40.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Ben",
+        "level": 50,
+        "constellation": 0,
+        "ascension": 4,
+        "talent": {
+          "basic": 1,
+          "dodge": 7,
+          "assist": 8,
+          "special": 12,
+          "chain": 7,
+          "core": 3
+        }
+      }
+    },
+    {
+      "src": "agent_029",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 90.0,
+        "skill_dodge": 45.0,
+        "skill_assist": 45.0,
+        "skill_special": 90.0,
+        "skill_chain": 45.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Nekomata",
+        "level": 50,
+        "constellation": 4,
+        "ascension": 4,
+        "talent": {
+          "basic": 10,
+          "dodge": 5,
+          "assist": 5,
+          "special": 10,
+          "chain": 5,
+          "core": 3
+        }
+      }
+    },
+    {
+      "src": "agent_030",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 65.0,
+        "skill_assist": 65.0,
+        "skill_special": 65.0,
+        "skill_chain": 65.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Corin",
+        "level": 10,
+        "constellation": 5,
+        "ascension": 1,
+        "talent": {
+          "basic": 8,
+          "dodge": 8,
+          "assist": 8,
+          "special": 8,
+          "chain": 8,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_031",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 65.0,
+        "skill_assist": 65.0,
+        "skill_special": 65.0,
+        "skill_chain": 65.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Billy",
+        "level": 10,
+        "constellation": 6,
+        "ascension": 1,
+        "talent": {
+          "basic": 8,
+          "dodge": 8,
+          "assist": 8,
+          "special": 8,
+          "chain": 8,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_032",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 85.0,
+        "skill_special": 85.0,
+        "skill_chain": 85.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Harumasa",
+        "level": 10,
+        "constellation": 0,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 1,
+          "assist": 1,
+          "special": 1,
+          "chain": 1,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_033",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 85.0,
+        "skill_special": 85.0,
+        "skill_chain": 85.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Soldier11",
+        "level": 10,
+        "constellation": 0,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 1,
+          "assist": 1,
+          "special": 1,
+          "chain": 1,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_034",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 85.0,
+        "skill_special": 85.0,
+        "skill_chain": 85.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Lycaon",
+        "level": 10,
+        "constellation": 0,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 1,
+          "assist": 1,
+          "special": 1,
+          "chain": 1,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_035",
+      "ok": true,
+      "conf": {
+        "key": 100.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 65.0,
+        "skill_assist": 65.0,
+        "skill_special": 65.0,
+        "skill_chain": 65.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Manato",
+        "level": 1,
+        "constellation": 5,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 8,
+          "assist": 8,
+          "special": 8,
+          "chain": 8,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_036",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 90.0,
+        "skill_basic": 65.0,
+        "skill_dodge": 65.0,
+        "skill_assist": 65.0,
+        "skill_special": 65.0,
+        "skill_chain": 65.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Piper",
+        "level": 1,
+        "constellation": 6,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 8,
+          "assist": 8,
+          "special": 8,
+          "chain": 8,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_037",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 30.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 85.0,
+        "skill_special": 85.0,
+        "skill_chain": 85.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Grace",
+        "level": 1,
+        "constellation": 0,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 1,
+          "assist": 1,
+          "special": 1,
+          "chain": 1,
+          "core": 0
+        }
+      }
+    },
+    {
+      "src": "agent_038",
+      "ok": true,
+      "conf": {
+        "key": 90.0,
+        "level": 90.0,
+        "ascension": 90.0,
+        "mindscape": 65.0,
+        "skill_basic": 85.0,
+        "skill_dodge": 85.0,
+        "skill_assist": 85.0,
+        "skill_special": 85.0,
+        "skill_chain": 85.0,
+        "skill_core": 75.0
+      },
+      "agent": {
+        "key": "Koleda",
+        "level": 1,
+        "constellation": 5,
+        "ascension": 0,
+        "talent": {
+          "basic": 8,
+          "dodge": 1,
+          "assist": 1,
+          "special": 1,
+          "chain": 1,
+          "core": 0
+        }
+      }
+    }
+  ]
+}
