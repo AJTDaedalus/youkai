@@ -354,9 +354,8 @@ The critical path (full scan works, export round-trips) is validated. Remaining 
 
 **Root cause:** right column = 180px map + 8px gap + params box sized to remaining height (~180px), but `params_config` content needs ~190px and was laid out top-down with no scroll, so the last rows overflowed onto the chrome. Content height is also variable (path/override strings), so tightening spacing alone wouldn't be robust.
 
-**Fix** (`youkai/src/ui/app.rs`):
-- Wrapped params-box content in `ScrollArea::vertical().auto_shrink([false, false])` — the box is now a hard boundary; overflow scrolls inside the frame instead of bleeding onto the window border. Replaced the old `set_clip_rect` (ScrollArea clips).
-- `map_height` 180 → 140 to return vertical budget so the scrollbar normally never appears.
-- Params gutter `available_height() - 6.0` → `- 10.0` so the box border stops sitting flush against the frame line.
+**First attempt (reverted):** ScrollArea around the params box + `map_height` 180→140 + larger gutter. On Windows this reflowed the left column so the EXECUTE button dropped off-screen and the shortened map looked wrong. Reverted to the original layout.
 
-`cargo build` ✓ (only pre-existing dead-code warnings). Visual re-check on Windows pending.
+**Fix shipped** (`youkai/src/main.rs`): scaled the window up instead — `with_inner_size` factor `0.5` → `0.6` (800×500 → 960×600). The +100px height clears the params content overflow with room to spare while leaving the proven layout (fixed 360px left column, bottom-anchored EXECUTE button, 180px map) untouched. Window stays non-resizable; 960×600 is still small relative to any modern display.
+
+`cargo build --release --target x86_64-pc-windows-gnu` ✓ (only pre-existing dead-code warnings). Visual re-check on Windows pending.
