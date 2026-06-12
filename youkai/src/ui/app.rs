@@ -353,7 +353,7 @@ impl YoukaiApp {
     fn main_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let is_scanning = self.scan_handle.is_some();
 
-        ui.horizontal(|ui| {
+        ui.horizontal_top(|ui| {
             // ── LEFT COLUMN ──────────────────────────────────────────
             ui.vertical(|ui| {
                 ui.set_width(360.0);
