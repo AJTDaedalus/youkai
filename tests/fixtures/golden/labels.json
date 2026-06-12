@@ -1,0 +1,1000 @@
+{
+  "_meta": {
+    "created": "2026-06-10",
+    "source_runs": [
+      "live_20260605 (discs)",
+      "live_20260610_065548 (engines, agents)"
+    ],
+    "verification": "Every expected value below was human-verified against the committed crop/frame images (F2). Lock and location are excluded: lock reads the thumbnail cell outside the panel crop; location is resolve_locations' domain."
+  },
+  "discs": [
+    {
+      "id": "disc_0000",
+      "expect": {
+        "set_key": "NotesFromTheChained",
+        "slot_key": "1",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "hp",
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 18.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "atk_",
+            "value": 9.0
+          },
+          {
+            "key": "atk",
+            "value": 38.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0074",
+      "expect": {
+        "set_key": "MoonlightLullaby",
+        "slot_key": "2",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "pen",
+            "value": 36.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "anomProf",
+            "value": 18.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0148",
+      "expect": {
+        "set_key": "KingOfTheSummit",
+        "slot_key": "4",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "hp",
+            "value": 448.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def_",
+            "value": 9.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0222",
+      "expect": {
+        "set_key": "ShadowHarmony",
+        "slot_key": "2",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def",
+            "value": 45.0
+          },
+          {
+            "key": "crit_",
+            "value": 7.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0296",
+      "expect": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "4",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "crit_dmg_",
+        "substats": [
+          {
+            "key": "atk",
+            "value": 19.0
+          },
+          {
+            "key": "def",
+            "value": 30.0
+          },
+          {
+            "key": "crit_",
+            "value": 7.2
+          },
+          {
+            "key": "pen",
+            "value": 18.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0370",
+      "expect": {
+        "set_key": "AstralVoice",
+        "slot_key": "6",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "enerRegen_",
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "atk_",
+            "value": 6.0
+          },
+          {
+            "key": "def",
+            "value": 30.0
+          },
+          {
+            "key": "atk",
+            "value": 57.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0444",
+      "expect": {
+        "set_key": "WoodpeckerElectro",
+        "slot_key": "6",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "hp_",
+            "value": 6.0
+          },
+          {
+            "key": "atk",
+            "value": 57.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0518",
+      "expect": {
+        "set_key": "ChaoticMetal",
+        "slot_key": "3",
+        "level": 15,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "substats": [
+          {
+            "key": "pen",
+            "value": 18.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 9.6
+          },
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "anomProf",
+            "value": 18.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0592",
+      "expect": {
+        "set_key": "YunkuiTales",
+        "slot_key": "3",
+        "level": 9,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 4.8
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def_",
+            "value": 9.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0666",
+      "expect": {
+        "set_key": "ShadowHarmony",
+        "slot_key": "6",
+        "level": 4,
+        "rarity": 4,
+        "main_stat_key": "enerRegen_",
+        "substats": [
+          {
+            "key": "def_",
+            "value": 4.8
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0740",
+      "expect": {
+        "set_key": "WhiteWaterBallad",
+        "slot_key": "5",
+        "level": 3,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "atk",
+            "value": 19.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0814",
+      "expect": {
+        "set_key": "ChaosJazz",
+        "slot_key": "3",
+        "level": 3,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0888",
+      "expect": {
+        "set_key": "BunnyInWonderland",
+        "slot_key": "3",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "substats": [
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_0962",
+      "expect": {
+        "set_key": "WhiteWaterBallad",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1036",
+      "expect": {
+        "set_key": "DawnsBloom",
+        "slot_key": "2",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "substats": [
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1110",
+      "expect": {
+        "set_key": "YunkuiTales",
+        "slot_key": "1",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "hp",
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1184",
+      "expect": {
+        "set_key": "PhaethonsMelody",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          },
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1258",
+      "expect": {
+        "set_key": "ShadowHarmony",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "enerRegen_",
+        "substats": [
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1332",
+      "expect": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "2",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "substats": [
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1406",
+      "expect": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def_",
+        "substats": [
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "anomProf",
+            "value": 9.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1480",
+      "expect": {
+        "set_key": "BranchBladeSong",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1554",
+      "expect": {
+        "set_key": "AstralVoice",
+        "slot_key": "2",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk",
+        "substats": [
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1628",
+      "expect": {
+        "set_key": "AstralVoice",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "anomProf",
+        "substats": [
+          {
+            "key": "hp_",
+            "value": 3.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1702",
+      "expect": {
+        "set_key": "AstralVoice",
+        "slot_key": "5",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "electric_dmg_",
+        "substats": [
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "def_",
+            "value": 4.8
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1776",
+      "expect": {
+        "set_key": "AstralVoice",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def_",
+        "substats": [
+          {
+            "key": "hp",
+            "value": 112.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1850",
+      "expect": {
+        "set_key": "ProtoPunk",
+        "slot_key": "1",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "hp",
+        "substats": [
+          {
+            "key": "def_",
+            "value": 4.8
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1924",
+      "expect": {
+        "set_key": "WoodpeckerElectro",
+        "slot_key": "6",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "anomMas_",
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "def",
+            "value": 15.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "hp_",
+            "value": 3.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_1998",
+      "expect": {
+        "set_key": "FreedomBlues",
+        "slot_key": "4",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "crit_dmg_",
+            "value": 4.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_2072",
+      "expect": {
+        "set_key": "SwingJazz",
+        "slot_key": "3",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "def",
+        "substats": [
+          {
+            "key": "crit_",
+            "value": 2.4
+          },
+          {
+            "key": "atk_",
+            "value": 3.0
+          },
+          {
+            "key": "hp",
+            "value": 112.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "disc_2146",
+      "expect": {
+        "set_key": "ChaoticMetal",
+        "slot_key": "5",
+        "level": 0,
+        "rarity": 4,
+        "main_stat_key": "atk_",
+        "substats": [
+          {
+            "key": "anomProf",
+            "value": 9.0
+          },
+          {
+            "key": "pen",
+            "value": 9.0
+          },
+          {
+            "key": "crit_",
+            "value": 2.4
+          }
+        ]
+      }
+    }
+  ],
+  "engines": [
+    {
+      "id": "engine_0000",
+      "expect": {
+        "key": "HellfireGears",
+        "level": 60,
+        "ascension": 5,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0030",
+      "expect": {
+        "key": "TheVault",
+        "level": 60,
+        "ascension": 5,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0060",
+      "expect": {
+        "key": "StarlightEngine",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0090",
+      "expect": {
+        "key": "BoxCutter",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0120",
+      "expect": {
+        "key": "TheVault",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0150",
+      "expect": {
+        "key": "GrillOWisp",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0180",
+      "expect": {
+        "key": "LunarNoviluna",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1
+      }
+    },
+    {
+      "id": "engine_0210",
+      "expect": {
+        "key": "ReverbMarkIII",
+        "level": 0,
+        "ascension": 0,
+        "refinement": 1
+      }
+    }
+  ],
+  "agents": [
+    {
+      "id": "agent_000",
+      "expect": {
+        "key": "Zhao",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_003",
+      "expect": {
+        "key": "YeShunguang",
+        "level": 60,
+        "constellation": 2,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 10,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_004",
+      "expect": {
+        "key": "JuFufu",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_007",
+      "expect": {
+        "key": "Vivian",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 11,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_010",
+      "expect": {
+        "key": "Miyabi",
+        "level": 60,
+        "constellation": 2,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 12,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_011",
+      "expect": {
+        "key": "Yanagi",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 11,
+          "special": 12,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_018",
+      "expect": {
+        "key": "ZhuYuan",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 11,
+          "assist": 11,
+          "special": 12,
+          "chain": 12,
+          "core": 6
+        }
+      }
+    },
+    {
+      "id": "agent_020",
+      "expect": {
+        "key": "Trigger",
+        "level": 60,
+        "constellation": 0,
+        "ascension": 5,
+        "talent": {
+          "basic": 12,
+          "dodge": 10,
+          "assist": 10,
+          "special": 11,
+          "chain": 11,
+          "core": 6
+        }
+      }
+    }
+  ]
+}
