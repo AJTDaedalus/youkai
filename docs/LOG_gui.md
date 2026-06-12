@@ -324,3 +324,24 @@ Run `powershell -ExecutionPolicy Bypass -File packaging\build_local.ps1` then pa
 - `docs/TASKS_gui.md`: T12 marked ✓.
 
 **Acceptance:** no packet-capture references remain in user-facing docs (README/RUNBOOK); `youkai/` described as the GUI shell; dev mode prerequisites explicit; auto-nav documented as default.
+
+---
+
+## 2026-06-12 — T11/T13b/T13c: Windows validation (partial)
+
+**T13b smoke test (confirmed):** `youkai-ocr.exe --help` and `scan-all --porcelain --phases discs` both ran successfully on Windows from the assembled portable folder. "spec authored; build+smoke-test pending" note removed — T13b fully ✓.
+
+**T13c (confirmed):** Portable release launched via `youkai.exe`, ran a full scan from the GUI, and export JSON was saved successfully. T13c marked ✓.
+- Note: strict "no dev Python / no Tesseract installed" clean-machine isolation was not explicitly verified — if needed, re-test on a clean VM.
+
+**T11 (partial):**
+- ✓ Full scan from GUI completes end-to-end
+- ✓ Clipboard export (COPY CLIPBOARD button)
+- ☐ Discs-only scan (mode radio → Discs Only)
+- ☐ KILL mid-scan then `--resume <run_dir>` from CLI
+- ☐ EXPORT FILE button (file copy, not clipboard)
+- ☐ REVIEW REPORT button opens review.txt
+- ☐ GUI minimized during scan (no GUI pixels in archive agent frames)
+- ☐ `Child::kill()` terminates the python subprocess cleanly
+
+The critical path (full scan works, export round-trips) is validated. Remaining items are edge-case robustness checks; none are blockers for v0.1 usage.

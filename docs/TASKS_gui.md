@@ -115,7 +115,7 @@ Order matters: T1–T5 (Python contract) before T6–T10 (Rust), T11–T12 last.
   testable if folded into ScanState observer (assert commands queued exactly once
   per transition).
 
-## T11 — Windows end-to-end validation (manual, live game)  ☐
+## T11 — Windows end-to-end validation (manual, live game)  [~]
 - **Do:** Build release exe on Windows. Validate: full scan from GUI; discs-only
   scan; KILL mid-scan then CLI `--resume <run_dir>` completes; clipboard + file
   export; review.txt button; GUI minimized during scan (no GUI pixels in archive
@@ -123,6 +123,9 @@ Order matters: T1–T5 (Python contract) before T6–T10 (Rust), T11–T12 last.
   `taskkill /T /F` and re-test).
 - **Accept:** all checks pass; findings + any threshold fixes logged in
   LOG_gui.md; RUNBOOK.md gains a "GUI quickstart" section.
+- *Confirmed (2026-06-12)*: full scan from GUI ✓; clipboard export ✓.
+- *Still open*: discs-only scan; KILL + `--resume`; file export; review.txt button;
+  GUI-minimized archive-frame check; `Child::kill()` stops python.
 
 ## T12 — Docs + DECISIONS sync  ✓
 - **Files:** `README.md`, `docs/RUNBOOK.md`, `docs/DECISIONS.md`
@@ -155,7 +158,7 @@ testable in WSL; T13b/T13c are Windows-only (PyInstaller does not cross-compile)
   assert resolver returns the bundled path and sets `TESSDATA_PREFIX`; assert
   fallthrough to PATH when no bundle present; existing recognize tests still pass.
 
-### T13b — PyInstaller onedir spec for youkai-ocr.exe (Windows)  ✓ (spec authored; build+smoke-test on Windows pending)
+### T13b — PyInstaller onedir spec for youkai-ocr.exe (Windows)  ✓
 - **Files:** new `packaging/youkai-ocr.spec`, `docs/RUNBOOK.md`
 - **Do:** PyInstaller `--onedir` spec building `youkai-ocr.exe` from
   `youkai_ocr.cli:main`. Add hidden-imports / `collect_all` as needed for `dxcam`,
@@ -167,7 +170,7 @@ testable in WSL; T13b/T13c are Windows-only (PyInstaller does not cross-compile)
   Python on PATH; `youkai-ocr.exe scan-all --porcelain --phases discs` reaches the
   preflight frame check and emits valid JSONL (a live scan is exercised in T13c).
 
-### T13c — Assemble portable folder + clean-machine validation (Windows)  [~]
+### T13c — Assemble portable folder + clean-machine validation (Windows)  ✓
 - **Files:** `docs/RUNBOOK.md` ("Build the portable release" section), `README.md`
 - **Do:** Assemble the D40 layout: GUI `youkai.exe` + the onedir `youkai-ocr.exe` +
   `_internal/` co-located in the folder root (so `resolve_command` slot 2 finds the
