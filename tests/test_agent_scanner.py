@@ -60,6 +60,12 @@ class _MockRecognizer:
     def read_digits(self, img: Image.Image, profile: str) -> str:
         return self._lines.pop(0) if self._lines else ""
 
+    def read_slot(self, img: Image.Image, profile: str) -> str:
+        return self._lines.pop(0) if self._lines else ""
+
+    def read_cinema(self, img: Image.Image) -> str:
+        return self._lines.pop(0) if self._lines else ""
+
 
 # ── _crop (mirrors disc/engine tests) ─────────────────────────────────────────
 
@@ -173,14 +179,25 @@ def test_detect_core_rank_all():
     assert _detect_core_rank(frame, calib) == 6
 
 
-def test_detect_core_rank_white_not_teal():
-    """White pixels (OCR artifact) should not be counted as teal."""
+def test_detect_core_rank_golden_node_is_lit():
+    """A golden/orange node (character accent colour) must count as lit."""
     frame = _dark_frame()
     arr = np.array(frame)
-    # Flood first node center with white (G-R ≈ 0, not teal)
     bbox = _CORE_NODE_BBOXES[0]
     cx, cy = (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
-    arr[cy - 15 : cy + 15, cx - 15 : cx + 15] = [255, 255, 255]
+    arr[cy - 15 : cy + 15, cx - 15 : cx + 15] = [215, 150, 12]   # YeShunguang gold
+    frame = Image.fromarray(arr.astype(np.uint8), "RGB")
+    calib = _identity_calib()
+    assert _detect_core_rank(frame, calib) == 1
+
+
+def test_detect_core_rank_dark_not_lit():
+    """Dark-gray locked nodes (luma≈42) must not count as lit."""
+    frame = _dark_frame()
+    arr = np.array(frame)
+    for bbox in _CORE_NODE_BBOXES:
+        cx, cy = (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
+        arr[cy - 15 : cy + 15, cx - 15 : cx + 15] = [42, 42, 42]
     frame = Image.fromarray(arr.astype(np.uint8), "RGB")
     calib = _identity_calib()
     assert _detect_core_rank(frame, calib) == 0
@@ -258,7 +275,7 @@ def test_extract_skills_normal():
     rec = _MockRecognizer("CINEMA 3/6")
     mindscape, talent, conf = _extract_skills(frame, calib, rec)
     assert mindscape == 3
-    assert conf["mindscape"] == 85.0
+    assert conf["mindscape"] == 90.0
     assert talent.basic   == 0   # dark frame — no badge blobs detectable
     assert talent.dodge   == 0
     assert talent.core    == 0   # dark frame → no teal nodes
@@ -358,24 +375,24 @@ def test_extract_equip_frame_disc_slot():
     calib = _identity_calib()
     frame = _dark_frame()
     rec = _MockRecognizer("Shockstar Disco [2]")
-    result = _extract_equip_frame(frame, calib, rec, slot_idx=1)   # slot_idx 1 → slot_key "2"
+    result = _extract_equip_frame(frame, calib, rec, slot_idx=1)   # H18: idx 1 → slot# 6-1 = 5
     assert result is not None
     assert result["slot_idx"] == 1
-    assert result["slot_key"] == "2"
+    assert result["slot_key"] == "5"
     assert result["disc_set"] == "ShockstarDisco"
     assert result["engine_key"] is None
     assert result["confidence"] > 0
 
 
 def test_extract_equip_frame_slot_key_from_index():
-    """slot_key is always derived from slot_idx (0-based → 1-based), not from OCR title."""
+    """slot_key is derived from slot POSITION (slot# = 6 - idx, H18), not from the OCR title."""
     calib = _identity_calib()
     frame = _dark_frame()
-    # OCR title says [1] but slot_idx is 3 → slot_key must be "4"
+    # OCR title says [1] but slot_idx 3 is the lower-LEFT hexagon position → in-game slot 3.
     rec = _MockRecognizer("Chaotic Metal [1]")
     result = _extract_equip_frame(frame, calib, rec, slot_idx=3)
     assert result is not None
-    assert result["slot_key"] == "4"
+    assert result["slot_key"] == "3"
 
 
 def test_extract_equip_frame_engine_slot():
@@ -505,3 +522,85 @@ def test_resolve_locations_unequipped_slots_ignored():
     orphans = resolve_locations(records, discs, engines)
     assert orphans == []
     assert discs[0].location == "ZhuYuan"
+
+
+# ── T5: on_item callback ──────────────────────────────────────────────────────
+
+def test_scan_agents_on_item_called_once_per_agent_monotonically(monkeypatch):
+    """on_item is called exactly once per agent iteration with monotonically increasing scanned."""
+    import youkai_ocr.agent_scanner as ag
+
+    N = 4
+
+    class FakeListener:
+        def stop(self): pass
+
+    class FakeNavigator:
+        def __init__(self, *a, **k): pass
+        def scan(self):
+            dummy_frame = Image.new("RGB", (1920, 1080), (80, 80, 80))
+            for i in range(N):
+                yield i, dummy_frame, dummy_frame, []
+
+    calib = _identity_calib()
+
+    def fake_extract_base(frame, c, rec):
+        return "Zhao", 60, 5, {"key": 90.0, "level": 90.0, "ascension": 90.0}
+
+    def fake_extract_skills(frame, c, rec):
+        return 0, ZodTalent(basic=10, dodge=10, assist=10, special=10, chain=10, core=6), {}
+
+    _E = type("E", (), {"is_set": lambda s: False, "set": lambda s: None})()
+    monkeypatch.setattr(ag, "AgentNavigator", FakeNavigator)
+    monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ag, "make_kill_listener",
+                        lambda suppress_flag=None: (_E, FakeListener()))
+    monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
+    monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
+
+    calls: list[tuple[int, int | None]] = []
+    agents, _, _ = ag.scan_agents(
+        lambda: Image.new("RGB", (1920, 1080)), calib=calib,
+        on_item=lambda s, t: calls.append((s, t)),
+    )
+
+    assert len(calls) == N
+    scanned_values = [s for s, _ in calls]
+    assert scanned_values == list(range(1, N + 1)), f"not monotonically increasing: {scanned_values}"
+    assert all(t is None for _, t in calls), "total should always be None for agents"
+
+
+def test_scan_agents_on_item_omitted_no_error(monkeypatch):
+    """on_item=None (default) causes no error."""
+    import youkai_ocr.agent_scanner as ag
+
+    class FakeListener:
+        def stop(self): pass
+
+    class FakeNavigator:
+        def __init__(self, *a, **k): pass
+        def scan(self):
+            dummy = Image.new("RGB", (1920, 1080), (80, 80, 80))
+            for i in range(2):
+                yield i, dummy, dummy, []
+
+    calib = _identity_calib()
+
+    def fake_extract_base(frame, c, rec):
+        return "Zhao", 60, 5, {"key": 90.0, "level": 90.0, "ascension": 90.0}
+
+    def fake_extract_skills(frame, c, rec):
+        return 0, ZodTalent(basic=10, dodge=10, assist=10, special=10, chain=10, core=6), {}
+
+    _E = type("E", (), {"is_set": lambda s: False, "set": lambda s: None})()
+    monkeypatch.setattr(ag, "AgentNavigator", FakeNavigator)
+    monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ag, "make_kill_listener",
+                        lambda suppress_flag=None: (_E, FakeListener()))
+    monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
+    monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
+
+    agents, _, _ = ag.scan_agents(
+        lambda: Image.new("RGB", (1920, 1080)), calib=calib,
+    )
+    assert len(agents) == 2
