@@ -10,6 +10,7 @@ meta:
   reference_resolution: [1920, 1080]
   screenshot_offset: [1, 32]    # raw → game coords
   capture_date: "2026-06-01"
+  updated: "2026-06-11"   # H7a: added bottom_nav centres + screen_signatures from ref_11/12
 
   oq_status:
     OQ-ocr-4: resolved     # all panel geometries confirmed
@@ -22,6 +23,40 @@ meta:
     cross-reference disc/engine stats → set location. See DECISIONS.md D21.
     A3 portrait templates are still built as a fallback, but Equipment-tab
     cross-reference is the primary location-detection path.
+
+# ─────────────────────────────────────────────
+# STORAGE CATEGORY TABS
+# ─────────────────────────────────────────────
+# STORAGE CATEGORY TABS
+# ─────────────────────────────────────────────
+# Horizontal row of 4 circular tab buttons at the top of the right panel.
+# (NOT vertical pills on the right edge — earlier description was wrong.)
+# Measured 2026-06-11 from reference_1 (disc active) and reference_2 (engine active)
+# using active-circle centroid analysis.
+#
+# Tab circle button centers (game-area coords) — use these for click targeting:
+#   W-Engine:   (1447, 169)  circle spans game x=1413-1479, y=128-209
+#   Drive Disc: (1535, 169)  circle spans game x=1450-1619, y=128-210
+#
+# Detection: active_storage_tab() uses glow_bbox luma comparison.
+# glow_bbox[0] samples the left edge of the W-Engine circle (bright yellow when active).
+# glow_bbox[1] coincidentally detects a secondary detail-panel brightness change
+#   at game y=304-325 that correlates with Drive Disc being active — not the
+#   tab circle itself, but discrimination is 3.9× so it works reliably.
+storage_tabs:
+  glow_column_x: [1413, 1430]    # game-area x range of W-Engine tab left edge (detection only)
+  active_luma_threshold: 50      # mean luma > this → tab is active
+
+  tabs:
+    - index: 0
+      label: "W-Engine"
+      click_center: [1447, 169]
+      glow_bbox: [1413, 135, 1430, 203]   # active in ref_2: yellow [213,207,0] luma≈140
+    - index: 1
+      label: "Drive Disc"
+      click_center: [1535, 169]
+      glow_bbox: [1413, 304, 1430, 325]   # secondary effect: disc_active≈112, engine_active≈29
+    # Tabs 2 and 3 are visible but unused (filter icon, clock icon).
 
 # ─────────────────────────────────────────────
 # GRID (shared geometry — disc and engine inventories use identical layout)
@@ -94,7 +129,7 @@ disc_inventory:
       rarity_badge:
         bbox: [1421, 402, 1452, 436]
         preprocess: color_sample
-        colors: {S: [245, 200, 33], A: [160, 80, 220], B: [80, 140, 200]}
+        colors: {S: [228, 165, 54], A: [160, 80, 220], B: [80, 140, 200]}
 
       # "Lv. 15/15" — read the first integer only (current level).
       level:
@@ -177,7 +212,7 @@ engine_inventory:
       rarity_badge:
         bbox: [1421, 402, 1452, 436]
         preprocess: color_sample
-        colors: {S: [245, 200, 33], A: [160, 80, 220], B: [80, 140, 200]}
+        colors: {S: [228, 165, 54], A: [160, 80, 220], B: [80, 140, 200]}
 
       # "Lv. 60/60" — read current level (first integer).
       level:
@@ -220,14 +255,23 @@ engine_inventory:
 agent_roster:
   nav_path: "TODO — record from live session"
 
-  # Top strip of agent portrait circles used to navigate between agents.
-  # Measured y=32-75, peak luma at y=45-60, click target y=53.
-  # Left side (x<400) contains City/Home UI buttons — portrait detection starts at x=400.
+  # Detail-page top agent strip (H8 traversal).  We do NOT click portraits to select;
+  # we click the "<"/">" chevrons at the ends of the bar to move the selection ±1, and
+  # confirm each move by a pHash change over the portrait band (no silent skips).
+  # RE-MEASURED FROM LIVE 2026-06-07 (H11) on agent_000/base_stats.png:
+  #   bar spans ref x≈1005–1810 at y≈28–72; "<" glyph center (1025,44), ">" (1775,44);
+  #   portrait thumbnails fill x≈1045–1745.
+  # The previous H8 estimates ("<"@1140, ">"@1745) landed ON portraits, not the chevrons.
   roster_strip:
-    bbox: [0, 32, 1920, 75]
-    x_min_portraits: 400
-    click_y: 53
-    note: "Ignore x<400 (UI buttons). Click portrait center x at y=53."
+    bbox: [1005, 28, 1810, 72]
+    prev_chevron: [1025, 44]      # "<" previous agent
+    next_chevron: [1775, 44]      # ">" next agent
+    phash_band:   [1045, 28, 1750, 72]   # portrait band — identity hash for move-confirm
+    note: "Click chevrons (not portraits). Confirm each move via phash_band Hamming change."
+
+  # Agent-menu entry button: the left-side "Base" pill opens the detail page for the
+  # currently-previewed agent.  Re-centered from live 2026-06-07 (H11).
+  menu_base_button: [1140, 816]
 
   # ── Base Stats tab (ref_3) ────────────────────────────────
   # Tab bar measured 2026-06-05 from live archive (agent_000/base_stats.png):
@@ -370,24 +414,35 @@ agent_roster:
     tab_label: "Equipment"
     tab_bbox: [1577, 964, 1900, 1028]    # estimated from equal-width spacing; text at x=1569-1738
 
-    # 6 disc slots arranged in a rough hexagon around the center agent portrait.
-    # When a slot is clicked, the disc detail panel opens on the LEFT side of the screen.
-    # Slot positions are approximate (hexagonal arrangement, center ≈ x=1100, y=530).
-    # TODO: refine slot centers from ref_7 during B1.
+    # 6 disc slots arranged around the W-Engine center.
+    # RE-MEASURED FROM LIVE 2026-06-07 (H11) and VALIDATED against reference_7/15/16
+    # (H12) — all four sources place the discs at the SAME compact positions (HoughCircles
+    # ring centers agree to ±2px; x-span 1137–1662).  The old "wide" coords (1088–1785)
+    # were simply WRONG: they passed the prior saturation test only by landing on the
+    # colorful background filmstrip art in ref_7, not on the discs.  The hexagon does NOT
+    # move between the equipment tab (ref_16) and the disc-select view (ref_15), so this
+    # one coordinate set covers all 7 slot clicks.  See DECISIONS.md D30.
     disc_slots:
-      slot_1: {center: [1035, 310], bbox: [990, 265, 1085, 360]}   # top-right area
-      slot_2: {center: [1180, 330], bbox: [1135, 285, 1230, 380]}   # right-center
-      slot_3: {center: [1185, 500], bbox: [1140, 455, 1235, 550]}   # lower-right
-      slot_4: {center: [1035, 720], bbox: [990, 675, 1085, 770]}    # bottom-center
-      slot_5: {center: [870,  530], bbox: [825, 485, 920, 575]}     # left-center
-      slot_6: {center: [875,  320], bbox: [830, 275, 925, 370]}     # upper-left
-      note: "TODO: verify from ref_7 pixel analysis during B1."
+      slot_1: {center: [1558, 318], bbox: [1478, 238, 1638, 398]}   # upper-right
+      slot_2: {center: [1662, 538], bbox: [1582, 458, 1742, 618]}   # right-center
+      slot_3: {center: [1559, 760], bbox: [1479, 680, 1639, 840]}   # lower-right
+      slot_4: {center: [1239, 761], bbox: [1159, 681, 1319, 841]}   # lower-left
+      slot_5: {center: [1137, 539], bbox: [1057, 459, 1217, 619]}   # left-center
+      slot_6: {center: [1239, 320], bbox: [1159, 240, 1319, 400]}   # upper-left
 
     # W-Engine slot (center of the hexagon).
     engine_slot:
-      center: [1038, 515]
-      bbox: [985, 460, 1093, 570]
-      note: "TODO: verify from ref_7."
+      center: [1398, 515]
+      bbox:   [1318, 435, 1478, 595]
+      note: "H11/H12 live 2026-06-07. Hexagon center (disc-symmetry center ≈1398,538)."
+
+    # Render-gate parameters (H3, thresholds re-tuned H11 for an EQUIPPED engine).
+    render_gate:
+      engine_sample_center:  [1398, 515]
+      engine_sample_radius:  20
+      engine_luma_min:       80     # live equipped engine ≈125; base ≈33, skills ≈46 (empty ref_7 slot ≈198)
+      slot_panel_bbox:       [610, 120, 965, 210]
+      slot_panel_dark_frac:  0.08   # open: ≈0.16; no-panel (portrait): ≈0.01
 
     # When a slot is clicked (ref_9/ref_10), a disc detail panel opens in the CENTER.
     # Confirmed from pixel analysis 2026-06-04 (ref_9 = Bunny in Wonderland [1],
@@ -420,7 +475,7 @@ agent_roster:
         rarity_badge:
           bbox: [610, 210, 648, 260]
           preprocess: color_sample
-          colors: {S: [245, 200, 33], A: [160, 80, 220], B: [80, 140, 200]}
+          colors: {S: [228, 165, 54], A: [160, 80, 220], B: [80, 140, 200]}
 
         # "Lv. 15/15" — read first integer only (current level).
         level:
@@ -440,6 +495,69 @@ agent_roster:
       # prefer crop-per-row over full-panel OCR (confirmed from ref_9/ref_10):
       substat_row_pitch: 52    # px between substat rows
       value_x_range: [920, 965]   # right-aligned value column (game coords)
+
+# ─────────────────────────────────────────────
+# AGENT MENU  (ref_12, ref_13, ref_14)
+# ─────────────────────────────────────────────
+# Measured 2026-06-06. All coords in game-area pixels (1920×1080 ref).
+# Raw screenshots are 1922×1112; game-area = raw - (1, 32).
+agent_menu:
+  # 2-column owned-agent roster grid on the right side of the screen.
+  # Ownership filter: 75th-percentile HSV saturation over full column width > threshold.
+  # Owned portraits are colorful (high S); locked/EMPTY are desaturated (low S).
+  roster_grid:
+    left_col:  {x0: 1277, x1: 1537, cx: 1407}
+    right_col: {x0: 1537, x1: 1797, cx: 1667}
+    row_centers: [144, 402, 660, 918]   # cy of each visible row
+    row_stride: 258                     # px between row centers
+    row_half_height: 100                # ±px around cy for saturation sampling
+    sat_p75_threshold: 15               # 75th-percentile S > this → owned
+
+  # Detail-page tab bar (bottom bar, active when viewing agent detail).
+  # Measured from archive/live_20260605/agent_000/base_stats.png.
+  # Active tab highlighted yellow.
+  detail_tabs:
+    base_stats: {center: [1152, 996], bbox: [1011, 964, 1294, 1028]}
+    skills:     {center: [1435, 996], bbox: [1294, 964, 1577, 1028]}
+    equipment:  {center: [1718, 996], bbox: [1577, 964, 1900, 1028]}
+
+  # Bottom navigation bar (ref_11 main hub).
+  # Measured 2026-06-11 from reference_11_main_menu.png via OCR of the text label row
+  # (game_y=1041, the centre of the icon-label strip).
+  # Full icon+label spans roughly y=1025-1055; y=1041 is a safe click target.
+  bottom_nav:
+    storage:  {center: [1123, 1041]}   # 8th item; OCR text centre x=1123
+    agents:   {center: [1251, 1041]}   # 9th item; OCR text centre x=1251
+
+# ─────────────────────────────────────────────
+# SCREEN SIGNATURES  (used by assert_screen / active_screen)
+# ─────────────────────────────────────────────
+# Each signature is a bbox + threshold check on a region that is bright ONLY on
+# that screen and dark / absent on all other target screens.
+# Measured 2026-06-11 from reference_11/12/1/2.  All bboxes in game-area coords.
+screen_signatures:
+  main_menu:
+    # The bottom navigation icon-label strip (Storage/Agents/Store text row).
+    # Present only on the main-menu hub; black on all storage/agent screens.
+    #   ref_11 (main menu):   mean_luma = 55.2
+    #   ref_12 (agent menu):  mean_luma =  0.1
+    #   ref_1  (disc menu):   mean_luma =  0.0
+    #   ref_2  (engine menu): mean_luma =  0.0
+    sample_bbox: [1000, 1033, 1300, 1050]
+    check: mean_luma
+    threshold: 20        # > threshold → main menu confirmed
+
+  agent_selection_menu:
+    # The teal "SELECT" pill at the far-right edge of the agent grid.
+    # Present only when the agent selection menu (ref_12) is open.
+    #   ref_12 (agent menu):  teal_px = 4480
+    #   ref_11 (main menu):   teal_px =   55
+    #   ref_1  (disc menu):   teal_px =    0
+    #   ref_2  (engine menu): teal_px =    0
+    # teal defined as: G - R > 30 AND G > 100
+    sample_bbox: [1888, 430, 1920, 570]
+    check: teal_pixel_count
+    threshold: 1000      # > threshold → agent selection menu confirmed
 
 # ─────────────────────────────────────────────
 # CALIBRATION ANCHORS
