@@ -53,6 +53,14 @@ impl YoukaiApp {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         egui_material_icons::initialize(&cc.egui_ctx);
 
+        // Scale the whole UI up uniformly instead of enlarging the window.
+        // The layout is hand-tuned for an 800x500-point panel; resizing the
+        // window breaks the absolute-positioned clip/height math (empty terminal,
+        // missing EXECUTE button). With inner_size 960x600 and zoom 1.2 the egui
+        // panel is 960/1.2 = 800x500 points — identical geometry to the proven
+        // reference_18 layout — rendered 20% larger on screen.
+        cc.egui_ctx.set_zoom_factor(1.2);
+
         cc.egui_ctx.style_mut(|style| {
             style.visuals.window_corner_radius = egui::CornerRadius::ZERO;
             style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::ZERO;
