@@ -359,3 +359,7 @@ The critical path (full scan works, export round-trips) is validated. Remaining 
 **Fix shipped** (`youkai/src/main.rs`): scaled the window up instead — `with_inner_size` factor `0.5` → `0.6` (800×500 → 960×600). The +100px height clears the params content overflow with room to spare while leaving the proven layout (fixed 360px left column, bottom-anchored EXECUTE button, 180px map) untouched. Window stays non-resizable; 960×600 is still small relative to any modern display.
 
 `cargo build --release --target x86_64-pc-windows-gnu` ✓ (only pre-existing dead-code warnings). Visual re-check on Windows pending.
+
+**Second attempt (reverted):** enlarging the window via `inner_size` 0.5→0.6 (960×600). On Windows this ALSO broke the layout (reference_19_missing_execute.png): empty left terminal, no EXECUTE button, params box truncated after the radios. Cause: the layout uses absolute-positioned `allocate_ui_at_rect` + `set_clip_rect(intersect max_rect)` + `set_height(available-6)` + `bottom_up`, hand-tuned for an 800×500-**point** panel; changing the window point-size breaks the clip/height math.
+
+**Fix shipped:** keep the proven 800×500-point layout, scale the whole UI up via **zoom** instead. `main.rs` inner_size stays 960×600; `app.rs` adds `cc.egui_ctx.set_zoom_factor(1.2)`. egui panel points = 960/1.2 = 800×500 → byte-identical geometry to reference_18, rendered 20% larger. App.rs layout body remains identical to reference_18; the only additions vs session start are the zoom call + the inner_size factor.
