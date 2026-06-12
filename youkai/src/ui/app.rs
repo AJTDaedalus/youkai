@@ -565,7 +565,7 @@ impl YoukaiApp {
                 ui.set_width(right_width);
 
                 // Map image
-                let map_height = 180.0;
+                let map_height = 140.0;
                 egui::Frame::canvas(ui.style())
                     .fill(Color32::from_rgb(0, 0, 0))
                     .stroke(egui::Stroke::new(1.0, Color32::from_rgb(0x4d, 0x15, 0x38)))
@@ -611,17 +611,21 @@ impl YoukaiApp {
                 ui.add_space(8.0);
 
                 // Parameters / results panel
-                let params_height = ui.available_height() - 6.0;
+                let params_height = ui.available_height() - 10.0;
                 egui::Frame::canvas(ui.style())
                     .fill(Color32::from_rgb(0x07, 0x03, 0x0b))
                     .stroke(egui::Stroke::new(1.0, Color32::from_rgb(0x3d, 0x0f, 0x28)))
                     .inner_margin(8.0)
                     .show(ui, |ui| {
                         ui.set_height(params_height);
-                        ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
-                        ui.vertical(|ui| {
-                            self.params_panel(ui, is_scanning);
-                        });
+                        // ScrollArea is the hard boundary: any content taller than the
+                        // box scrolls inside the frame instead of bleeding onto the
+                        // window chrome (see reference_18_cut_off_gui.png).
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                self.params_panel(ui, is_scanning);
+                            });
                     });
             });
         });

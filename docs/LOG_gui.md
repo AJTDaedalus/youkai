@@ -345,3 +345,18 @@ Run `powershell -ExecutionPolicy Bypass -File packaging\build_local.ps1` then pa
 - ☐ `Child::kill()` terminates the python subprocess cleanly
 
 The critical path (full scan works, export round-trips) is validated. Remaining items are edge-case robustness checks; none are blockers for v0.1 usage.
+
+---
+
+## 2026-06-12 — UI fix: params box overflowing window frame
+
+**Symptom** (`screenshots/reference_18_cut_off_gui.png`): at the fixed 800×500 window, the right-column `SCAN PARAMETERS` content (`SCANNER OVERRIDE / (auto-detect)` rows) spilled past the box's bottom stroke and overlapped the GRID_OS window frame.
+
+**Root cause:** right column = 180px map + 8px gap + params box sized to remaining height (~180px), but `params_config` content needs ~190px and was laid out top-down with no scroll, so the last rows overflowed onto the chrome. Content height is also variable (path/override strings), so tightening spacing alone wouldn't be robust.
+
+**Fix** (`youkai/src/ui/app.rs`):
+- Wrapped params-box content in `ScrollArea::vertical().auto_shrink([false, false])` — the box is now a hard boundary; overflow scrolls inside the frame instead of bleeding onto the window border. Replaced the old `set_clip_rect` (ScrollArea clips).
+- `map_height` 180 → 140 to return vertical budget so the scrollbar normally never appears.
+- Params gutter `available_height() - 6.0` → `- 10.0` so the box border stops sitting flush against the frame line.
+
+`cargo build` ✓ (only pre-existing dead-code warnings). Visual re-check on Windows pending.
