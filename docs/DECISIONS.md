@@ -546,3 +546,682 @@ archived panels committed as test fixtures.
 2-line title). A future set with an even longer name (3-line title?) or a re-laid panel would need
 re-tuning — at which point migrate to the thumbnail-digit source (validate live then). The fallback
 is gated to `no_slot` cases only, so it can never *worsen* a currently-passing disc.
+
+## D22 — Roster traversal = detect-page + scroll-until-stable + pHash dedupe (no count header) (2026-06-06, Opus)
+
+**Context.** Discs/engines have a `[N/M]` header driving count-based traversal; the agent screen
+has none, and the top portrait strip is a horizontal scrolling list. The old scanner detected
+portraits from frame 1 only and never scrolled (RC-2).
+
+**Decision.** Traverse by: detect all portraits on the current strip frame → visit each un-seen one
+→ scroll horizontally (mechanism settled by live probe H0) → repeat. Dedupe by perceptual hash of
+the portrait thumbnail (primary); repeated agent-key is a secondary end signal. Terminate on strip
+frame-hash stability (adapt the `grid.py` scroll-stability pattern), or no new portraits, or key
+repeat; hard cap `AGENT_MAX=60`.
+
+**Rejected.** (a) Count-based traversal — no header exists. (b) Detect-once — the documented bug.
+(c) OCR a roster-size from a menu — not reliably shown on this screen.
+
+**Consequence.** New `seen`-set + scroll loop in `AgentNavigator`. The scroll mechanism is the one
+unknown; resolved by probe **before** building the loop (see D23 lesson). Tasks H0–H2.
+
+## D23 — Every in-screen navigation step gets a render-gate; geometry is measured from reference frames, never assumed (2026-06-06, Opus)
+
+**Context.** This session proved the live "Equipment" frames were actually **Skills-tab** captures
+(RC-3): the `_TAB_EQUIPMENT` click never activated Equipment, and slot clicks hit the Skills-tab
+core nodes. Independently, the disc/engine slot centers were ~350px too far left vs
+`reference_7` (engine center ≈ (1418,590) vs coded (1038,515)) — `navigation.yaml` still carried an
+un-actioned `TODO: refine slot centers from ref_7`. Both defects came from authoring geometry by
+assumption and from no step verifying it landed.
+
+**Decision.** (1) Mirror G1's render-gate at **every** agent nav step (tab activation, slot panel
+open): assert the expected screen rendered (luma/template predicate) and re-capture-then-log on
+failure — turn silent wrong-screen captures into loud, recoverable issues. (2) All agent geometry
+(roster strip, tab centers, slot centers, equip title) is re-measured from `reference_{3,4,7,8,9,10}`
+and verified by an offline assertion before any live run.
+
+**Consequence.** Tasks H1, H3. The gate predicate is itself unit-tested (True on ref_7, False on a
+skills frame). This is the durable fix for the class of bug that produced 3 dirs of useless frames.
+
+## D24 — Validate agent extraction offline against reference fixtures before any live run (2026-06-06, Opus)
+
+**Context.** Name/level/ascension/mindscape/skills/core/equip extraction was implemented but the
+3 captured agents' values were never checked (no stdout saved; only frames archived). Ascension and
+core-rank are admitted heuristics.
+
+**Decision.** Build offline fixtures from `reference_{3,4,9,10}` (mirror the G5 disc-slot fixture
+pattern) and assert known values (Zhao / Lv.60 / skills 12,10,11,12,11 / equip set+slot) via the
+existing `scan_single_frame_agent`. Fix bboxes; route still-uncertain heuristics to low-confidence
+→ F3 review report rather than trusting them. **No live agent run until these pass.**
+
+**Consequence.** Task H4. Removes the "captured but never validated" failure mode for good.
+
+## D25 — Tandem `scan-all`: keep manual menu gates, but make runs self-documenting + resumable (2026-06-06, Opus)
+
+**Context.** `scan-all` already chains discs→engines→agents→`resolve_locations`→merged export with
+`input()` gates between the three top-level menus. The last run lost all stdout (counts/assembly
+results unrecoverable from disk) and captured the wrong window.
+
+**Decision.** Keep the manual `input()` gates between the three *menus* (AdeptiScanner parity per
+D20/D-nav; auto-opening different top-level menus is out of scope). Add: (1) `archive/<run>/scan.log`
+tee + `results.json` (per-phase counts/issues/export) so runs are auditable from disk; (2) a
+per-phase preflight screen-assertion that aborts loudly on the wrong screen (would have caught the
+Game Pass-launcher capture); (3) per-phase output files enabling agent-phase resume without
+rescanning 2210 discs.
+
+**Rejected.** Full auto-navigation between menus — fragile, marginal benefit, against the established
+manual-menu convention. Logs-only without results.json — still not machine-auditable.
+
+**Consequence.** Task H5. Supersedes nothing in D21 (Equipment cross-ref remains the primary
+`location` path); makes that path finally exercisable end-to-end.
+
+## D26 — Full menu auto-navigation via the main-menu hub (supersedes D25's manual-gate stance) (2026-06-06, Opus)
+
+**Context.** D25 kept manual `input()` gates between the three top-level menus because no map of the
+hub existed. The user supplied it: `reference_11` (main menu) has `Storage` and `Agents` buttons; a
+universal red back-arrow (top-left, on every screen) returns to the hub. `reference_12` (agent menu)
+→ `Base` opens the agent stat page. Storage is a **single** screen — `reference_1`/`reference_2` show
+the same 4 top-right category tabs with the active one glowing (W-Engine yellow → Disc green), so
+engine↔disc is one tab click, not a menu round-trip. The active-tab glow pulses but always brightens.
+
+**Decision.** Build a single auto-navigating `scan-all` (task H7): main-menu → Storage → (engine tab,
+scan) → (disc tab, scan) → back → Agents → Base → agent page → (Phase H roster scan) →
+`resolve_locations` → merged export. Every transition is wrapped in a render-gate (D23); the
+category-tab glow IS the storage-screen gate (threshold the 4 tab bboxes, pick the brightest =
+active sub-tab). Keep manual `input()` gates only as a `--manual-nav` fallback.
+
+**Rejected.** Keeping manual gates (D25) — the hub map removes the fragility that justified them.
+Treating Storage as two separate menus — it's one screen with category tabs.
+
+**Consequence.** Task H7. Needs button coords from ref_11/ref_12 (Storage/Agents/Base), a
+`return_to_main()` primitive (back-arrow), and per-screen signatures. Anti-ban profile unchanged
+(synthetic UI clicks, external-only). Supersedes D25 on the gate question; D25's persistence +
+resume + preflight-assert points still stand and reinforce H7.
+
+## D27 — Agent roster traversal via the agent-menu GRID (reuse grid.py), not the detail-page top strip (2026-06-06, Opus)
+
+**Context.** The handoff + early plan (RC-1/RC-2, H1/H2) assumed the roster is the cramped horizontal
+portrait strip atop the agent *detail* page (ref_3), requiring bespoke strip detection + horizontal
+scroll. `reference_12_agent_menu.png` shows the agent *menu* roster is a **2D grid** of portraits on
+the right (Lv + promotion stars per cell) with `Base`/`Skills`/`Equipment` buttons — the same kind of
+surface as the disc/engine inventories. Reached from the bottom-bar `Agents` button (ref_11).
+
+**Decision.** Enumerate the roster by traversing the agent-menu grid with the proven `grid.py`
+machinery (detect cells → click → scroll-down → dedupe → stability end-detection), count-free
+(`AGENT_MAX=60`). Per selected agent, enter Base/Skills/Equipment from the detail page and capture as
+in H3. The detail-page top strip is ignored for enumeration. This dissolves RC-1 (strip band) and
+RC-2 (no scroll); only RC-3 (Equipment tab reach + slot geometry + render-gate) remains.
+
+**Also recorded (user decision, 2026-06-06):** keep **full automation including the Equipment tab**
+and derive disc/engine `location` from the **Equipment-tab cross-reference** (D21 stands) — not a
+screenshot-only agent pass and not inventory-thumbnail portrait matching. So Phase H keeps H3/H4 in
+full; do not re-open "simplify agents."
+
+**Consequence.** H0/H1/H2 reframed to grid traversal; H7a unblocked (ref_11/ref_12 readable in
+`screenshots/`). New `navigation.yaml:agent_menu` section. Grid cells are large/well-separated, so
+enumeration rides on already-working code — the main remaining risk is RC-3 and the agent-grid scroll
+stride (H0 tuning).
+
+## D28 — Agent-grid: blob-detect owned cells (skip locked/unowned), traverse with loop-around dedupe end (2026-06-06, Opus)
+
+**Context.** `reference_13/14` (agent menu scrolled) show: (1) the roster grid is **sheared**
+(diagonal layout, not rectilinear) and scrolls vertically over multiple pages; (2) the grid contains
+**unowned** agents — grayscale portraits with a **padlock on the rarity star**, "Lv. 1", plus an
+"EMPTY CHARACTER" placeholder — which must be ignored (user: "locked = not owned"); (3) there is no
+reliable scroll-to-top, but the list can be traversed in one direction and "looped around".
+
+**Decision.** (a) Detect grid cells by **saturation-thresholded blob detection** over the grid region
+rather than fixed col/row pitch — this absorbs the shear and yields click-centers directly. (b)
+**Ownership filter:** keep only colored/high-saturation portraits with a gold star; drop padlocked
+(desaturated) cells and "EMPTY CHARACTER". (c) **Traversal:** reuse only `grid.py`'s
+scroll/stability/dedupe loop; scroll one direction, dedupe owned cells by perceptual hash, and end
+when a page produces no new owned agent (locked tail reached or wrap/loop back to a seen agent). No
+scroll-to-top needed. Cap `AGENT_MAX=60`.
+
+**Rejected.** Rectilinear fixed-pitch cell model (grid.py default) — breaks on the shear.
+Scroll-to-top anchoring (as discs do via the scrollbar thumb) — user says there's no reliable first
+position; loop-around + dedupe makes it unnecessary.
+
+**Consequence.** H1 = blob detector + ownership classifier; H2 = scroll/dedupe/loop-around end.
+Refines D27. Fixtures: ref_12 (owned page), ref_13 (mid), ref_14 (locked tail).
+
+## D29 — Enumerate agents via the detail-page top strip, not the sheared menu grid (supersedes D27/D28 for traversal) (2026-06-07, Opus)
+
+**Context.** D28's saturation-blob grid detector was specified but **never implemented** — H1 shipped a
+fixed **2-column** model (centers 1407/1667) that "passed" only by validating against itself (LOG
+2026-06-07, RC-1). The live roster is **3 sheared columns** (≈1180/1460/1740); 1407/1667 fall in the
+**gutters** → `agent_nav_fail cx=1407 cy=144` → 0 agents. Attempting D28 properly, **three** offline
+detectors (luma columns, gold-star blobs, saturation blobs) all failed to segment the grid: portraits
+are packed edge-to-edge, all saturated, cells are parallelograms, and badges/coins add noise. The
+sheared, packed, scrolling grid is the wrong substrate for reliable fixed-input clicking.
+
+**Decision (user-approved 2026-06-07).** Enumerate agents through the **agent detail page's top agent
+strip** (ref_3): a clean, regular **horizontal** row of thumbnails (measured pitch ≈ 60px, y≈43,
+x≈1180–1850, `<`/`>` scroll arrows at the ends) on a dark background — trivially segmentable vs the
+grid. Flow: from the agent menu, click any one owned agent **once** to enter the detail page (this is
+the only click that triggers the "AGENT SELECT" wipe), then iterate by clicking each strip thumbnail
+(switching agents *within* the detail page — expected to skip the wipe), reading Base/Skills/Equipment
+via the bottom tabs (H3 geometry unchanged), pHash-dedupe, scroll the strip via `>`, end when a scroll
+yields no new thumbnail. The sheared menu grid is used only for the single entry click.
+
+**Rejected.** Fixed 2-column grid (RC-1, the bug). Live-tuned blob grid detector (D28) — the offline
+evidence says it stays fragile; the strip is strictly easier and likely also dodges the wipe.
+
+**Open (needs the H10 live probe — cannot be settled from static frames):** (1) does clicking a strip
+thumbnail switch agents **without** the full-screen wipe? (2) does the strip contain **all** owned
+agents (vs only team/recent)? (3) `>`-scroll stride + does it loop? Build the H8 loop against the probe
+answers; do not build blind.
+
+**Consequence.** D27/D28 superseded **for enumeration** (their RC-3/H3 equipment work + D21 location
+cross-reference stand). H1's grid detector retired. New tasks: H8 = strip-traversal; H10 = live probe.
+RC-2 (yellow active-tab predicate + Base/Skills render-gates) implemented this session, needed in any
+path. Implements the still-open half of D23 ("render-gate every nav step").
+
+---
+
+## D30 — Equipment-hexagon disc coords: the old "wide" coords were wrong; validate by ring geometry, not center saturation (H11→H12, 2026-06-07)
+
+**Context.** The H3 equipment-slot geometry ("wide" coords, x-span 1088–1785) was taken from
+`reference_7` using a center-**saturation** test, and the first live run missed every disc click.
+
+**Investigation.** H11 re-measured from the live archive (compact, x-span 1137–1662) and I *initially*
+mis-theorised that ref_7 was a "zoomed-up" layout. **H12 disproved that:** HoughCircles ring geometry on
+reference_7, reference_15, reference_16 AND the live archive all return the SAME compact disc centers
+(±2px). The user confirmed ref_16 (equipment tab) and ref_15 (disc-select) are accurate to the live
+client and that the hexagon does not move between them. The "wide" coords never pointed at discs at all
+— they passed the old saturation test only because they happened to land on the colorful background
+**filmstrip art** behind the hexagon in ref_7 (a false positive).
+
+**Decision.** Use the compact coords (correct for all sources). **Validate disc geometry by the rarity
+RING annulus (set-independent: ≥55 on a slot vs ≈20 off-disc), not center saturation** — a disc's
+central icon can be dark/muted (ref_16's blue discs read ~24 at center but ~97 on the ring), which is
+exactly the trap the original test fell into. The H3 disc test now runs against `reference_16` (committed
+to `reference/`). ref_7 is kept only for the engine-bright + panel-dark gates. The hexagon is identical
+on the equipment tab and the disc-select view, so one coordinate set covers all 7 slot clicks per agent.
+
+**Deferred.** Runtime hexagon detection (HoughCircles per session) remains the robust long-term guard
+against future layout/zoom drift, but is unnecessary now that four independent sources agree. Defer.
+
+---
+
+## D31 — Tab capture gates on CONTENT rendered + re-clicks dropped clicks; equipment stays content-ungated (H17, 2026-06-07, Opus 4.8)
+
+**Context.** Live run after H16: the Equipment tab "moused over but never clicked." Archive proof —
+`agent_000/equip_slot_*.png` were all the still-open **Skills** page, and `agent_000/skills.png` itself
+was banked **mid-animation** (Skills pill yellow, no nodes painted). The Equipment click fired *during*
+the Skills entrance animation and the game silently dropped it.
+
+**Two root causes in `_capture_tab`.** (1) The render gate only **re-CAPTURED** on a miss, never
+**re-CLICKED** — so a dropped click is unrecoverable (the pill never changes), unlike `_enter_detail_page`
+and `_advance` which already re-click. (2) The gate keyed only on the **yellow pill**, which lights when a
+tab is *selected*, **before** its page content animates in — so even a "passing" capture can be
+half-painted.
+
+**Decision.**
+1. **Re-click on dropped clicks.** `_capture_tab` polls (`_TAB_GATE_POLLS=8` × `_TAB_GATE_POLL_S=0.35`)
+   and re-clicks the tab every `_TAB_RECLICK_EVERY=3` polls while the pill is not yellow.
+2. **Gate on content, not just selection.** Require pill-yellow AND `_tab_content_rendered(frame, tab)`,
+   an agent-INDEPENDENT signal: base = agent-name luma `>30`; skills = mean skill-level luma `>40`
+   (measured from the live mid-anim frame vs the same page rendered, cross-checked vs reference_3/4).
+3. **Do NOT content-gate Equipment.** Its only agent-universal element (the engine hexagon) reads dark on
+   an **unequipped** W-Engine → a content gate would false-fail; and the equipment-tab frame feeds no OCR
+   (the per-slot frames do, each already gated by `_slot_panel_rendered`). Equipment keeps pill + re-click
+   only. This is why the H3 `_equip_tab_rendered` hexagon check stays a **warning**, not a gate.
+
+**Rejected.** Core-node teal as the skills signal — it is **mindscape-dependent** (a low-investment agent
+lights few nodes → low teal even when fully rendered) and would false-fail. Skill-level boxes are always
+present regardless of investment. Also rejected: a fixed post-pill sleep — animation duration varies; a
+measured content predicate is robust where a magic delay is not.
+
+---
+
+## D32 — Confirm agent moves on the character render, not the strip band; gate every equipment slot; reactive (not blind) trial-skip (2026-06-07, Opus 4.8)
+
+**Context.** Live feedback after H17 (LOG H18): the 2nd equipment slot frequently never got clicked;
+`>` navigation occasionally skipped 1–2 agents; empty slots (Koleda) were mis-recorded; trial agents
+(Nangong Yu) hung the pass on a "not available in preview mode" modal.
+
+**Decision 1 — advance/ring-closure key on `_CHARACTER_RENDER_BBOX`, not `_STRIP_PHASH_BBOX`.**
+A single `>`/`<` moves only the one-thumbnail selection highlight (the filmstrip does not scroll
+except at an edge — H10-Q3), so the strip band changes too little to detect a real move. `_advance`
+then re-clicked and double-advanced → skipped agents. The big full-body render changes completely on a
+move and is present on every detail tab (ref_7/16). New `_agent_id()` + `_AGENT_CHANGE_MIN_BITS` /
+`_AGENT_RING_CLOSE_MAX = 15`. *Rejected:* tightening the strip bbox to the selected thumbnail — its
+exact pixel position is unknown without a live measure, and the render is unambiguous regardless.
+
+**Decision 2 — render-gate every equipment slot with re-click (`_open_slot`).** The first slot opens
+the disc-select view with a slow layout wipe; a 2nd click during it is dropped (H17 class). Slot 0
+gates on the panel appearing; slots 1+ gate on the panel-title pHash switching from the prior slot,
+re-clicking on a miss. *Rejected:* an inter-slot Escape to re-enter from a clean hexagon each time —
+slower and contradicts the H10-Q4 confirmation that slots stay clickable; the drop is purely a
+first-open timing issue the gate handles. Also raised `_SLOT_CLICK_DELAY_S` 0.20→0.45 (the downstream
+per-agent OCR pause means there is no throughput cost to waiting).
+
+**Decision 3 — trial agents handled by a BOUNDED REACTIVE net, not a blind proactive detector.**
+When the Equipment hexagon never renders, Escape (dismiss the modal) and return `_EQUIP_UNAVAILABLE`
+→ `scan()` skips the agent (no export, no false location). *Rejected for now:* a proactive "skip
+before scanning" using the dark engine hexagon — an OWNED agent with an empty W-Engine (Koleda) reads
+the hexagon dark too, so that signal would mis-skip real agents. Proactive trial-skip is deferred
+until a Nangong Yu reference exists (do not calibrate blind — the RC-3 lesson). The bounded slot loop
+plus this net already remove the live HANG.
+
+**Deferred (needs live reference frames).** Empty-slot tracking (issue #3 — Koleda frame) and
+proactive trial detection (issue #4 — Nangong frame). Designed in DESIGN_agents.md H18; not
+implemented to avoid blind thresholds.
+
+---
+
+## D33 — Empty-slot detection keys on the EMPTY signature; fix reversed disc-slot numbering (2026-06-07, Opus 4.8)
+
+**Context.** Koleda reference (`reference_17`, fully unequipped) received. User: equipped sets have many
+colour schemes but the unequipped state is distinctive.
+
+**Decision 1 — detect the EMPTY signature, not the (varied) equipped ones.** Disc empty = dark center
+(luma <80; equipped ≥120 across all schemes). Engine empty = the "core available" glow = high
+colored-frac AND moderate luma (`>0.15 AND <150`); the luma guard rejects a hypothetical bright
+colourful engine (only one equipped-engine sample exists → OQ-H18c live confirm). `_read_equipment`
+skips empty slots (no click → no false inventory-disc location) and Escapes only if a panel opened.
+*Rejected:* clicking every slot and filtering by panel OCR — that is exactly the corruption path (an
+empty slot's panel shows the first inventory disc with high confidence).
+
+**Decision 2 — fix the reversed disc-slot numbering (`slot# = 6 - idx`).** Koleda's empty slots show
+their in-game numbers: the hexagon is 1,2,3 (left, top→down) then 4,5,6 (right, bottom→up), so
+`_DISC_SLOT_CENTERS[0]` (upper-right) is slot 6. The prior `slot_idx + 1` was reversed and would have
+made every `resolve_locations` disc match miss. New `_slot_number()`; ground-truthed by
+`test_slot_number_mapping_matches_koleda_layout`.
+
+**Decision 3 — keep the issue-4 reactive net as-is.** Verified Koleda's empty engine still passes
+`_equip_tab_rendered` (gate-window luma ≈110 > 80), so the net does not mis-skip a real owned agent
+with no engine. Proactive trial-skip still deferred to a Nangong frame (D32 stands).
+
+## D34 — Slot switch-detection gates on the panel BODY + a stability check, not the title alone (H19, 2026-06-08, Opus 4.8)
+
+**Context.** Live feedback round 3, after H18 shipped: "disc 2 still skipped sometimes," "errors from
+having to click repeatedly," and a new "hangs oddly on disc 4." All three trace to the H18 slot-open
+gate, which keyed on the disc TITLE region (`_EQUIP_TITLE_BBOX`).
+
+**Decision 1 — gate the slot switch on the detail BODY (`_SLOT_DETAIL_BBOX = (610,120,965,600)`), not
+the title.** Two adjacent slots holding the SAME disc set (4-piece sets are the norm) have
+near-identical titles, so the title-pHash Hamming stayed ≤ `_SLOT_CHANGE_MIN_BITS` even on a real
+switch → the gate never fired → 8 polls of futile re-clicking (`slot_gate_fail`) = the "clicking
+repeatedly" noise and the ~2.8s disc-4 "hang." The center panel's main-stat + substats DIFFER between
+two discs of one set (confirmed on `reference_8`), so the body is a reliable switch signal where the
+title is not. *Rejected:* detecting which hexagon carries the yellow-green selection ring — more robust
+in principle but needs a measured highlight signature we don't have; the body pHash is sufficient.
+
+**Decision 2 — require the panel to be STABLE across two captures before banking
+(`_SLOT_STABLE_MAX_BITS = 6`).** The title gate also false-POSITIVED on a half-faded panel: a mid-fade
+frame differed enough from the previous slot to look "switched," so a duplicate of the previous slot
+was banked → the missing disc read as "skipped." Requiring two consecutive matching body captures means
+a mid-animation frame is never accepted. A panel that settles UNCHANGED from the previous slot is a
+genuinely dropped click → re-click (the H18 recovery, preserved).
+
+**Decision 3 — settle the Equipment-tab frame before empty-detection (`_wait_region_stable` on
+`_EQUIP_RING_BBOX`).** `_capture_tab` returns the instant the yellow pill lights, BEFORE the hexagon
+disc icons fade in. `_disc_slot_equipped` then sampled a half-faded icon (luma < 80) and mis-flagged an
+EQUIPPED slot as EMPTY → skipped (the other half of "disc 2 skipped sometimes"). We now wait for the
+ring region to stabilize first. Tolerant 12-bit budget: the fade-in changes the whole ring (huge ΔpHash)
+while the one-slot selection-glow pulse is small. `_open_slot` returns `(frame, body_pHash)` so the next
+slot compares like-for-like instead of the caller recomputing a title hash.
+
+## D35 — Equipment render-gate must key on the disc ring, not the engine center (H20, 2026-06-08, Opus 4.8)
+
+**Context.** Live feedback: `equip_unavailable — hexagon not rendered after tab switch` fired on a real,
+fully-geared owned agent. The captured frame (`archive/live_20260605/nav_equip_unavailable.png`) shows a
+FULLY rendered Equipment tab: all 6 disc hexagons equipped (Lv. 15/15) and an equipped Lv. 60/60
+W-Engine. The agent was silently dropped from export (`agent_skip_trial`).
+
+**Root cause.** `_equip_tab_rendered` keys the render-gate on engine-center luma > 80
+(`_EQUIP_GATE_CENTER=(1398,515)`, r=20). The engine slot is the single most agent-variable region on the
+tab. Measured on the failing frame: engine-center luma = **78.3** (fails >80 by 1.7) because this
+W-Engine's render is dark "rocky" art. Meanwhile the 6 disc slots read 114–160 (all clearly equipped)
+and the ring bbox `(1100,280,1720,800)` has std 63 / gradient-edge-frac 0.142 — unmistakably rendered.
+
+This **falsifies D33-Decision-3**, which claimed the reactive net is safe because "Koleda's empty engine
+passes the gate at luma ≈110." That only checked an *empty* engine's glow; it never checked an *equipped*
+engine with dark art, which sits right at the threshold. The gate is brittle on a ~2-luma margin keyed to
+the one region that varies most by agent/engine — so it false-skips real agents two ways: (a) empty
+W-Engines whose glow dips under 80, and (b) equipped W-Engines with dark art (this case).
+
+**Decision.** Re-key the render-gate to the disc ring, which is agent- and engine-independent. Treat the
+Equipment tab as rendered if **any disc slot reads equipped** (`_disc_slot_equipped`) OR the engine reads
+bright (the existing `_EQUIP_GATE_LUMA_MIN` luma check). This is exactly the **union** of the old gate and
+the new disc path, so it strictly *widens* "rendered" → it can only remove false skips, never add them.
+The disc path rescues every agent wearing ≥1 disc (the live frame: 6 discs + dark engine); the engine-luma
+path uniquely still catches a fully-naked owned agent, because an EMPTY W-Engine shows the bright "core
+available" glow (Koleda: luma≈110), well clear of a skills/base page (luma≈39).
+
+**Rejected — a ring-bbox structural floor (gradient-edge-frac).** Initially added as a third "rendered"
+signal for the naked-agent case, then *empirically refuted by measurement*: edge-frac does NOT separate a
+genuinely-rendered empty hexagon (Koleda **0.034**) from a non-equipment skills page (**0.053**) — an empty
+ring is *less* busy than a content-filled page, so the empty hexagon scores lower than the very frame the
+gate must reject. Edge density in that bbox tracks page content, not hexagon presence. Removed.
+
+**Rejected:** raising the `_EQUIP_GATE_LUMA_MIN` margin or moving the engine window — still keys on the
+most-variable region; any threshold is fragile against dark engine art. **Rejected:** dropping the gate
+entirely — the H18 anti-hang purpose stands; trial/preview agents must still be escaped.
+
+**Residual gap (carries OQ-H18b).** One case neither signal covers: an agent with **zero discs AND a dark
+equipped-engine render** (luma < 80). It is vanishingly rare (who runs an engine but no discs?) and, more to
+the point, *indistinguishable* from a trial/preview frame without the deferred trial reference (H18.4b /
+Nangong) — so it is intentionally out of scope. The old engine-only gate also failed this case, so there is
+no regression. `_is_owned_agent` already backstops trial filtering upstream; proactive trial-skip remains
+the deferred H18.4b path. The data-loss bug (dropping real geared agents) was the higher cost; the union
+gate fixes it without new calibration risk.
+
+---
+
+## D36 — Per-slot empty-detection must be POST-CLICK content validation, not a pre-click pixel guess (H21)
+
+**Context.** Live (2026-06-08, `--agents-only --debug-overlays`, 5 agents): all 5 got 6/6 disc slots, but the
+**engine was captured on only 1 of 5**, and `equip_slot_6.png` was stale (prior run) for the rest. The engine
+is being *skipped*, not mis-clicked — a skip writes `frames.append(None)`: never clicked, never captured.
+
+**Root cause (measured, not assumed).** `_engine_slot_equipped` decides empty BEFORE clicking, from
+saturation+luma on the hexagon overview. The classes do not separate on those axes:
+
+| frame | state | colored | luma | `equipped()` |
+|---|---|---|---|---|
+| ref_7 | equipped (bright) | 0.022 | 210.5 | True ✓ |
+| ref_16 | **equipped** | 0.287 | 134.0 | **False ✗ (false-empty)** |
+| `nav_equip_unavailable` | **equipped** (dark) | 0.834 | 78.7 | **False ✗ (false-empty)** |
+| ref_17 Koleda | empty | 0.526 | 89.3 | False ✓ |
+
+The genuinely-empty engine (0.526 / 89) sits *between* the two equipped engines (0.287/134 and 0.834/79).
+No luma or colored-frac threshold separates them; hue-std doesn't either (empty 32.8 ∈ equipped 2.8–62.0).
+Only a bright low-saturation engine (ref_7) survives → engine captured ~1/5. This is the **same lesson as
+D35's rejected edge-frac fallback**: a per-slot pixel heuristic on the most agent-variable region cannot be
+calibrated to separate equipped from empty.
+
+**Decision.** Stop pre-classifying empty from overview pixels. Move to a **closed-loop per-slot contract**:
+click → confirm the selection panel opened (`_slot_panel_rendered`, already exists) → validate the **center
+detail pane by CONTENT** — an equipped slot renders title + `Lv. N/N` + substats (ref_8/9/10); record the
+slot iff that content parses ≥ `_EQUIP_CONF_MIN`, else treat as empty (no record, `location=""`). Content is
+an OCR-confirmable signal; overview pixels are not. This also gives the per-item completion gate the design
+has been missing: a slot is "done" only when its panel is confirmed parsed-or-empty.
+
+**Blocker / required input (the RC-3 discipline — do NOT guess).** We have references for the *equipped*
+selection screen (ref_8/9/10) but **none for "clicked a genuinely empty slot."** ref_6 is the W-Engine
+*Storage* inventory, not an agent's empty-engine click. The open risk (H18's stated corruption bug): clicking
+an empty slot may auto-select the first *inventory* item and render ITS title center → a false location. We
+cannot tell whether the empty-slot center pane is blank or auto-populated without the frame. **Action:** with
+Koleda (fully unequipped, ref_17) capture two frames — click an empty *disc* slot, and click the empty
+*engine* — to calibrate the post-click empty signal. Until then any post-click parse is unsafe for truly-empty
+slots.
+
+**Interim (engine-only, optional).** If the engine must be recovered before the refactor: the dominant cost is
+false-empty (proven 4/5), and `_is_owned_agent` already filters trial agents upstream, so bias the engine to
+"click + parse, emit iff conf ≥ `_EQUIP_CONF_MIN`". Accepts a small false-record risk on a truly-naked engine
+(rare; only Koleda-like agents) pending the empty reference. Discs keep the H19 path for now (no skip
+manifested this run).
+
+**Also found:** `_log.*` (slot_empty / slot_reclick / tab_gate_fail …) never reach `scan.log` — it tees
+stdout only, so every diagnostic marker from the live run was invisible (0 matches). The logger must be routed
+to the run dir, else live debugging stays blind (H21.3). This is why the engine skips left no log trace.
+
+### D36 UPDATE — references received (ref_18/19); OQ-H21a ANSWERED, signal corrected
+
+User supplied `reference_18_unequipped_disc_slot_clicked.png` and `reference_19_unequipped_engine_clicked.png`
+(`screenshots/`). They **refute the "blank center pane" assumption** and confirm the H18 corruption bug is
+real: clicking an empty slot **auto-selects inventory[0]** and renders its full detail center — ref_18 shows
+"Shockstar Disco [1]" Lv 15/15 + substats; ref_19 shows "Hellfire Gears" Lv 60/60. So **title/level parse is
+NOT a valid equipped signal** (it populates for empty slots too) — a naive post-click parse would assign the
+first inventory item as this agent's gear.
+
+**Corrected discriminator — the bottom ACTION-BAR.** Equipped slot → leftmost button **"Unequip All"** (disc)
+/ "Unequip" (engine); empty slot → **"Equip All"/"Equip"**. Verified with the project recognizer:
+
+| frame | state | action-bar OCR | `"unequip" in text` |
+|---|---|---|---|
+| ref_8 | equipped disc | `Unequip All` | True ✓ |
+| ref_18 | empty disc | `Equip All` | False ✓ |
+| ref_19 | empty engine | `Equip` (right-shifted) | False ✓ |
+
+Signal: **`equipped = "unequip" in ocr(action_bar).lower()`** — art-independent, OCR-confirmable, one rule for
+disc + engine, empty never contains "unequip". Use a bbox (or full-bar OCR, x≈1100–1750 y≈1002–1052 ref) wide
+enough to span BOTH the disc "Unequip All" (x≈1140–1310) and the right-shifted engine "Unequip" (x≈1380–1520);
+the narrow x1120–1360 bbox reads the disc fine but misses the engine's button position.
+
+**Net design change:** the pre-click `_disc_slot_equipped`/`_engine_slot_equipped` heuristics are retired as
+gates. Per slot: click → `_slot_panel_rendered` → action-bar OCR. If "unequip" → parse center, emit record;
+else empty → no record, no corruption. We never click "Equip" (no accidental equip; anti-ban unaffected — same
+synthetic click + Escape). Residual: an EQUIPPED-engine select frame is unconfirmed (we have empty-engine
+ref_19 only) — verify the engine "Unequip" position live (low risk; same button system as the disc).
+
+---
+
+## D37 — Owned/unowned detection: level + level-up chevron, NOT render hue (H22)
+
+**Author:** Opus 4.8 · **Date:** 2026-06-08 · **Supersedes:** H15 render-hue ownership test.
+
+**Symptom (live H21.4 run).** `scan-all --agents-only` silently skipped OWNED agents — Harumasa
+(after Billy), and Lycaon + Komano Manato (after Soldier 11). The new file-routed log
+(`archive/live_20260605/agent_scan.log`, D36/H21.1) showed them hitting the `agent_skip — unowned
+agent` path at consecutive strip positions (8+9, 28+29) — they were *classified unowned*, never
+opened. The user's framing was "agent switching"; the actual fault was the ownership gate.
+
+**Root cause — the H15 premise is false.** H15 assumed ZZZ renders unowned agents as a blue
+DUOTONE (monochrome, low hue spread) and keyed ownership on hue diversity of the character render.
+The live unowned frame (`nav_first_unowned.png`, "Hugo Vlad") is rendered in **full colour** — a
+blonde man in a blue suit; his `blue_frac=0.93` is the *suit*, not a duotone. Measured across the
+33 live owned captures, owned monochrome/ice agents collide with the unowned cluster with **no
+margin**:
+
+| agent | blue_frac | hue_std | H15 verdict |
+|---|---|---|---|
+| unowned Hugo | 0.93 | 24 | grayed ✓ |
+| owned agent_008 | 0.87 | 27 | grayed ✗ (false) |
+| owned agent_014 | 0.75 | 29 | grayed ✗ (false) |
+
+The render hue is **not separable**; the verdict flickered with the idle-animation frame, so
+monochrome owned agents (Lycaon = ice/white) were dropped intermittently. The footer "Fully
+Equipped" pill also fails (owned-but-unequipped agents read identical to unowned). **No single
+base-page pixel region separates owned from unowned.**
+
+**Reliable signal (user-confirmed in-game, validated on all 34 live frames).** Two parts:
+1. **Level ≥ 2 ⇒ OWNED.** An agent above Lv.1 cannot be unowned. This fast-path covers every built
+   agent — including maxed ones (level-up pill shows gray "MAX") and, critically, owned agents at an
+   ascension breakpoint (e.g. agent_023 at Lv.50/50) whose `>>` pill is **WHITE**. Their white pill
+   is therefore never mistaken for unowned.
+2. **At Lv.1 (or unreadable level), the level-up `>>` chevron decides.** It is an animated **GREEN**
+   on owned agents (shades of green, never white) and a static **WHITE** on unowned. On the live
+   frames green/white separate cleanly (green≈0.16, white≈0.16, each ≈0 on the other class) in the
+   pill bbox `(1315,455,1370,535)`. Live OCR reads **blank** on the unowned "Lv. 01" pill (→ level
+   0), which is folded in with Lv.1 → consult the chevron.
+
+The chevron alone is NOT ownership (agent_023, owned, also shows white) — it is only consulted once
+level is confirmed < 2.
+
+**Decision.** Replace `_is_owned_agent` (render hue) with:
+- `_chevron_color_fracs(frame, calib)` — pure pixel op returning (green_frac, white_frac) of the
+  `>>` pill.
+- `_classify_owned(level, green, white)` — pure rule: `level>=2 → owned`; else `green→owned`,
+  `white→unowned`, `neither→owned`.
+- `AgentNavigator._agent_owned(base_frame)` — OCRs the level (`_LEVEL_BBOX`), then `_classify_owned`.
+
+`scan()` now captures the **Base tab first** (it carries both the level pill and the chevron; it is
+the only tab where ownership is readable), decides ownership there, and only then pays for
+Skills/Equipment. An unowned agent costs one Base frame, not a 7-slot equipment walk.
+
+**Failure-direction principle.** Every ambiguity (blank level + no clear chevron) returns OWNED.
+Dropping an owned agent is the cardinal sin (data loss); an extra unowned capture is filterable
+noise. This also protects white-pill breakpoint agents (agent_023) if their level OCR ever fails:
+they fall to the chevron only when level<2, and the bias is toward capture.
+
+**Traversal unchanged (deliberately).** We still SKIP-don't-STOP unowned agents and stop on
+ring-close. The user noted the roster is sorted owned-first and "we can stop at the first unowned,"
+but entry lands on an *arbitrary* strip position, so an early-out could orphan the owned agents
+*before* the entry point. Skip-don't-stop + ring-close is complete regardless of entry/sort, and on
+a sorted roster the unowned tail is still traversed only once (cheaply).
+
+**Rejected alternatives.** (a) Retune the hue thresholds — impossible, clusters overlap. (b) Footer
+"Fully Equipped" pill — collides with owned-but-unequipped agents (agent_011/025/032 read ≈0, same
+as unowned). (c) Equipment-tab availability oracle — `nav_equip_unavailable.png` shows a
+fully-equipped owned agent was already false-dropped as "trial", so that gate has its own
+false-positive (logged as OQ-H22a). (d) Stop at first unowned — unsafe under arbitrary entry.
+
+**Open questions / latent risk.**
+- **OQ-H22a:** `_EQUIP_UNAVAILABLE` (equip-tab-rendered gate) false-positived on a fully-equipped
+  owned agent (`nav_equip_unavailable.png`) — a *second*, independent silent data-loss path. It did
+  NOT fire in the H21.4 run (no `agent_skip_trial` lines), so it is lower priority, but it should be
+  hardened (likely a render-settle/timing fix) before the next full scan. Tracked as a TASK.
+- **OQ-H22b:** the chevron bbox and green/white thresholds were calibrated at 1920×1080 (scale 1.0).
+  Confirm they hold at other capture resolutions, or scale them via calib like other bboxes (they
+  already pass through `_crop`, which scales — only the fractions are resolution-independent).
+
+---
+
+## D38 — Decommission Rust packet-sniffer (2026-06-10)
+
+**Context**: The original `youkai/` Rust app was a packet-sniffer prototype targeting the ZZZ
+KCP/MHY protocol. It was stopped at C0 (cipher blocked) in favour of the OCR approach (D-N-OCR).
+The Rust code is no longer built or maintained.
+
+**Choice**: Leave the `youkai/` subdirectory in place (no active build dependency, no ongoing
+maintenance), document it as decommissioned in README.md. Retain `youkai/src/zod.rs` as a
+field-name reference for the ZOD schema. The `irminsul/` subdirectory is an unmodified reference
+clone and is also left untouched.
+
+**Rationale**: Deleting source history offers no benefit — the code is already inert (not in the
+Python build path). Keeping `zod.rs` avoids re-deriving the camelCase ZOD field name rules. A
+README note is sufficient to prevent future contributors from confusing the dead Rust app with the
+active OCR tool.
+
+**Rejected**: Hard-deleting `youkai/src/` — would lose `zod.rs` schema reference and obscure the
+project's history without any practical benefit.
+
+---
+
+## D39 — GUI frontend: revive Rust egui shell over a subprocess JSONL protocol (2026-06-11)
+
+**Context**: scan-all (Python CLI) is validated for v0.1. The draft GUI is the egui
+"hacker console" in `youkai/`, still wired to the decommissioned packet-sniffer backend
+(D38): pktmon monitor, fake packet counters, irminsul update checker, admin elevation.
+
+**Choice** (amends D38): the `youkai/` crate returns to the active build path as a
+**GUI shell only**. All sniffer machinery is deleted (monitor/capture/wish/update/good/
+player_data, pcap deps, admin elevation); `zod.rs` stays as schema reference. The GUI
+spawns `youkai-ocr scan-all --porcelain` as a child process and renders a versioned
+JSONL event stream (run_start/phase_start/progress/phase_done/warning/done/error).
+Scan-mode config (Full vs Discs-only) maps to a new generic `--phases` flag
+(subsumes `--agents-only`). Porcelain implies non-interactive: `input()` prompts become
+`warning` events. The GUI minimizes itself during the scan — dxcam region capture would
+otherwise include GUI pixels overlapping the game window (correctness, not polish).
+
+**Rationale**: subprocess boundary gives crash isolation, a trivially correct KILL
+(process termination; run dir stays resumable), independent release cadence, and reuses
+the polished console design instead of rewriting it. The protocol is the stable seam:
+future frontends reuse it without touching scan logic.
+
+**Rejected**: (a) Python GUI rewrite — discards a finished design to remove one process
+boundary that is actually a feature. (b) PyO3 embedding — packaging pain, GIL vs egui
+threads, no crash isolation. (c) Rust port of the scanner — re-validating weeks of OCR
+heuristic tuning for no v0.1 benefit. (d) Keeping the old ExportSettings min-level
+filters — sniffer-era leftovers; the scanner exports everything, filtering is a
+non-goal for v0.1.
+
+**Plan**: BRIEF_gui.md / DESIGN_gui.md / TASKS_gui.md (T1–T13).
+
+---
+
+## D40 — Portable onedir distribution; tesseract bundled as a sibling binary (2026-06-11, Opus 4.8 Planner)
+
+**Context**: User requirement escalated mid-build: the tool must "run just from the exe"
+on a machine with no dev Python env. This promotes T13 (PyInstaller packaging) from a
+v0.1 stretch/non-goal to a hard requirement, and amends BRIEF_gui.md non-goal #3.
+
+**The forcing constraint**: `pytesseract` is a thin wrapper that shells out to an external
+`tesseract.exe` (Apache-2.0; redistributable) with its own `tessdata/*.traineddata`.
+PyInstaller bundles the Python deps (opencv-headless, dxcam, pynput, rapidfuzz, pywin32,
+Pillow) but **cannot** absorb tesseract — it is not a Python package. Therefore a single
+literal `.exe` is not cleanly achievable; tesseract must ride along as a bundled native
+binary the scanner points `pytesseract.tesseract_cmd` at.
+
+**Choice**: ship a **portable onedir folder** (AdeptiScanner model), not onefile.
+```
+youkai-portable/
+  youkai.exe          (Rust egui GUI)
+  youkai-ocr.exe      (PyInstaller --onedir scanner)
+  _internal/          (CPython + opencv/dxcam/... native deps)
+  tesseract/
+    tesseract.exe
+    tessdata/eng.traineddata
+  export/
+```
+- **onedir over onefile**: onefile temp-extracts a heavy native payload (opencv + dxcam
+  DLLs) to `%TEMP%` on every launch — slow startup and a magnet for AV false positives —
+  and gains nothing here, since tesseract ships as an external folder regardless. onedir
+  starts fast and the folder *is* the unit of distribution.
+- **Sibling discovery needs no Rust change**: `scan.rs::resolve_command` slot 2 already
+  looks for `youkai-ocr.exe` beside the GUI exe. Co-locating both in the folder root makes
+  the GUI find the scanner with zero code change.
+- **Bundled-tesseract resolution (the one Python change)**: extend
+  `TesseractRecognizer.__init__` (recognize.py) with a third lookup ahead of PATH and the
+  hardcoded Program Files path: a `tesseract/tesseract.exe` resolved relative to the
+  frozen-app root (`sys._MEIPASS` when frozen, else exe/cwd dir), and set `TESSDATA_PREFIX`
+  to the bundled `tessdata/`. Falls back to existing behavior in dev (WSL `python -m`).
+- **Dev mode unchanged**: slot 3 (`python -m youkai_ocr`) and WSL testing are untouched;
+  packaging is purely the Windows release path. The PyInstaller build runs on Windows
+  (no cross-compile from WSL), consistent with the existing "release exe built on Windows"
+  rule in TASKS_gui.md.
+
+**Rationale**: the only redistribution-blocking dependency is tesseract, and the cleanest
+honest answer to "external native binary" is "ship it beside the exe and point at it,"
+not "fight PyInstaller to fake a single file." onedir keeps startup fast and AV calm; the
+folder-as-unit matches what the sibling-exe discovery was already designed for.
+
+**Rejected**: (a) onefile per tool — slower temp-extraction, worse AV posture, tesseract
+still external anyway. (b) Embedding tesseract as onefile data extracted to temp —
+fragile path/temp resolution, heaviest AV risk, no real "single exe" win. (c) Requiring
+users to install Tesseract-OCR separately — defeats "portable," and the current Program
+Files auto-detect already covers the dev-with-installer case.
+
+**Plan delta**: TASKS_gui.md T13 is expanded into T13a (bundled-tesseract resolver,
+Python, testable in WSL) + T13b (PyInstaller onedir spec for youkai-ocr.exe) + T13c
+(assemble portable folder + clean-machine validation, Windows). BRIEF non-goal #3 amended.
+
+---
+
+## D41 — Frozen-exe build must be local-path + version-stamped (resolves T13c ImportError escalation)
+
+**Date:** 2026-06-12 (Planner/Opus, escalation resolution)
+
+**Context.** T13c repeatedly produced a frozen `youkai-ocr.exe` that crashed in
+`_cmd_scan_all` with `ImportError: attempted relative import with no known parent package`,
+even after (a) converting all `cli.py` imports to absolute, (b) adding `packaging/run.py`
+as the entry, and (c) 6+ `--clean` rebuilds. Worker escalated suspecting UNC/pyc caching.
+
+**Diagnosis (confirmed — the traceback is only self-consistent one way).** The crashing exe
+is a **stale artifact built from pre-fix source**, not the output of the current spec. Proof,
+three independent facts that all contradict current source/spec:
+1. Bootloader `Failed to execute script 'cli'` → the Analysis entry was `cli.py`, but the
+   current spec entry is `packaging/run.py` (would say `'run'`).
+2. `File "cli.py", line 1319, in <module>` → cli.py ran as `__main__` (its last line, 1319,
+   is `main()`); the current spec never runs cli.py as a top-level script.
+3. The relative-import error fires at `cli.py:849`, where **current** source is
+   `from youkai_ocr.capture import calibrate_window` (absolute). Only old source
+   (`from .capture …`) throws there. sed preserves line numbers, so 849/1319 still align.
+
+The current source + spec **cannot** produce this traceback. The fresh PyInstaller output is
+not what's being launched. Most likely the launched binary is the assembled
+`youkai-portable\youkai-ocr\youkai-ocr.exe` (assembled once, pre-run.py) while rebuilds land
+in `dist\`; or PyInstaller, reading source over the `\\wsl$` UNC mount, bundled a cached
+`cli.pyc`. The code is already correct — this is purely a stale-artifact problem.
+
+**Decision.**
+1. **Build on a local Windows path, never over UNC.** New `packaging/build_local.ps1`
+   robocopy-mirrors the repo to `C:\Temp\youkai-build\` (`/MIR` so dist/build/portable
+   leftovers are purged), runs `python -m PyInstaller packaging\youkai-ocr.spec --clean -y`
+   there, runs `assemble.ps1` there, then copies `youkai-portable\` back to the repo. Kills
+   the UNC mtime/pyc-cache class of bug outright.
+2. **Stamp a build id and gate on it.** Add `__version__` to `youkai_ocr/__init__.py`, wire a
+   `--version` action into the cli argparse, and have `build_local.ps1` assert the freshly
+   built exe prints the expected id **before** assembling. This makes "am I running the new
+   binary?" answerable in one command — a stale exe can never again pass silently. (Note
+   `--help` is *not* a sufficient gate: the broken import is deferred inside `_cmd_scan_all`,
+   so the stale exe's `--help` exits 0.)
+3. **Keep run.py entry + absolute imports** as defense-in-depth: either alone makes the exe
+   robust even if cli is run as `__main__`. Belt and suspenders, no reason to remove.
+
+**Rejected.** Continuing to debug imports (already correct — wastes cycles); building over UNC
+with more cache-clearing incantations (fragile, non-reproducible); onefile (orthogonal, see D40).

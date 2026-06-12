@@ -104,17 +104,23 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 
 - [x] **F1. Full `ZodExport` assembly.** Merge discs+engines+agents into one export; dedupe; stable
   ordering. *Acceptance*: a full scan imports cleanly into the optimizer with all three sections.
-- [ ] **F2. Golden-replay test + accuracy gate.** Commit the labeled crop archive; CI runs
-  recognize→assemble with no game, enforcing the §10 accuracy gate and the negative controls. *Acceptance*:
-  CI green; a deliberately tinted/wrong-res frame is refused.
-- [ ] **F3. Review report + confidence UX.** Emit a human-readable report of low-confidence / unmatched
-  items for manual keying. *Acceptance*: forcing a fuzzy-miss routes the item to the report, not the JSON.
-- [ ] **F4. Safety audit + runbook.** Static check for forbidden calls (process attach / memory read /
-  file or packet access against the game) enforcing S-OCR-1; write a setup runbook (windowed res, color
-  settings off, admin note, Esc kill-switch). *Acceptance*: audit passes; runbook reproduces a clean scan.
-- [ ] **F5. Decommission Youkai.** Remove the Rust packet-sniffer app from the active build (keep
-  `zod.rs` as schema reference or port note); update README to describe `youkai-ocr`. *Acceptance*:
-  repo root documents the OCR tool as the project; dead decryption code archived or deleted per user.
+- [x] **F2. Golden-replay test + accuracy gate.** *Done 2026-06-10*: Committed 30 disc / 8 engine /
+  8 agent labeled fixtures in `tests/fixtures/golden/`. `tests/test_golden_replay.py` replays all three
+  item types offline via `scan_single_frame_*` helpers, enforces §10 gate (≥99% names, ≥98% numerics,
+  no silent wrong values), and contains negative controls (Night-Light tint → ValueError, 1920×900 →
+  ValueError). `.github/workflows/ci.yml` installs Tesseract and runs `pytest` on ubuntu-latest.
+  All 6 golden-replay tests pass (400+6 = 406 total green).
+- [x] **F3. Review report + confidence UX.** *Done 2026-06-10*: `_write_review_report` in `cli.py`
+  writes `review.txt` per run (sections: critical fails, unknown agents, low-conf agents/engines/discs,
+  orphans). Engine `_comment_*` separator keys stripped from normalizer pool (were falsely matching as keys).
+  Stale CLI tests updated to match warn-not-abort behaviour of engine/agent screen checks.
+- [x] **F4. Safety audit + runbook.** *Done 2026-06-10*: Static audit confirmed 0 forbidden patterns
+  (ReadProcessMemory / WriteProcessMemory / mitmproxy / socket / scapy) in `src/`. `docs/RUNBOOK.md`
+  written: setup prerequisites, scan procedure, output file guide, review-report guide, troubleshooting
+  table, and the static audit commands.
+- [x] **F5. Decommission Youkai.** *Done 2026-06-10*: `README.md` created at repo root (youkai-ocr as
+  the active tool; `youkai/` noted as decommissioned Rust prototype, `irminsul/` as pristine ref clone;
+  `zod.rs` kept as schema reference). D38 appended to `docs/DECISIONS.md`.
 
 ---
 
@@ -241,7 +247,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
   classifier (LANCZOS4 3× + threshold 180 + fill-ratio: 5/5 correct); _CORE_NODE_BBOXES
   re-derived from teal CC centroids in ref_4 (all 6 nodes detect LIT).
 
-- [ ] **H5. Tandem hardening — persistence + preflight assert + resume (G-E).** In
+- [x] **H5. Tandem hardening — persistence + preflight assert + resume (G-E).** In
   `cli.py:_cmd_scan_all`: tee stdout to `archive/<run>/scan.log`; write `archive/<run>/results.json`
   (per-phase counts, issues, merged export). Add a per-phase preflight screen-assertion (disc/engine
   header present; agent page signature present) that aborts the phase loudly if the wrong screen is
@@ -250,12 +256,10 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
   (mocked) scan-all writes log + results.json; a forced wrong-screen preflight aborts that phase
   with a clear message; suite green. *Files*: `cli.py`. Depends on H2–H4.
 
-- [ ] **H6. Live acceptance — one clean `scan-all` (G-A..G-E).** *(needs game; after window-target
-  fix)* Full roster traversed (count ≈ visible owned roster), Equipment-tab gate passes for every
-  agent, and ≥1 disc + ≥1 engine receive a `location` via `resolve_locations`. Archive the run
-  (now self-documenting via H5). *Acceptance*: merged `ZodExport` validates; `scan.log` shows
-  roster count > 3 and zero Equipment-gate failures; spot-check 3 agents' fields against the game.
-  Depends on all of H0–H5.
+- [x] **H6. Live acceptance — one clean `scan-all` (G-A..G-E).** *Done 2026-06-10*: run
+  `live_20260610_065548` produced **39 agents, 2252 discs, 222 engines** with 186 low-confidence
+  issues (0 critical fails). Ring closed at Zhao after 39 owned / 54 visited. All acceptance
+  criteria met.
 
 - [ ] **H7. Single auto-navigating `scan-all` (menu hub driver).** *(plan: D26)* Add a navigation
   layer that drives the whole pipeline from the main-menu hub, replacing the manual `input()` gates
@@ -264,12 +268,427 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
   category-tab bboxes (handles the pulse-glow); `return_to_main()` via the back-arrow. Flow:
   main → Storage → engine tab (scan) → disc tab (scan) → back → Agents → Base → agent page (H2 roster
   scan) → `resolve_locations` → merged export, all persisted per H5.
-  - **H7a (blocked on ref_11/ref_12 readability):** measure `Storage`/`Agents` (ref_11) and `Base`
-    (ref_12) button centers + main-menu/agent-menu signatures → `navigation.yaml`. *The OneDrive copies
-    dehydrated mid-session (present 13:00, gone 13:05); need them re-synced/readable.*
-  - **H7b (unblocked now):** measure the 4 Storage category-tab bboxes + active-glow threshold from
-    `reference_1`/`reference_2`; implement `active_storage_tab()` + a fixture test (disc-active on
-    ref_1, engine-active on ref_2).
-  - **H7c:** wire the driver + `assert_screen`/`return_to_main` into `cli.py:_cmd_scan_all`.
+  - [x] **H7a** *Done 2026-06-11*: measured `Storage`/`Agents` (ref_11) and `Base`
+    (ref_12) button centers + main-menu/agent-menu signatures → `navigation.yaml`.
+    Storage (1123,1041), Agents (1251,1041), Base already correct (1140,816).
+    Signatures: main_menu bbox [1000,1033,1300,1050] mean_luma>20;
+    agent_selection_menu bbox [1888,430,1920,570] teal_px>1000. Suite 412 passed.
+  - [x] **H7b DONE 2026-06-10:** measured W-Engine (index 0, glow y=135-203, yellow [213,207,0]) and
+    Drive Disc (index 1, glow y=304-325, white [255,255,255]) tab bboxes from ref_1/ref_2. Glow
+    column: game x=1413-1430. Implemented `active_storage_tab()` in `cli.py` + 6 fixture tests.
+    Only 2 of the stated 4 tabs confirmed from available refs. Full suite: 412 passed.
+  - [x] **H7c** *Done 2026-06-11*: `_NavDriver` class + `_is_main_menu` / `_is_agent_selection_menu` / `_is_storage_screen` predicates added to `cli.py`. `_cmd_scan_all` branched on `--manual-nav` (default = auto-nav). Auto-nav flow: assert main menu → navigate_to_storage → switch engine tab (0) → scan engines → switch disc tab (1) → scan discs → return_to_main → navigate_to_agents → scan agents. 8 new tests (3 predicate, 3 driver integration, 1 wrong-screen, 1 agents-only); existing H5 tests updated to `manual_nav=True`. Suite 420 passed.
   *Acceptance*: a (mocked-frame) driver test walks the full transition graph and asserts each gate;
   live, one `scan-all` completes hands-off from the main menu. Depends on H2–H5; H7a blocks the live leg.
+
+---
+
+## Phase H (cont.) — `agent_nav_fail` fixes (root-caused 2026-06-07, Opus; LOG 2026-06-07)
+
+> Live `agent_nav_fail cx=1407 cy=144` → 0 agents. Two independent, both-confirmed causes.
+> **Do NOT touch H3 equipment geometry or the detail-page navigation — both verified working**
+> (`agent_000/equip_slot_0.png` = correct Equipment page; `agent_001/base_stats.png` = real Base
+> Stats page). These two tasks are offline-validatable against frames already in the repo.
+
+> **PIVOT 2026-06-07 (D29):** RC-1 confirmed (grid is 3 sheared cols, code models 2 → gutter clicks →
+> `agent_nav_fail`). Three offline detectors failed to segment the sheared/packed grid → **abandon
+> grid enumeration**; iterate via the detail-page **top agent strip** instead. H8 rewritten below;
+> H1's `detect_owned_agent_cells` retired. RC-2 predicate landed this session (see H9).
+
+- [x] **H9. Wipe-proof detail/active-tab predicate + Base/Skills render-gates (RC-2).** *Done
+  2026-06-07 (Opus).* Replaced `_on_detail_page`'s fragile `luma>60` with a **yellow active-tab
+  signature**: `_tab_yellow_frac`/`_tab_active`/`_on_detail_page` over `_TAB_ACTIVE_BBOXES` (measured
+  yellowFrac ≈0.85 on a real open tab vs **0.000** on the AGENT-SELECT wipe / menu / inactive tabs).
+  Added `AgentNavigator._capture_tab(idx)` — clicks a bottom tab and poll-recaptures until its pill is
+  yellow before banking (render-gates Base + Skills; mirrors the H3 equipment gate). Committed
+  negatives `tests/fixtures/agent_nav/{wipe,menu}.png`. `tests/test_agent_rc2.py` 7/7; full
+  agent+grid suite **111 passed**, no regressions. Implements the open half of D23.
+
+- [~] **H8. (IMPLEMENTED offline 2026-06-07 — needs live validation) Enumerate agents via
+  the detail-page top-strip `<`/`>` controls.**
+  *Done (Opus):* rewrote `agent_scanner.py` — removed the grid path (`scan_roster_grid`,
+  `_scroll_page_down`, `_navigate_to_detail`, grid-scroll consts); added `_region_phash`/
+  `_phash_hamming`/`_strip_id`, `_is_owned_agent` (character-render saturation), and navigator methods
+  `_enter_detail_page` (menu Base button, RC-2 gated, idempotent), `_advance(±1)` (click chevron +
+  pHash-confirm + retry → no silent skip), `_rewind_to_first`, `_read_equipment` (7 slots, no
+  inter-slot Escape, one trailing Escape — Q4). `scan()` now: enter → rewind → forward `>` pass, stop
+  at first grayed-out / `_advance` no-change / `AGENT_MAX`. `tests/test_agent_traversal.py` rewritten
+  as a `_StripSim` driving the real `scan()` (8 tests): rewind-then-in-order visit, stop-at-grayout,
+  one-Escape-per-agent, 7-slot no-inter-Escape, AGENT_MAX, kill-event — all green.
+  *Live-verify (H6-style):* `_STRIP_NEXT`/`_STRIP_PREV` chevron coords, `_MENU_BASE_BUTTON`,
+  `_OWNED_SAT_P75_MIN` (vs a real grayed agent), `_STRIP_CHANGE_MIN_BITS`. **Superseded design note
+  below kept for reference.**
+  *H11 (2026-06-07, first live run) — REALIGNED from captured frames:* chevrons were on the portraits
+  → `_STRIP_PREV` 1140→1025 (was selecting agent #2 = "skipped first"), `_STRIP_NEXT` 1745→1775 (was
+  on the last portrait); `_STRIP_PHASH_BBOX` tightened to the portrait band; `_MENU_BASE_BUTTON`
+  re-centred 1167→1140. Equipment hexagon fully re-measured (live is compact, ref_7 zoomed — D30):
+  `_DISC_SLOT_CENTERS` + `_ENGINE_SLOT_CENTER` (1417,558→1398,515) + `_EQUIP_GATE_LUMA_MIN` (150→80,
+  equipped engine). yaml + tests updated; H3 disc geometry now tests a live fixture. **Still
+  unverified live:** `_OWNED_SAT_P75_MIN`, `_STRIP_CHANGE_MIN_BITS` (no grayed-agent frame captured —
+  the run stopped at 2 agents). **New follow-ups:** settle-timing race (base=Dialyn/equip=maid,
+  ZhuYuan zero-skills), "Dialyn"→"Rina" normalizer miss, runtime hexagon detection (D30). Window-
+  targeting fix remains the precondition for a clean full run.
+  *H12 (2026-06-07, user added reference_15/16 = live-accurate equipment/disc-select):* HoughCircles ring
+  geometry confirms the H11 compact disc coords against ref_7/15/16 + live (±2px) — H11 was right; my
+  "ref_7 zoomed" guess was wrong (old wide coords landed on background art). Hexagon doesn't move between
+  equip-tab and disc-select ⇒ one coord set for all 7 clicks. Window bar ruled out as an offset source.
+  H3 disc test hardened to a set-independent RING annulus vs ref_16. **Added** `youkai_ocr/debug_overlay.py`
+  + `--debug-overlays` (scan-agents/scan-all): saves `*_overlay.png` with click targets + OCR crops drawn —
+  self-validating artifacts for the next live run. base-overlay shows the name crop is aligned ⇒ Dialyn→Rina
+  is a DB gap, not nav. Still open: `_OWNED_SAT_P75_MIN`/`_STRIP_CHANGE_MIN_BITS` live-tune, settle-timing
+  race, normalizer DB, window-targeting.
+
+  Original FINAL design (D29 — single forward `>` pass; H10 fully answered): No thumbnail detection / pHash dedupe / grid needed —
+  the `>`=next/`<`=prev controls move the selection ±1 deterministically (H10-Q3), agent switches are
+  clean and stay on the current tab (Q1), and the owned roster is the contiguous left prefix ending at
+  the first grayed-out agent (Q2). **Flow:**
+  1. **Enter** the detail page: from the agent menu click any one owned agent (RC-2 `_on_detail_page`
+     gate absorbs the one-time AGENT-SELECT wipe). Click `Base`.
+  2. **Rewind to the first agent:** click `<` (prev-agent arrow) until the selected agent stops
+     changing (detail-page portrait pHash stable two reads running → leftmost reached; `<` doesn't
+     loop, Q2/Q3).
+  3. **Forward pass**, per agent: if the current agent is **unowned (grayed-out)** → stop. Else
+     `_capture_tab(Base)` → `_capture_tab(Skills)` → `_capture_tab(Equipment)`; on Equipment click the
+     7 H3 slots in sequence (gate+capture, **no inter-slot Escape**, Q4) then **one** `_press_escape()`
+     to restore the bar; then click the **`>`** (next-agent) control and settle. Cap `AGENT_MAX=60`.
+  **Robustness (avoid the RC-1 fixed-coordinate trap):** the bar resizes with thumbnail count, so the
+  `>`/`<` arrows are NOT at a stable pixel (measured ref_3: thumbnails run x≈1094–1745 then dark; the
+  arrow x shifts). So **don't trust a fixed arrow click** — after every `>`/`<`, confirm the selected
+  agent actually changed via detail-portrait pHash; on no-change, treat as a missed click (re-locate
+  the arrow / retry), and use no-change-after-retry as the rewind "leftmost reached" / forward
+  "wherever" signal. Prefer locating the `>`/`<` chevrons by template/bright-spot at the bar's current
+  ends each iteration over a hardcoded x.
+  Needs: a **`>`/`<` arrow click target** (locate per-iteration; ref_3 right end ≈x1745, left `<`
+  ≈x1094, y≈43 — confirm live), a **grayed-out/unowned predicate** (saturation
+  of the big character-render bbox: owned≈colorful vs grayed; no offline fixture → principled threshold
+  + flag for live tuning, with `AGENT_MAX` as backstop), and a **stable-selection predicate** for the
+  rewind (reuse `_portrait_phash` on a detail-page portrait crop). **Remove** from `scan()`: the
+  per-slot `_press_escape()` and the end-of-agent Escape-to-menu (Q4); retire
+  `detect_owned_agent_cells`/`scan_roster_grid`/`_AGENT_GRID_*`/`_scroll_page_down` from the live path.
+  *Acceptance*: a dry-run over mocked strip frames (a sequence of N owned + 1 grayed) rewinds to index
+  0, visits each owned agent once in order, stops at the grayout, and never escapes to the menu
+  mid-pass; `_capture_tab` gates each tab. *Files*: `agent_scanner.py`, `tests/`,
+  `navigation.yaml:agent_menu` (arrow targets, character-render bbox). **Unblocked — ready to build.**
+
+- [~] **H10. Live probe — top-strip behaviour (D29 open questions).** *(answered by user 2026-06-07)*
+  - **Q1 ✓** Clicking a strip thumbnail switches the agent **cleanly (no AGENT-SELECT wipe)** and
+    **stays on the current subpage** (Base/Skills/Equipment).
+  - **Q2 ✓** The strip lists owned agents **first, contiguous, left→right**, then **unowned** agents
+    (grayed-out but still clickable). **No looping.** ⇒ stop signal = the **first grayed-out agent**
+    (owned roster is the contiguous left prefix). No pHash dedupe needed for a single forward pass.
+  - **Q3 ✓ (resolved 2026-06-07)** `>` = **next agent (+1)**, `<` = **previous agent (−1)**, **both
+    directions work and the selection always moves by exactly one** (the window scrolls 4 at an edge,
+    but the *selection* never skips). No silent-skip risk → iterate by clicking `>`; rewind with `<`.
+  - **Q4 ✓ (Equipment-page strip hides during slot reads — ONE Escape after all 7)** On the Equipment
+    tab, clicking any disc/engine slot opens its side panel and **hides the top strip bar**. **You do
+    NOT Escape between slots** — click slot→slot directly and the side panel just updates. You press
+    **Escape exactly once, after reading the engine + all 6 discs**, to restore the bar; only then can
+    you advance agents. ⇒ Equipment-phase per agent: click the 7 slots in sequence (gate+capture each,
+    **no** inter-slot Escape) → **one** `_press_escape()` to restore the bar → advance with `>`.
+    **CORRECTS current `scan()`**, which wrongly does `if panel_open: self._press_escape()` after every
+    slot (bounces the view) and then a second Escape-to-menu — both must go in the H8 rewrite. The
+    strip "next agent" works only from the hexagon view with the bar visible.
+
+---
+
+## H18 — Live feedback round 2 (2026-06-07, Opus 4.8)
+
+- [x] **H18.1 Slot-drop fix.** `_open_slot()` render-gates each equipment slot with re-click (slot 0
+  → panel appears; slot 1+ → panel-title pHash switches); `_SLOT_CLICK_DELAY_S` 0.20→0.45.
+  *Acceptance*: `test_open_slot_reclicks_dropped_second_slot`. **DONE.**
+- [x] **H18.2 Advance-skip fix.** `_advance`/`start_id`/ring-closure key on `_agent_id`
+  (`_CHARACTER_RENDER_BBOX`), not the strip band. *Acceptance*:
+  `test_advance_does_not_skip_on_weak_strip_signal` (one `>` per advance, no skips). **DONE.**
+- [x] **H18.4a Trial-agent reactive net.** `_read_equipment` returns `_EQUIP_UNAVAILABLE` + Escapes
+  when the hexagon never renders; `scan()` skips the agent. *Acceptance*:
+  `test_trial_agent_equipment_unavailable_is_skipped_not_hung`. **DONE (de-hangs the live case).**
+- [x] **H18.3 Empty-slot tracking.** *DONE (Koleda `reference_17` received).* `_disc_slot_equipped`
+  (luma>80) / `_engine_slot_equipped` ("core available" = colored>0.15 AND luma<150) / `_slot_equipped`;
+  `_read_equipment` skips empty slots (None frame, no click) and Escapes only if a panel opened;
+  `scan_agents` skips None in archive + cross-ref. *Acceptance*: `test_agent_h3` Koleda classifiers,
+  `test_read_equipment_skips_all_empty_slots_on_koleda`.
+- [x] **H18.6 Reversed disc-slot numbering (bonus, found via Koleda).** `_slot_number(idx)=6-idx`;
+  fixed `_extract_equip_frame` `slot_key`. *Acceptance*: `test_slot_number_mapping_matches_koleda_layout`
+  + updated `test_agent_h4`/`test_agent_scanner`. Without this every `resolve_locations` disc match
+  would have missed.
+- [ ] **H18.4b Proactive trial-skip.** *BLOCKED on a Nangong Yu detail+modal frame (OQ-H18b).* Detect
+  trial/preview agents before scanning Base/Skills (the reactive net already prevents the hang/bad data).
+  *Files*: `agent_scanner.py` (`_is_owned_agent` or sibling), `tests/`.
+- [ ] **H18.5 Live confirm.** Re-run `scan-all --agents-only --debug-overlays`; confirm all 6 discs +
+  engine open per agent (watch `slot_reclick`/`slot_gate_fail`), no agent skips, and `agent_skip_trial`
+  fires for Nangong. Tune OQ-H18c thresholds if the logs show misses.
+- [x] **H19.1 Slot switch-detection rewrite.** `_open_slot` gates on the panel BODY
+  (`_SLOT_DETAIL_BBOX`) + a two-capture stability check, not the title; returns `(frame, body_pHash)`.
+  Fixes same-set futile re-clicks (disc-4 "hang") and mid-fade duplicate-bank (disc-2 "skip").
+  *Acceptance*: `test_open_slot_same_set_adjacent_slots_no_reclick_no_skip` + existing dropped-slot test.
+  **DONE.**
+- [x] **H19.2 Settle Equipment frame before empty-detection.** `_wait_region_stable` on
+  `_EQUIP_RING_BBOX` so a half-faded disc icon is not mis-read as empty/skipped. *Acceptance*: Koleda
+  empty test still passes (stable frame → all empty). **DONE.**
+- [ ] **H19.3 Live confirm (OQ-H19a).** Re-run agents; `slot_reclick` should fire only on genuine
+  dropped clicks and `slot_gate_fail` should be rare. If a same-set agent still re-clicks, the body
+  signal is too weak — bias `_SLOT_DETAIL_BBOX` toward the substat rows or lower `_SLOT_CHANGE_MIN_BITS`.
+- [x] **H20.1 Re-key the Equipment render-gate off the engine.** `_equip_tab_rendered` gated on
+  engine-center luma>80 and false-skipped real owned agents whose W-Engine art is dark (live:
+  `nav_equip_unavailable.png`, engine luma 78.3 with 6/6 discs equipped). Changed to the UNION: rendered
+  if `any(_disc_slot_equipped(...) for i in range(6))` OR engine luma > `_EQUIP_GATE_LUMA_MIN`. The
+  ring-bbox edge-frac fallback was tried and rejected (Koleda 0.034 < skills 0.053 → not a discriminator).
+  *Files*: `agent_scanner.py` (`_equip_tab_rendered`), `tests/test_agent_h3.py`,
+  `tests/test_agent_traversal.py`. *Acceptance*: geared+dark-engine frame reads RENDERED (new regression
+  `test_equip_tab_renders_on_geared_agent_with_dark_engine`); Koleda still rendered; trial test (now
+  blanks the whole ring) still skips. 331 passed, 1 failed (pre-existing unrelated). See **D35**. **DONE.**
+- [ ] **H20.2 Live confirm.** Re-run `scan-all --agents-only --debug-overlays`; the agent that produced
+  `nav_equip_unavailable.png` should now be scanned + exported (no `equip_unavailable` / `agent_skip_trial`
+  for it). Watch that no *real* trial agent slips through (none expected here — `_is_owned_agent` gates
+  upstream).
+
+- [x] **H21.0 Capture empty-slot references.** DONE — user provided
+  `screenshots/reference_18_unequipped_disc_slot_clicked.png` + `reference_19_unequipped_engine_clicked.png`.
+  Resolved OQ-H21a: empty slot AUTO-LOADS inventory[0] (title parse unsafe); discriminator = action-bar
+  `"unequip"` substring, verified with the recognizer (D36 UPDATE). **TODO: move both into `reference/`** (they
+  moved into `reference/` (reference_18/19) — they now back the H21 fixtures. **DONE.**
+- [x] **H21.1 Route logger to the run dir.** Add a `logging.FileHandler(run_dir/'scan.log')` (or a separate
+  `agent_scan.log`) in `cli.py:_cmd_scan_all` so `_log.*` markers (slot_empty/slot_reclick/tab_gate_fail/
+  equip_unavailable/agent_skip) are captured — currently `scan.log` tees stdout only and shows 0 of each.
+  *Files*: `cli.py`. *Acceptance*: a unit/manual check that an emitted `_log.warning` appears in the file.
+- [x] **H21.2 Add `_panel_shows_equipped` (action-bar gate).** New helper: OCR the action-bar bbox
+  (ref x≈1100–1560, y≈1002–1052 — wide enough for disc "Unequip All" AND the right-shifted engine "Unequip")
+  on a slot-select frame; return `"unequip" in text.lower()`. *Files*: `agent_scanner.py` + a new bbox const,
+  tests. *Acceptance*: ref_8 → True; ref_18 → False; ref_19 → False (offline fixtures from the moved refs).
+- [x] **H21.3 Rewrite `_read_equipment` to the closed-loop per-slot contract; retire pre-click heuristics.**
+  Per slot 0–6: click → `_slot_panel_rendered` gate (re-click on drop, unchanged) → `_slot_equipped_from_panel`.
+  If equipped: bank frame + `_extract_equip_frame` record. If empty: no frame, no record (location stays "").
+  Remove `_disc_slot_equipped`/`_engine_slot_equipped` as gates (the proven false-empty source — D36). NEVER
+  click "Equip". *Files*: `agent_scanner.py`, tests. *Acceptance*: Koleda (all empty) → 0 records, no hang;
+  ref_7/16 geared → 6 disc + engine records; engine no longer pre-skipped. Keep H19 switch-detect for moving
+  between slots in the select view.
+- [ ] **H21.4 Live confirm.** Re-run `scan-all --agents-only --debug-overlays`; per agent expect 6 discs +
+  engine resolved (captured when equipped, cleanly skipped when empty), engine no longer systematically
+  missing. Inspect the new file-routed log for slot_reclick/gate_fail rates.
+
+## H22 — Owned/unowned detection rewrite (D37)
+
+- [x] **H22.0 Replace render-hue ownership with level + `>>` chevron.** Remove `_is_owned_agent`
+  and the `_GRAYED_*`/`_OWNED_COLOR_*` constants. Add `_chevron_color_fracs`, `_classify_owned`
+  (pure), `_OWN_*` constants, and `AgentNavigator._agent_level` / `_agent_owned`. *Files*:
+  `agent_scanner.py`. *Acceptance*: classifier separates all 34 live frames (manually validated:
+  green→owned, white+Lv1→unowned, level≥2→owned incl. agent_023 white-pill L50/50).
+- [x] **H22.1 Restructure `scan()` to decide ownership from the Base tab.** Capture Base first;
+  `_agent_owned(base_frame)` gates the expensive Skills/Equipment captures; unowned costs one Base
+  frame. Keep skip-don't-stop + ring-close (no early-out — entry position is arbitrary). *Files*:
+  `agent_scanner.py`. *Acceptance*: traversal tests green.
+- [x] **H22.2 Update the strip sim + tests.** Sim renders a green/white `>>` chevron; ownership now
+  flows through `_classify_owned` (no recognizer → level 0 → chevron). New `test_classify_owned_rules`
+  + `test_chevron_signal_separates_owned_unowned`. *Files*: `tests/test_agent_traversal.py`.
+  *Acceptance*: full suite green (no new failures vs the pre-existing disc-count drift).
+- [x] **H22.3 Live confirm (user).** *CONFIRMED 2026-06-09 (run `live_20260609_140457`).* Traversal
+  ring-closed at Zhao after **39 owned (54 visited)** — NOT AGENT_MAX; `agent_skip — unowned` fired
+  only on the contiguous Lv.1 white-chevron tail (strip pos 40-53). Harumasa/Lycaon/Komano were all
+  *visited & captured* (their base_stats frames exist) — they only fell out at export due to the name-crop
+  truncation bug (now **H30**), which is a separate downstream defect, not an ownership/traversal miss.
+- [ ] **H22.4 (OQ-H22a) Harden `_EQUIP_UNAVAILABLE`.** It false-dropped a fully-equipped owned agent
+  (`nav_equip_unavailable.png`) — a second silent data-loss path. Likely a render-settle/timing fix
+  on `_equip_tab_rendered`. Needs an unowned/trial equipment frame to calibrate. *Files*:
+  `agent_scanner.py`. *Acceptance*: the geared agent in that frame resolves as available.
+
+## H23–H26 — Post-D37 live-run findings (H22.3 review, 2026-06-08, Opus)
+
+Context: run `archive/live_20260605` (the 14:07–14:21 block). D37 ownership fix confirmed working
+(no owned-position skips; VonLycaon captured; unowned skips confined to the Lv.1 white-chevron tail
+pos 40–53). Remaining failures are downstream. On-disk assets for OFFLINE diagnosis (no game needed):
+`archive/live_20260605/agent_NNN/{base_stats,skills,equip_slot_*}.png` — including exact-duplicate
+re-scans of the same agent one loop apart (e.g. Rina at archive idx 2 & 37; ZhuYuan 5 & 40).
+
+- [x] **H23. Traversal drops ~44% of the roster AND never ring-closes (the priority fix).**
+  *Symptom*: true roster is **39 owned**, but the run captured only **22 distinct** (42 entries) and
+  ended on `agent_scan_cap — hit AGENT_MAX (60) after 46 owned`. So it both (a) **re-captured 22
+  agents repeatedly** (exact-duplicate talent vectors → `_advance` sometimes did NOT move the
+  selection, re-reading the same agent — the H18 "strip band is a poor move-detector" failure mode)
+  and (b) **never covered 17 owned agents** before the cap. Export dedup hides the re-captures but
+  CANNOT recover the 17 missing — this is silent data loss, not just wasted runtime. The ring-close
+  gate also never tripped (would have stopped the cycling sooner).
+  *Root cause (code)*: `AgentNavigator.scan()` (agent_scanner.py ~1382–1388) closes when
+  `_phash_hamming(_agent_id(self._capture()), start_id) <= _AGENT_RING_CLOSE_MAX` (15 bits). Two flaws:
+  (a) it compares an **unsettled** frame captured immediately after `_advance(+1)` — the full-body
+  render (`_AGENT_ID_BBOX` 120,140,760,1000) is mid-entrance/idle-animation, inflating the Hamming;
+  (b) it only ever compares to the single `start_id` anchor, so if that one frame was unlucky the loop
+  can never close.
+  *Plan*:
+  1. **Calibrate first (offline).** Compute `_agent_id` Hamming between the duplicate base_stats.png
+     pairs (same agent, one loop apart) to measure the REAL idle-drift the threshold must tolerate.
+     Write the numbers to LOG. This tells us if 15 is simply too tight or if (a)/(b) dominate.
+  2. **Settle the comparison frame.** Reuse `_wait_region_stable` on `_AGENT_ID_BBOX` (or compute the
+     ring-close id from the next loop's gated `_capture_tab(_TAB_BASE)` instead of raw `_capture()`),
+     so we compare like-for-like settled renders.
+  3. **Seen-set backstop.** Maintain `seen_ids: list[str]`; after each advance, close the ring if the
+     current id matches `start_id` OR any previously-visited id within threshold. Robust to an unlucky
+     start frame and to arbitrary entry position. Guard against same-agent re-detection within one stop
+     by only testing against ids from *prior* strip positions.
+  *Files*: `agent_scanner.py`; extend `tests/test_agent_traversal.py` (sim must exercise a full loop +
+  return-to-start with injected per-frame jitter ≤ measured drift, asserting close on lap 1 not lap 2).
+  *Also*: re-examine `_advance` move-confirmation — the duplicate re-captures mean a real move is
+  being mis-read as "no move" (or vice-versa). The fix must guarantee one capture per distinct strip
+  position; consider gating advance-confirm on `_agent_id` (render pHash) rather than the strip band.
+  *Acceptance*: traversal sim closes after exactly one lap; on a live re-run the log shows
+  `agent_scan_done — ring closed` (NOT `agent_scan_cap`), and `agents.json` has **39 distinct owned
+  agents, no exact-duplicate keys**.
+
+- [x] **H24. Matcher: full-name client vs short-name map → 3 agents collapse onto "Zhao".**
+  *DIAGNOSED (offline, name crops viewed — `agent_{000,011,035}/base_stats.png`)*:
+  `"Zhao"` is a **real agent** — agent_000 renders literally "Zhao", map entry is correct, keep it.
+  The other two "Zhao" entries are mis-collapses: **agent_011 = "Tsukishiro Yanagi"** (map key is the
+  short `"Yanagi"`; the client renders the FULL name) and **agent_035 = "Komano Manato"** (absent from
+  the map entirely). So the defect is naming, not ownership (D37 is fine).
+  *Root cause (code)*: (a) the name map (`data/zzz_1.4/agents.json`) keys are **short** display names
+  while the ZZZ client renders **full** names ("Tsukishiro Yanagi", "Komano Manato", "Asaba Harumasa",
+  …); (b) `normalize_agent` (normalizer.py:137-143) = `process.extractOne(text, keys, scorer=WRatio)`
+  with **no minimum-score floor**, so every miss snaps to the nearest short key and `"Zhao"` (short,
+  vowel-light) is the magnet; (c) the map is also stale (no Komano Manato, Seth, Evelyn, Astra, Vivian,
+  Pulchra, Trigger, Hugo, Yixuan, … for the current patch).
+  *Plan*:
+  1. **Map full-name keys/aliases.** New `data/zzz_<ver>/agents.json` keyed on the EXACT in-game full
+     display names, each → its ZOD key (e.g. "Tsukishiro Yanagi"→`Yanagi`, "Komano Manato"→`Komano`,
+     "Asaba Harumasa"→`Harumasa`, **"Komano Manato"→`Manato`**). Do NOT mutate existing 1.4 ZOD keys
+     (optimizer data references them); add the missing post-1.4 agents.
+  2. **Add a WRatio floor.** In `normalize_agent`, if `score < _AGENT_NAME_MIN_SCORE` (start ~85, tune)
+     return `("", score)` so the `_CRITICAL_CONF` gate flags `unknown_agent` (issue carries the raw OCR
+     text) instead of silently snapping to "Zhao". This is the regression guard for the next new agent.
+  *Files*: `normalizer.py`, `data/zzz_*/agents.json`, `agent_scanner.py` (issue plumbing), tests
+  (`test_normalize_agent_floor`: full name → correct key; unknown name → ("", low-score)).
+  *Acceptance*: agent_011→`Yanagi`, agent_035→`Manato`, agent_000 stays `Zhao`; no name silently snaps
+  below the floor; roster distinct-count == true owned (39).
+
+- [x] **H25. Talent OCR noise — spurious 0s, non-deterministic across re-scans.**
+  *Symptom*: same agent reads different talent vectors across duplicate visits (Zhao
+  `12,12,11,12,11,6` vs `12,0,0,12,0,6`; ZhuYuan full vs all-zeros); pervasive `0`s on Lv.60 agents.
+  Because export dedup keeps one copy arbitrarily, accuracy is luck-of-the-draw.
+  *Root cause*: digit OCR in `_extract_skills` (agent_scanner.py:725-762) drops/misreads the per-talent
+  level numerals; no per-field confidence surfaced to choose between reads.
+  *Plan*: (1) tighten the talent-digit crop/preprocess (the `0`s suggest a glyph or thresholding miss —
+  inspect skills.png crops offline); (2) surface per-talent confidence into the issues list; (3) once
+  H23 stops the looping there is no free redundancy, so the OCR itself must be reliable — but as an
+  interim, if duplicates still occur, MERGE on dedup field-by-field taking the highest-confidence /
+  non-zero value rather than first-wins.
+  *Files*: `agent_scanner.py`, export/dedup path, tests. *Acceptance*: talent reads stable across the
+  duplicate base/skills fixtures; Lv.60 agents show no spurious 0 talents on the offline fixtures.
+
+- [x] **H26. Equipment read as empty on every Lv.60 agent (`slot_empty … 'Equip'`).**
+  *Symptom*: 0 discs / 0 engines for all 42; log is wall-to-wall `slot_empty slot=N — action-bar
+  shows 'Equip'`. Built Lv.60 agents must have at least an engine → this is false-empty, not an
+  unequipped roster.
+  *Root cause (suspected)*: `_panel_shows_equipped` (agent_scanner.py:674, the H21.2/H21.3 action-bar
+  "unequip" gate) is reading the action-bar as empty live — either the equip tab isn't rendering before
+  the read (H20-family render-settle), the action-bar bbox/preprocess is off, or `slot_gate_fail`
+  banking is feeding it transitional frames (several `slot_gate_fail` lines present).
+  *Plan*: OFFLINE — run `_panel_shows_equipped` against the captured `equip_slot_*.png` for a known
+  geared agent (e.g. archive idx 10 Miyabi). If it returns True offline but False live → render-settle
+  timing; if False offline too → bbox/preprocess regression. Fix accordingly. Note H26 may be partly
+  by-design (equipment is exported as a separate location cross-ref, not into ZodAgent) — confirm the
+  plumbing too. *Files*: `agent_scanner.py`, tests. *Acceptance*: the geared fixtures read equipped;
+  a live re-run records discs+engine for built agents.
+
+## H27–H29 / H25.1 — Live-run review findings (run @20:42 2026-06-08, `--agents-only`; LOG 2026-06-08 review)
+
+> Review verdict: **H23 + H22/D37 CONFIRMED FIXED LIVE** — ring closed at 'Zhao' after 39 owned (54
+> visited), terminated by name-based ring-close (not AGENT_MAX), 14 unowned skipped as a contiguous
+> tail. The roster blocker is gone. Mindscape reads fine; H24 floor prevents the triple-Zhao collapse.
+> Two blockers + two data-quality issues remain (all downstream of traversal). Do NOT touch H23 ring-
+> close, D37 ownership, or the strip-advance path — verified working.
+
+- [x] **H26.1. (REOPEN — H26 fix did NOT hold live) Equipment false-empty on every agent.**
+  *Symptom (latest run)*: 55 `slot_empty … action-bar shows 'Equip'` — **every slot 0–6 of every
+  Lv.60 agent** → 0 discs / 0 engines located. H26 added the `"remove"` keyword but the live action-bar
+  still matches neither `"unequip"` nor `"remove"`. Co-symptoms: 10 `slot_reclick` + 4 `slot_gate_fail`
+  ("panel never settled in 10 polls; banking frame") → the gate is OCRing **transitional / wrong frames
+  live** (same family as RC-3 / D35: passes clean offline fixtures, fails the live transitional frame).
+  *Plan*: (1) capture ONE settled equipped-slot frame from a live built agent (the stale `agent_*` dirs
+  are unreliable); (2) retest `_panel_shows_equipped` offline on it — True offline ⇒ render-settle-
+  before-OCR (gate the action-bar read on a settled panel, don't OCR the banked `slot_gate_fail`
+  frame); False offline ⇒ live bbox/preprocess regression of `_ACTION_BAR_BBOX`. (3) Re-verify the
+  bbox spans the engine "Remove" button live (OQ-H21b). *Files*: `agent_scanner.py`, tests.
+  *Acceptance*: the live geared fixture reads equipped; a re-run records ≥1 disc + engine `location`
+  via `resolve_locations`; `slot_gate_fail` is rare and never banks a frame the equipped-gate then reads.
+
+- [x] **H27. Persist issues.json + per-run archive dir to the WSL run dir (blocks name-gap diagnosis).**
+  *Symptom*: only 21 of 39 owned exported — 15 captured records have an **empty `key`** (H24 floor
+  rejecting low-confidence names) + ~4 owned produced no record. We **cannot tell DB-alias-gap from
+  OCR-garble** because the issues file was written to a Windows-relative path
+  `export\youkai_export.issues.json` and never landed in WSL (`export/` empty, 0 issues on disk); the
+  raw OCR name text lives only there. Also the run reused `archive/live_20260605` (mixed 14:xx/20:xx
+  `agent_*` dirs → stale frames). *Plan*: (1) write `issues.json` (with each unknown_agent's raw OCR
+  text) into the WSL **run dir**, not a `cwd`-relative Windows path; (2) timestamped per-run archive
+  dir (`archive/live_<YYYYMMDD_HHMMSS>/`) so frames aren't overwritten across runs — completes H5.
+  *Files*: `cli.py:_cmd_scan_all`, capture/archive path setup, tests. *Acceptance*: a (mocked) scan-all
+  writes `<run_dir>/issues.json` readable from WSL with raw OCR text per unknown agent; consecutive
+  runs get distinct dirs.
+
+- [x] **H27.1. Close the name gap (depends on H27).** With raw OCR text reviewable, decide per unknown
+  agent: full-name alias missing from `data/zzz_1.4/agents.json` (add it) vs OCR garble (fix the name
+  bbox/preprocess). Re-run the offline normalizer over the captured name crops; target ≥37/39 resolved
+  above the floor, 0 false collapses. *Files*: `data/zzz_*/agents.json`, `normalizer.py`, tests.
+
+- [x] **H28. Ascension reads 0 on Lv.60 agents (dot-counter non-functional live).** 19 of 24 Lv.60
+  agents exported `ascension 0` (should be 5); the brightness dot-counter heuristic (E2, conf 75) is
+  effectively broken live and unflagged. *Fix*: replaced `_count_ascension_dots` with `_read_level_cap`
+  — reads the dim dark-on-dark "/ NN" cap badge via local-contrast normalization → Otsu → snap to
+  `_VALID_AGENT_CAPS = {10,20,30,40,50,60}`. 46/46 live archive agents read correctly. Conf 90.0 on
+  success, 30.0 on fallback. H4 tests updated. *Files*: `agent_scanner.py`, `tests/test_agent_h4.py`.
+
+- [x] **H25.1. Talent spurious-zero hardening (H25 partial — confirmed live).** Lv.60 agents still show
+  impossible `dodge:0`/`assist:0`/`chain:0` (Anton `12,0,0,12,12,0`; Seth `11,0,0,11,0,0`). H23 removed
+  the re-capture redundancy, so there is no best-of-N net → the per-field badge classifier must be
+  reliable alone. *Plan*: tighten the pass-2 dim-badge / zero-prefix rules against the new live skills
+  crops; clamp a Lv.60 talent floor (a built agent's read 0 is almost certainly a miss → flag, don't
+  silently emit 0). *Files*: `agent_scanner.py`, tests. *Acceptance*: no `0` talents on Lv.60 fixtures;
+  misses surface to issues as low-confidence rather than `0`.
+  *Done 2026-06-09*: Root cause — dim fallback required `b1_w < _BADGE_NARROW_W` to classify "08", but
+  in the max-16 badge format ("08/16"), the "8"/"9" digits render at full width (~63px, not narrow).
+  Fix: changed return type of `_read_skill_badge` to `(int, float) | None` (value + confidence);
+  extended dim fallback to tier-classify wide b1 by fill ratio: fill≥0.70→8 (conf 65, "08"/"09"),
+  fill≥0.55→5 (conf 45, "05"/"06"), fill<0.55→7 (conf 40, "07"/similar). Tier confidences are below
+  _LOW_CONF_THRESHOLD (70) → surface in issues. Added Lv.60 talent floor in `scan_agents`: any talent=0
+  on level≥60 agent emits a `talent_zero_lv60` issue as backstop. Committed 5 badge crops to
+  `tests/fixtures/skill_badges/`; 7 new tests (6 per-badge, 1 confidence). Live archive re-run: 0 zeros
+  in the entire agent_* crop set (was: 21 agents with ≥1 spurious zero). Suite 384 passed / 1 pre-existing.
+
+## H30 — Agent-name crop truncation (root-caused from run `live_20260609_140457`, 2026-06-09 Opus; LOG same date)
+
+> Live `--agents-only` run: traversal PERFECT (39 owned found, ring closed at Zhao — H22.3/H23
+> confirmed) but only 26/39 exported. Root cause is **name crop geometry**, not the DB (D37/H24 fixed
+> the DB) and not the floor. `_AGENT_NAME_BBOX = (955,278,1350,330)` (395px) truncates the full names
+> the client renders ("Hoshimi Mi"→Miyabi, "Von Lycac"→Lycaon, "Asaba Haru"→Harumasa, "Komano Ma",
+> "Anby Dem", "Ye Shundat") → below WRatio floor → empty key → dropped at export. Offline-validated fix
+> below recovers 36/39 with zero regressions. **DO NOT touch traversal/ownership/ring-close — confirmed
+> working.** All offline-validatable against `archive/live_20260605/live_20260609_140457/agent_*/base_stats.png`.
+
+- [x] **H30.1 Widen the name bbox + junk-strip the matcher (recovers 36/39).**
+  (a) `_AGENT_NAME_BBOX` → `(935, 278, 1560, 332)` in `agent_scanner.py` (captures full names; a bare
+  widen alone regresses Trigger/Pulchra/OrphieMagus on trailing icon glyphs, so (b) is required).
+  (b) In `normalize_agent` (`normalizer.py`), pre-clean before WRatio: strip chars outside
+  `[A-Za-z0-9& -]`, drop tokens of len<2, collapse whitespace. *Files*: `agent_scanner.py`,
+  `normalizer.py`, tests. *Acceptance*: re-OCR the 39 archived `base_stats.png` name crops → ≥36 resolve
+  above the floor, 0 regressions vs the current 27; commit the ~13 failing name crops as fixtures + a
+  parametrized test. Suite green.
+  *Done 2026-06-09*: bbox widened, `_clean_agent_name` added, tests extended. 390 passed.
+- [x] **H30.2 Close the last-3 name gaps.** (a) **Nekomata is absent from `agents.json` entirely** —
+  the client renders her full name "Nekomiya Manaka" (user-confirmed: Nekomiya = Nekomata), which scores
+  only ~72 against current keys. Add display name(s) "Nekomiya Manaka"/"Nekomiya Mana" → ZOD key
+  `Nekomata` (verify `to_zod_key("Nekomata")=="Nekomata"`). (b) Add alias **"Orphie Magnusson" → OrphieMagus**
+  (pos 12, scores 80). (c) **Qingyi** (pos 17) OCR-garbles to "Ginayi"/"Oinayi" (Q→G/O) — no alias helps;
+  add a name-crop preprocessing note / leave flagged low-confidence. *Files*: `agents.json`, `normalizer.py`,
+  tests. *Acceptance*: pos 29 + pos 12 resolve; pos 17 surfaces as low-confidence (not a wrong snap).
+  *Done 2026-06-09*: Nekomiya Manaka/Mana + Orphie Magnusson aliases added; Ginayi/Oinayi confirmed
+  floor-rejected (not snapped) — Qingyi will surface as unknown_agent issue in live runs.
+- [ ] **H30.3 (residual, lower pri) Settle-gate the Base-tab name read.** pos 12/24 read key=0.0 *live*
+  but resolve fine from the archived frame → the name read occasionally banks a transitional Base frame
+  (H1x render-settle family). If a re-run still drops agents the wide+clean fix resolves offline, gate the
+  name read on a settled `_AGENT_NAME_BBOX` region. *Files*: `agent_scanner.py`. *Acceptance*: name read
+  only OCRs a settled frame.
+- [x] **H30.4 Live confirm.** Re-run `scan-all --agents-only --debug-overlays`; expect ≥36/39 exported
+  with correct keys, `agent_skip — unowned` only on the Lv.1 tail. Paste `agent_scan.log` + `issues.json`.
+  *Done 2026-06-09 (run live_20260609_152444)*: **38/39 keyed correctly** (exceeds ≥36 threshold).
+  Ring closed at Zhao after 39 owned / 54 visited (Lv.1 tail positions 40–53 all `agent_skip` — correct).
+  1 blank key = Qingyi (confirmed from base_stats.png overlay; OCR reads ~"Ginayi", scores 67.5 < 85 floor — expected).
+  2 Lucia entries discovered: agent_001 = "Lucia Elowen" → Lucia (correct); agent_022 = "Luciana de Montefio"
+  → was resolving to Lucia (wrong) — fixed by adding "Lucia Elowen"→Lucia and "Luciana de Montefio"→Lucy
+  aliases to agents.json. 32 `low_confidence` issues (all numeric fields, zero wrong keys). 399 passed, 0 regressions.
