@@ -1,109 +1,76 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::fmt::Display;
 use std::path::PathBuf;
-use std::time::Instant;
 
 use anyhow::{Context, Result};
-use clap::Parser;
-use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
 use tracing_appender::rolling::Rotation;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, reload};
 
-use crate::player_data::ExportSettings;
-
+mod scan;
 mod ui;
-mod capture;
-mod good;
-mod monitor;
-mod player_data;
-mod update;
-mod wish;
-mod zod;
+
+pub use scan::{ScanConfig, ScanHandle, ScanMode};
 
 const APP_ID: &str = "youkai";
 
-#[derive(Clone, Copy, Debug)]
-pub enum ConfirmationType {
-    Initial,
-    Update,
-}
-
 #[derive(Clone, Debug)]
-pub enum State {
-    Starting,
-    CheckingForUpdate,
-    WaitingForUpdateConfirmation(String),
-    Updating,
-    Updated,
-    CheckingForData,
-    WaitingForDownloadConfirmation(ConfirmationType),
-    Downloading,
-    Main,
+pub struct PhaseCounts {
+    pub engines: Option<PhaseResult>,
+    pub discs: Option<PhaseResult>,
+    pub agents: Option<PhaseResult>,
 }
 
-#[derive(Debug)]
-pub enum Message {
-    UpdateAcknowledged,
-    UpdateCanceled,
-    DownloadAcknowledged,
-    StartCapture(bool),
-    StopCapture,
-    ExportZenlessOptimizer(ExportSettings, oneshot::Sender<Result<String>>),
-}
-
-#[derive(Clone, Debug)]
-pub struct DataUpdated {
-    achievements_updated: Option<Instant>,
-    characters_updated: Option<Instant>,
-    items_updated: Option<Instant>,
-}
-
-impl DataUpdated {
-    pub fn new() -> Self {
-        Self {
-            achievements_updated: None,
-            characters_updated: None,
-            items_updated: None,
-        }
-    }
-}
-
-impl Default for DataUpdated {
-    fn default() -> Self {
-        Self::new()
+impl PhaseCounts {
+    pub fn empty() -> Self {
+        Self { engines: None, discs: None, agents: None }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct AppState {
-    state: State,
-    capturing: bool,
-    updated: DataUpdated,
+pub struct PhaseResult {
+    pub count: u32,
+    pub issues: u32,
 }
 
-impl AppState {
-    fn new() -> Self {
-        AppState {
-            state: State::Starting,
-            capturing: false,
-            updated: DataUpdated::new(),
-        }
-    }
+#[derive(Clone, Debug)]
+pub struct Summary {
+    pub agents: u32,
+    pub discs: u32,
+    pub engines: u32,
+    pub issues: u32,
 }
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(long, default_value_t = false)]
-    no_admin: bool,
-    #[arg(long, default_value_t = false)]
-    capture_all_udp: bool,
+#[derive(Clone, Debug)]
+pub enum ScanPhase {
+    Engines,
+    Discs,
+    Agents,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, Default)]
+#[derive(Clone, Debug)]
+pub enum ScanState {
+    Idle,
+    Running {
+        phase: Option<ScanPhase>,
+        scanned: u32,
+        total: Option<u32>,
+        counts: PhaseCounts,
+    },
+    Done {
+        summary: Summary,
+        output: PathBuf,
+        run_dir: PathBuf,
+        review_path: Option<PathBuf>,
+    },
+    Failed {
+        message: String,
+        run_dir: Option<PathBuf>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, Default)]
 pub enum TracingLevel {
     #[default]
     Default,
@@ -140,7 +107,7 @@ impl TracingLevel {
     }
 }
 
-struct ReloadHandle(reload::Handle<EnvFilter, tracing_subscriber::Registry>);
+pub struct ReloadHandle(reload::Handle<EnvFilter, tracing_subscriber::Registry>);
 
 impl ReloadHandle {
     pub fn set_filter(&mut self, filter: &str) {
@@ -154,13 +121,6 @@ impl ReloadHandle {
 fn main() -> eframe::Result {
     let (_guard, reload_handle) = tracing_init().unwrap();
 
-    let args = Args::parse();
-
-    if !args.no_admin {
-        #[cfg(windows)]
-        ui::admin::ensure_admin();
-    }
-
     let background_image_size = [1600., 1000.];
 
     let native_options = eframe::NativeOptions {
@@ -169,19 +129,17 @@ fn main() -> eframe::Result {
             .with_resizable(false)
             .with_decorations(false)
             .with_icon(
-                // NOTE: Adding an icon is optional
                 eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..])
                     .expect("Failed to load icon"),
             ),
         persist_window: false,
         ..Default::default()
     };
-    let capture_all_udp = args.capture_all_udp;
 
     eframe::run_native(
         "Youkai",
         native_options,
-        Box::new(move |cc| Ok(Box::new(ui::app::YoukaiApp::new(cc, reload_handle, capture_all_udp)))),
+        Box::new(move |cc| Ok(Box::new(ui::app::YoukaiApp::new(cc, reload_handle)))),
     )
 }
 
