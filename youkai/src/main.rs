@@ -125,7 +125,7 @@ fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size(background_image_size.map(|v| v * 0.6))
+            .with_inner_size(background_image_size.map(|v| v * 0.5))
             .with_resizable(false)
             .with_decorations(false)
             .with_icon(
