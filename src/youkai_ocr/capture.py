@@ -94,33 +94,109 @@ def calibrate(frame: "Image.Image | np.ndarray") -> CalibrationResult:
     )
 
 
+# A5/F2 color-hygiene preflight: minimum bright-pixel channel-balance ratio.
+# Clean ZZZ UI frames measure ≥0.96 (white text/chrome is neutral); a Night
+# Light / f.lux warm shift measures ~0.62. 0.85 splits with wide margin.
+_COLOR_BALANCE_MIN = 0.85
+
+
+def check_color_hygiene(frame: Image.Image) -> None:
+    """Raise ValueError if the frame looks color-shifted (negative control, F2).
+
+    Night Light / f.lux / Reshade / driver filters suppress the blue channel;
+    rarity color-matching and Otsu thresholds silently degrade under them.
+    Samples the brightest 1% of pixels — game UI text/chrome is neutral white
+    on every scanned screen — and requires near-equal RGB channel means.
+    """
+    arr = np.asarray(frame.convert("RGB"), dtype=np.float64).reshape(-1, 3)
+    lum = arr.mean(axis=1)
+    bright = arr[lum >= np.percentile(lum, 99)]
+    means = bright.mean(axis=0)
+    ratio = float(means.min() / max(means.max(), 1.0))
+    if ratio < _COLOR_BALANCE_MIN:
+        r, g, b = (int(v) for v in means)
+        raise ValueError(
+            f"Frame looks color-shifted: bright-pixel RGB means ({r},{g},{b}), "
+            f"balance {ratio:.2f} < {_COLOR_BALANCE_MIN}. Disable Night Light / "
+            "f.lux / color filters (HDR off, sRGB) and rescan."
+        )
+
+
 # ── Windows-only capture ──────────────────────────────────────────────────────
 
 class _POINT(ctypes.Structure):
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 
-def _find_game_window() -> Optional[tuple[int, int, int, int, int]]:
-    """Return (left, top, right, bottom, hwnd) screen coords + handle, or None."""
+def _normalize_title(s: str) -> str:
+    """Lowercase, strip whitespace — so "Zenless Zone Zero" == "ZenlessZoneZero"."""
+    return "".join(s.lower().split())
+
+
+def list_game_windows() -> list[dict]:
+    """All visible, non-minimized, non-zero-client windows matching the game title.
+
+    Passive window-metadata enumeration only (EnumWindows / GetWindowText /
+    GetClientRect / ClientToScreen) — no process or memory access.  Each entry:
+        {hwnd, title, left, top, right, bottom, w, h, aspect, is_16_9}
+
+    The game spawns several windows sharing the title (incl. hidden 0×0 helpers),
+    and the launcher matches too — so callers must pick, not take the first.
+    """
+    out: list[dict] = []
+    if sys.platform != "win32":
+        return out
     try:
         import win32gui  # pywin32
-
-        hwnd = win32gui.FindWindow(None, GAME_TITLE)
-        if not hwnd:
-            return None
-
-        # GetClientRect → (0, 0, w, h) relative to client origin.
-        client_rect = win32gui.GetClientRect(hwnd)
-        pt = _POINT(0, 0)
-        ctypes.windll.user32.ClientToScreen(hwnd, ctypes.byref(pt))
-
-        left = pt.x
-        top = pt.y
-        right = left + client_rect[2]
-        bottom = top + client_rect[3]
-        return (left, top, right, bottom, hwnd)
     except Exception:
+        return out
+
+    target = _normalize_title(GAME_TITLE)
+
+    def _cb(hwnd, _extra):
+        try:
+            if not win32gui.IsWindowVisible(hwnd):
+                return
+            if win32gui.IsIconic(hwnd):           # minimized → 0×0 client rect
+                return
+            title = win32gui.GetWindowText(hwnd)
+            if target not in _normalize_title(title):
+                return
+            _, _, cw, ch = win32gui.GetClientRect(hwnd)   # (0, 0, w, h)
+            if cw <= 0 or ch <= 0:                # hidden/message-only helper window
+                return
+            pt = _POINT(0, 0)
+            ctypes.windll.user32.ClientToScreen(hwnd, ctypes.byref(pt))
+            out.append({
+                "hwnd": hwnd, "title": title,
+                "left": pt.x, "top": pt.y, "right": pt.x + cw, "bottom": pt.y + ch,
+                "w": cw, "h": ch, "aspect": cw / ch,
+                "is_16_9": abs(cw / ch - REFERENCE_ASPECT) <= ASPECT_TOLERANCE,
+            })
+        except Exception:
+            return  # skip any window that errors; keep enumerating
+
+    try:
+        win32gui.EnumWindows(_cb, None)
+    except Exception:
+        pass
+    return out
+
+
+def pick_best_window(cands: list[dict]) -> Optional[dict]:
+    """Choose the real render surface from same-title candidates: 16:9 first, then
+    largest area.  Skips the hidden 0×0 helpers and the non-16:9 launcher window."""
+    if not cands:
         return None
+    return sorted(cands, key=lambda c: (0 if c["is_16_9"] else 1, -(c["w"] * c["h"])))[0]
+
+
+def _find_game_window() -> Optional[tuple[int, int, int, int, int]]:
+    """Return (left, top, right, bottom, hwnd) for the best game window, or None."""
+    best = pick_best_window(list_game_windows())
+    if best is None:
+        return None
+    return (best["left"], best["top"], best["right"], best["bottom"], best["hwnd"])
 
 
 def focus_game_window() -> bool:
@@ -150,17 +226,24 @@ def _require_window() -> tuple[int, int, int, int]:
     result = _find_game_window()
     if result is None:
         raise RuntimeError(
-            f'Game window "{GAME_TITLE}" not found. '
-            "Ensure the game is running in Windowed (not Borderless / Fullscreen) mode."
+            f'Game window "{GAME_TITLE}" not found (no visible, non-minimized window '
+            "with a renderable client area). Ensure the game is running in Windowed "
+            "(not Borderless / Fullscreen) mode and is not minimized."
         )
     left, top, right, bottom, _hwnd = result
     w, h = right - left, bottom - top
+    if w <= 0 or h <= 0:    # defensive; list_game_windows already filters these out
+        raise RuntimeError(
+            f"Game window has a zero-size client area ({w}×{h}) — it is minimized or "
+            "still loading. Restore the window and retry."
+        )
     aspect = w / h
     if abs(aspect - REFERENCE_ASPECT) > ASPECT_TOLERANCE:
-        raise ValueError(
-            f"Game window is {w}×{h} ({aspect:.4f}); expected 16:9. "
-            "Change the in-game resolution to a 16:9 value (e.g. 1920×1080)."
-        )
+        others = [c for c in list_game_windows() if c["is_16_9"]]
+        hint = (f" A 16:9 candidate does exist ({others[0]['w']}×{others[0]['h']}) — "
+                "another same-title window was picked; close the launcher." if others else
+                " Change the in-game resolution to a 16:9 value (e.g. 1920×1080).")
+        raise ValueError(f"Game window is {w}×{h} ({aspect:.4f}); expected 16:9.{hint}")
     return (left, top, right, bottom)
 
 
@@ -181,7 +264,15 @@ def _grab_region(region: tuple[int, int, int, int]) -> Image.Image:
     except Exception:
         pass
     from PIL import ImageGrab
-    return ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).convert("RGB")
+    try:
+        return ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).convert("RGB")
+    except OSError as e:
+        raise RuntimeError(
+            f"Screen capture failed (PIL.ImageGrab region=({left},{top},{right},{bottom}) "
+            f"size={right-left}x{bottom-top}): {e}. "
+            "If DPI scaling is not 100%, try setting Display Scale to 100% in Windows Settings, "
+            "or run the CLI directly from a terminal."
+        ) from e
 
 
 def grab_window() -> Image.Image:

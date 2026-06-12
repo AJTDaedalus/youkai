@@ -7,12 +7,18 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
 from rapidfuzz import fuzz, process
 
-_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "zzz_1.4"
+def _find_data_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "data" / "zzz_1.4"
+    return Path(__file__).parent.parent.parent / "data" / "zzz_1.4"
+
+_DATA_DIR = _find_data_dir()
 
 _disc_sets: dict[str, str] = {}
 _substats: dict[str, str] = {}
@@ -39,19 +45,22 @@ def _load() -> None:
         _agents = json.load(f)["agents"]
 
     with open(_DATA_DIR / "engines.json") as f:
-        _engines = json.load(f)["engines"]
+        raw_engines = json.load(f)["engines"]
+    # Strip _comment_* sentinel keys (their values are separator strings, not valid ZOD keys).
+    _engines = {k: v for k, v in raw_engines.items() if not k.startswith("_comment")}
 
     _loaded = True
 
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
 
-# Tolerant slot pattern: accepts [N], (N], [N), [N<space>, [N!, etc.
-# Primary: bracket/paren + digit + any closing char (optional).
-# Fallback: bracket/paren + 1-3 non-digit chars + digit 1-6 (handles OCR
+# Tolerant slot pattern: accepts [N], (N], {N], {N), [N<space>, [N!, etc.
+# { is included because Tesseract sometimes misreads [ as { in dim text.
+# Primary: bracket/paren/brace + digit + any closing char (optional).
+# Fallback: bracket/paren/brace + 1-3 non-digit chars + digit 1-6 (handles OCR
 # garbling the slot digit itself as ':', '.', etc.).
-_SLOT_RE = re.compile(r"[\[(](\d)[\])\s!,.]?")
-_SLOT_RE_FALLBACK = re.compile(r"[\[(][^\d]{1,3}([1-6])")
+_SLOT_RE = re.compile(r"[\[({](\d)[\])\s!,.]?")
+_SLOT_RE_FALLBACK = re.compile(r"[\[({][^\d]{1,3}([1-6])")
 # Panel-slot fallback (G5): the digit+bracket OCR of the un-clipped panel yields
 # strings like "[3]4" (bracketed slot + noise) or "6]"/"16]" (partial bracket).
 # Prefer a fully-bracketed [N]; fall back to a digit adjacent to one bracket.
@@ -133,20 +142,62 @@ def normalize_main_stat(text: str, slot: int) -> tuple[str, float]:
     return (candidates[display], float(score))
 
 
+_AGENT_NAME_SCORE_MIN = 85  # WRatio floor: below this the match is too uncertain
+
+_AGENT_NAME_JUNK_RE = re.compile(r"[^A-Za-z0-9& -]")
+
+
+def _clean_agent_name(text: str) -> str:
+    """Strip OCR icon glyphs and junk from a widened name-bbox crop."""
+    cleaned = _AGENT_NAME_JUNK_RE.sub(" ", text)
+    tokens = [t for t in cleaned.split() if len(t) >= 2]
+    return " ".join(tokens)
+
+
 def normalize_agent(text: str) -> tuple[str, float]:
-    """Fuzzy-map agent display name → (ZOD key, 0-100)."""
+    """Fuzzy-map agent display name → (ZOD key, 0-100).
+
+    Returns ("", score) when the best match scores below _AGENT_NAME_SCORE_MIN so
+    the caller's CRITICAL_CONF gate emits unknown_agent instead of silently snapping
+    to the nearest key (which was the "Zhao magnet" failure mode — H24).
+    """
     _load()
-    result = process.extractOne(text.strip(), list(_agents.keys()), scorer=fuzz.WRatio)
+    cleaned = _clean_agent_name(text)
+    result = process.extractOne(cleaned, list(_agents.keys()), scorer=fuzz.WRatio)
     if result is None:
         return ("", 0.0)
     display, score, _ = result
+    if float(score) < _AGENT_NAME_SCORE_MIN:
+        return ("", float(score))
     return (_agents[display], float(score))
+
+
+_ENGINE_NAME_JUNK_RE = re.compile(r"[^A-Za-z0-9'\[\] -]")
+_ROMAN_CONFUSION_RE = re.compile(r"[Il1]+")
+
+
+def _clean_engine_name(text: str) -> str:
+    """Strip OCR icon junk from an engine-name crop; fix roman-numeral l/I mixups.
+
+    The name bbox overlaps the engine icon, producing trailing junk tokens
+    ("ee | &@ ae Sd"); and tesseract reads "III" as "Ill". Both made WRatio
+    snap bracket-series siblings to the wrong entry (F2 golden-set finding).
+    """
+    cleaned = _ENGINE_NAME_JUNK_RE.sub(" ", text)
+    out: list[str] = []
+    for tok in cleaned.split():
+        if _ROMAN_CONFUSION_RE.fullmatch(tok):
+            out.append("I" * len(tok))
+        elif len(tok) >= 3 or tok.lower() == "of":
+            out.append(tok)
+    return " ".join(out)
 
 
 def normalize_engine(text: str) -> tuple[str, float]:
     """Fuzzy-map W-Engine display name → (ZOD key, 0-100)."""
     _load()
-    result = process.extractOne(text.strip(), list(_engines.keys()), scorer=fuzz.WRatio)
+    cleaned = _clean_engine_name(text)
+    result = process.extractOne(cleaned, list(_engines.keys()), scorer=fuzz.WRatio)
     if result is None:
         return ("", 0.0)
     display, score, _ = result

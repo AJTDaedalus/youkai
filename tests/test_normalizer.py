@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from youkai_ocr.normalizer import (
+    normalize_agent,
     normalize_disc_set,
     normalize_main_stat,
     normalize_substat,
@@ -159,3 +160,76 @@ def test_validate_disc_slot():
         assert validate_disc_slot(s)
     assert not validate_disc_slot(0)
     assert not validate_disc_slot(7)
+
+
+# ── normalize_agent (H24 / H27.1) ────────────────────────────────────────────
+
+@pytest.mark.parametrize("text,expected_key", [
+    # Short names
+    ("Zhao",         "Zhao"),
+    ("Rina",         "Rina"),
+    ("Yanagi",       "Yanagi"),
+    ("Miyabi",       "Miyabi"),
+    ("Harumasa",     "Harumasa"),
+    ("Zhu Yuan",     "ZhuYuan"),
+    ("Manato",       "Manato"),
+    ("Lycaon",       "Lycaon"),
+    ("Anby",         "Anby"),
+    ("Billy",        "Billy"),
+    ("Jane",         "Jane"),
+    ("Ju Fufu",      "JuFufu"),
+    ("Hugo",         "Hugo"),
+    ("Koleda",       "Koleda"),
+    ("Soukaku",      "Soukaku"),
+    ("Ye Shunguang", "YeShunguang"),
+    ("Pan Yinhu",    "PanYinhu"),
+    ("Nangong Yu",   "NangongYu"),
+    # Full in-game display names
+    ("Tsukishiro Yanagi",  "Yanagi"),
+    ("Asaba Harumasa",     "Harumasa"),
+    ("Komano Manato",      "Manato"),
+    ("Hoshimi Miyabi",     "Miyabi"),
+    ("Von Lycaon",         "Lycaon"),
+    ("Anby Demara",        "Anby"),
+    ("Jane Doe",           "Jane"),
+    ("Billy Kid",          "Billy"),
+    ("Alexandrina",        "Rina"),
+    ("Seth Lowe",          "Seth"),
+    ("Orphie & Magus",     "OrphieMagus"),
+    # Dialyn is a distinct physical/stun agent (NOT Rina — H27.1 fix)
+    ("Dialyn",             "Dialyn"),
+    # Post-1.4 agents
+    ("Yixuan",   "Yixuan"),
+    ("Astra",    "Astra"),
+    ("Astra Yao","Astra"),
+    ("Seth",     "Seth"),
+    ("Trigger",  "Trigger"),
+    ("Vivian",   "Vivian"),
+    ("Pulchra",  "Pulchra"),
+    # OCR-noise variants that still resolve (score ≥ 85)
+    ("Dan Yinhu",    "PanYinhu"),
+    ("Orphie Magnus","OrphieMagus"),
+    # H30.2 — new full-name aliases
+    ("Nekomiya Manaka", "Nekomata"),
+    ("Nekomiya Mana",   "Nekomata"),
+    ("Orphie Magnusson","OrphieMagus"),
+    # H30.1 — junk-stripping: widened bbox may append icon glyphs
+    ("Trigger ",  "Trigger"),
+    ("Pulchra ◆",  "Pulchra"),
+    # Qingyi OCR aliases (Q→G/O glyph confusion in bold ZZZ font)
+    ("Ginayi",    "Qingyi"),
+    ("Oinayi",    "Qingyi"),
+])
+def test_normalize_agent_full_names(text, expected_key):
+    key, score = normalize_agent(text)
+    assert key == expected_key, f"got {key!r} (score={score}) for {text!r}"
+    assert score >= 85.0
+
+
+@pytest.mark.parametrize("garbage", [
+    "Ye Shundat",
+    "",
+])
+def test_normalize_agent_floor_rejects_garbage(garbage):
+    key, score = normalize_agent(garbage)
+    assert key == "", f"expected empty key for {garbage!r}, got {key!r} (score={score})"

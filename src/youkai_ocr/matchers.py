@@ -10,16 +10,19 @@ import re
 import numpy as np
 from PIL import Image
 
-# Color centroids in RGB (from navigation.yaml rarity_badge.colors).
+# Color centroids in RGB for p75 of the rarity badge crop.
 # 4 = S-rank gold, 3 = A-rank purple, 2 = B-rank blue.
+# S-rank centroid measured from live captures (~228, 165, 54); the badge dims
+# mid-scroll so dark-gold values like (150, 110, 35) must still classify
+# correctly — threshold raised to 130 to cover the full brightness range.
 _RARITY_CENTROIDS: dict[int, np.ndarray] = {
-    4: np.array([245, 200, 33], dtype=float),   # S-rank gold
+    4: np.array([228, 165, 54], dtype=float),   # S-rank gold
     3: np.array([160, 80, 220], dtype=float),   # A-rank purple
     2: np.array([80, 140, 200], dtype=float),   # B-rank blue
 }
 
 # Maximum Euclidean distance to accept a rarity match.
-_RARITY_THRESHOLD = 80.0
+_RARITY_THRESHOLD = 135.0
 
 # Lock indicator: "L" after digit(s) in thumbnail level text.
 _LOCK_RE = re.compile(r"\d\s+L\b", re.IGNORECASE)

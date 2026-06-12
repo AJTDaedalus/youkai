@@ -446,14 +446,30 @@ class GridNavigator:
 
 # ── Kill switch ───────────────────────────────────────────────────────────────
 
-def make_kill_listener() -> tuple[Event, object]:
-    """Return (kill_event, listener). Press Esc to set the event."""
+def make_kill_listener(
+    kill_key=None,
+    suppress_flag: list | None = None,
+) -> tuple[Event, object]:
+    """Return (kill_event, listener).
+
+    kill_key: pynput Key to use as the abort key (default: Key.esc).
+    suppress_flag: optional list[bool]; when suppress_flag[0] is True the
+        listener ignores one key event — used by AgentNavigator to send
+        programmatic Escape presses for in-game back-navigation without
+        triggering the abort.
+    """
     from pynput.keyboard import Key, Listener
+
+    if kill_key is None:
+        kill_key = Key.esc
 
     kill_event = Event()
 
     def on_press(key):
-        if key == Key.esc:
+        if key == kill_key:
+            if suppress_flag and suppress_flag[0]:
+                suppress_flag[0] = False  # consume one suppression
+                return
             kill_event.set()
 
     listener = Listener(on_press=on_press)

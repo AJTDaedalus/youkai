@@ -48,6 +48,10 @@ class ZodSubstat:
     def to_dict(self) -> dict:
         return {"key": self.key, "value": self.value}
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "ZodSubstat":
+        return cls(key=d["key"], value=d["value"])
+
 
 @dataclass
 class ZodDisc:
@@ -72,6 +76,19 @@ class ZodDisc:
             "substats": [s.to_dict() for s in self.substats],
         }
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "ZodDisc":
+        return cls(
+            set_key=d["setKey"],
+            slot_key=d["slotKey"],
+            level=d["level"],
+            rarity=d["rarity"],
+            main_stat_key=d["mainStatKey"],
+            location=d["location"],
+            lock=d["lock"],
+            substats=[ZodSubstat.from_dict(s) for s in d.get("substats", [])],
+        )
+
 
 @dataclass
 class ZodWEngine:
@@ -91,6 +108,17 @@ class ZodWEngine:
             "location": self.location,
             "lock": self.lock,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ZodWEngine":
+        return cls(
+            key=d["key"],
+            level=d["level"],
+            ascension=d["ascension"],
+            refinement=d["refinement"],
+            location=d["location"],
+            lock=d["lock"],
+        )
 
 
 @dataclass

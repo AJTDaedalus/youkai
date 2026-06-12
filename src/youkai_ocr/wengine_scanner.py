@@ -161,8 +161,12 @@ def scan_engines(
     archive_dir: Optional[Path] = None,
     grid: GridParams = DEFAULT_GRID,
     engine: str = "tesseract",
+    on_item: Optional[callable] = None,
 ) -> tuple[list[ZodWEngine], list[dict]]:
     """Scan the W-Engine inventory. Game must already be on that screen.
+
+    on_item: optional callback(scanned, total) called after each cell is processed.
+    total is the count from the storage header (int) or None if unreadable.
 
     Returns (engines, issues). issues lists per-engine problems for the review report.
     """
@@ -179,6 +183,7 @@ def scan_engines(
 
     engines: list[ZodWEngine] = []
     issues: list[dict] = []
+    scanned = 0
 
     try:
         for cell_idx, visual_row, frame in navigator.scan(total_engines):
@@ -188,6 +193,10 @@ def scan_engines(
             eng, conf = _extract_engine(
                 frame, calib, cx, cy, recognizer, archive_dir, cell_idx
             )
+
+            scanned += 1
+            if on_item is not None:
+                on_item(scanned, total_engines)
 
             if eng is None:
                 issues.append({"cell": cell_idx, "status": "critical_fail", "confidence": conf})
