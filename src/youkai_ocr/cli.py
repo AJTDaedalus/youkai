@@ -9,9 +9,341 @@ import time
 from pathlib import Path
 
 
+# ── Screen assertion error ────────────────────────────────────────────────────
+
+class ScreenAssertError(RuntimeError):
+    """Raised when the expected game screen is not visible at phase start."""
+
+
+# ── Auto-nav constants ────────────────────────────────────────────────────────
+
+# Main-hub bottom-nav click targets (ref_11, measured H7a, game-area coords).
+_NAV_STORAGE_CENTER = (1123, 1041)
+_NAV_AGENTS_CENTER  = (1251, 1041)
+
+# Click center of each storage tab circle button (horizontal row, measured from
+# ref_1/ref_2 active-circle centroids; game-area coords at 1920×1080).
+# Both tabs sit at game y≈169; W-Engine is leftmost (x≈1447), Drive Disc is to its right (x≈1535).
+# Previous Drive Disc value (1421, 314) was wrong — it clicked the detail panel, not the tab.
+_STORAGE_TAB_CLICK_CENTERS: tuple[tuple[int, int], ...] = (
+    (1447, 169),   # W-Engine
+    (1535, 169),   # Drive Disc
+)
+
+# Screen-signature parameters (from navigation.yaml screen_signatures, H7a).
+_MAIN_MENU_SIG_BBOX   = (1000, 1033, 1300, 1050)
+_MAIN_MENU_SIG_THRESH = 20     # mean_luma > this → main menu
+
+_AGENT_MENU_SIG_BBOX   = (1888, 430, 1920, 570)
+_AGENT_MENU_SIG_THRESH = 1000  # teal_pixel_count > this → agent selection menu
+                                # teal: G−R>30 AND G>100
+
+_SCREEN_TIMEOUT_S = 8.0   # max seconds to wait for a screen transition
+_SCREEN_POLL_S    = 0.3   # poll interval inside wait_for
+_NAV_SETTLE_S     = 0.5   # post-click settle before polling begins
+
+
+# ── Screen predicates ─────────────────────────────────────────────────────────
+
+def _is_main_menu(frame: "Image.Image", calib) -> bool:
+    """True when the bottom navigation strip (main-hub signature) is visible."""
+    import numpy as np
+    arr = np.array(frame)
+    x1, y1, x2, y2 = calib.scale_bbox(_MAIN_MENU_SIG_BBOX)
+    region = arr[y1:y2, x1:x2]
+    if region.size == 0:
+        return False
+    luma = (0.299 * region[..., 0].mean()
+            + 0.587 * region[..., 1].mean()
+            + 0.114 * region[..., 2].mean())
+    return float(luma) > _MAIN_MENU_SIG_THRESH
+
+
+def _is_agent_selection_menu(frame: "Image.Image", calib) -> bool:
+    """True when the teal SELECT pill at the right edge of the agent grid is visible."""
+    import numpy as np
+    arr = np.array(frame)
+    x1, y1, x2, y2 = calib.scale_bbox(_AGENT_MENU_SIG_BBOX)
+    region = arr[y1:y2, x1:x2]
+    if region.size == 0:
+        return False
+    g  = region[..., 1].astype(int)
+    rc = region[..., 0].astype(int)
+    teal_count = int(((g - rc > 30) & (g > 100)).sum())
+    return teal_count > _AGENT_MENU_SIG_THRESH
+
+
+def _is_storage_screen(frame: "Image.Image", calib) -> bool:
+    """True when the Storage inventory is open (any tab has a visible glow)."""
+    try:
+        active_storage_tab(frame, calib)
+        return True
+    except ScreenAssertError:
+        return False
+
+
+# ── Auto-nav driver ───────────────────────────────────────────────────────────
+
+class _NavDriver:
+    """Drives menu-hub navigation for hands-off scan-all (H7c).
+
+    All click coords are in reference game-area pixels; to_screen() converts
+    them to absolute screen coords for mouse input.
+    """
+
+    def __init__(self, calib, capture_fn) -> None:
+        self._calib      = calib
+        self._capture_fn = capture_fn
+        self._mouse      = None
+        self._kbd        = None
+
+    def _mouse_ctrl(self):
+        if self._mouse is None:
+            from pynput.mouse import Controller
+            self._mouse = Controller()
+        return self._mouse
+
+    def _kbd_ctrl(self):
+        if self._kbd is None:
+            from pynput.keyboard import Controller as KbdController
+            self._kbd = KbdController()
+        return self._kbd
+
+    def _focus(self) -> None:
+        from youkai_ocr.capture import focus_game_window
+        focus_game_window()
+        time.sleep(0.15)
+
+    def _click(self, ref_x: int, ref_y: int) -> None:
+        from youkai_ocr.input_utils import natural_click
+        sx, sy = self._calib.to_screen(ref_x, ref_y)
+        natural_click(self._mouse_ctrl(), sx, sy)
+
+    def _press_escape(self) -> None:
+        from pynput.keyboard import Key
+        kbd = self._kbd_ctrl()
+        kbd.press(Key.esc)
+        time.sleep(0.05)
+        kbd.release(Key.esc)
+
+    def wait_for(
+        self,
+        check_fn,
+        timeout: float = _SCREEN_TIMEOUT_S,
+        poll:    float = _SCREEN_POLL_S,
+    ) -> "Image.Image":
+        """Poll capture_fn until check_fn(frame, calib) is True; return the frame."""
+        deadline = time.time() + timeout
+        while True:
+            frame = self._capture_fn()
+            if check_fn(frame, self._calib):
+                return frame
+            if time.time() >= deadline:
+                raise ScreenAssertError(
+                    f"Screen transition did not complete within {timeout:.0f}s."
+                )
+            time.sleep(poll)
+
+    def navigate_to_storage(self) -> "Image.Image":
+        from youkai_ocr.input_utils import jitter as _jitter
+        self._focus()
+        print("  [auto-nav] clicking Storage…", flush=True)
+        self._click(*_NAV_STORAGE_CENTER)
+        time.sleep(_jitter(_NAV_SETTLE_S, 0.2))
+        return self.wait_for(_is_storage_screen)
+
+    def switch_storage_tab(self, tab_idx: int, archive_dir=None) -> "Image.Image":
+        from youkai_ocr.input_utils import jitter as _jitter
+        label = ("W-Engine", "Drive Disc")[tab_idx]
+        self._focus()
+        print(f"  [auto-nav] switching to {label} tab…", flush=True)
+        self._click(*_STORAGE_TAB_CLICK_CENTERS[tab_idx])
+        time.sleep(_jitter(_NAV_SETTLE_S * 0.6, 0.2))
+        deadline = time.time() + _SCREEN_TIMEOUT_S
+        poll = 0
+        last_frame = None
+        while True:
+            last_frame = self._capture_fn()
+            try:
+                if active_storage_tab(last_frame, self._calib) == tab_idx:
+                    return last_frame
+            except ScreenAssertError:
+                pass
+            if time.time() >= deadline:
+                if last_frame is not None and archive_dir is not None:
+                    import pathlib
+                    p = pathlib.Path(archive_dir) / f"debug_tab{tab_idx}_timeout.png"
+                    last_frame.save(p)
+                    print(f"  [auto-nav] debug frame saved → {p}", flush=True)
+                raise ScreenAssertError(
+                    f"Storage tab {tab_idx} ({label}) did not activate within "
+                    f"{_SCREEN_TIMEOUT_S:.0f}s."
+                )
+            # Re-click every ~3s in case the first click was dropped
+            poll += 1
+            if poll % 10 == 0:
+                self._focus()
+                print(f"  [auto-nav] re-clicking {label} tab…", flush=True)
+                self._click(*_STORAGE_TAB_CLICK_CENTERS[tab_idx])
+            time.sleep(_SCREEN_POLL_S)
+
+    def return_to_main(self) -> "Image.Image":
+        from youkai_ocr.input_utils import jitter as _jitter
+        self._focus()
+        print("  [auto-nav] pressing Escape → main menu…", flush=True)
+        self._press_escape()
+        time.sleep(_jitter(_NAV_SETTLE_S, 0.2))
+        return self.wait_for(_is_main_menu)
+
+    def navigate_to_agents(self) -> "Image.Image":
+        from youkai_ocr.input_utils import jitter as _jitter
+        self._focus()
+        print("  [auto-nav] clicking Agents…", flush=True)
+        self._click(*_NAV_AGENTS_CENTER)
+        time.sleep(_jitter(_NAV_SETTLE_S, 0.2))
+        return self.wait_for(_is_agent_selection_menu)
+
+
+# ── Screen preflight checks ───────────────────────────────────────────────────
+
+def _check_disc_screen(frame: "Image.Image", calib, ocr_engine: str = "tesseract") -> None:
+    """Raise ScreenAssertError if the Drive Disc inventory is not open."""
+    from youkai_ocr.disc_scanner import read_disc_count
+    from youkai_ocr.recognize import make_recognizer
+    recognizer = make_recognizer(ocr_engine)
+    if read_disc_count(frame, calib, recognizer) is None:
+        raise ScreenAssertError(
+            "Drive Disc inventory not detected — '[N / M]' count header not found.\n"
+            "Make sure Drive Disc Storage is open before pressing Enter."
+        )
+
+
+def _check_engine_screen(frame: "Image.Image", calib, ocr_engine: str = "tesseract") -> None:
+    """Warn (do not abort) if the W-Engine Storage count header isn't readable.
+
+    The scanner handles a missing count via thumb-stop; an abort here just wastes
+    the disc phase when the user presses Enter a moment early on the transition.
+    """
+    from youkai_ocr.wengine_scanner import read_engine_count
+    from youkai_ocr.recognize import make_recognizer
+    recognizer = make_recognizer(ocr_engine)
+    if read_engine_count(frame, calib, recognizer) is None:
+        print(
+            "  WARNING: W-Engine Storage header not found — '[N / M]' count unreadable.\n"
+            "  Continuing with thumb-stop traversal.  Press Esc to abort if wrong screen."
+        )
+
+
+def _check_agent_screen(frame: "Image.Image", calib) -> None:
+    """Warn (do not abort) if we can't confirm the agent menu is open.
+
+    The H1 grid detector (detect_owned_agent_cells) was retired in H8; the strip-based
+    scanner handles wrong screens by finding 0 agents and ring-closing immediately.
+    """
+    import numpy as np
+    arr = np.array(frame)
+    mean_luma = float(arr.mean())
+    if mean_luma < 5.0:
+        print(
+            "  WARNING: captured frame is almost black — game may not be visible.\n"
+            "  Press Esc to abort if the agent menu is not open."
+        )
+
+
+# ── Stdout tee ────────────────────────────────────────────────────────────────
+
+class _Tee:
+    """Duplicate stdout writes to a log file.  Replace sys.stdout on construction;
+    restore it on close()."""
+
+    def __init__(self, log_path: Path, *, mirror=None) -> None:
+        self._orig = sys.stdout
+        self._mirror = mirror if mirror is not None else self._orig
+        self._file = log_path.open("w", encoding="utf-8")
+        sys.stdout = self  # type: ignore[assignment]
+
+    def write(self, data: str) -> int:
+        try:
+            self._mirror.write(data)
+        except OSError:
+            pass
+        self._file.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        try:
+            self._mirror.flush()
+        except OSError:
+            pass
+        self._file.flush()
+
+    def isatty(self) -> bool:
+        return hasattr(self._orig, "isatty") and self._orig.isatty()
+
+    def close(self) -> None:
+        sys.stdout = self._orig
+        self._file.close()
+
+
+# ── Storage category-tab detection ───────────────────────────────────────────
+
+# Glow-stripe bboxes (game-area coords, x1 y1 x2 y2) for the vertical pill tabs
+# at the right edge of the storage panel (game x≈1413-1430).
+# Active tab shows a bright stripe; inactive tabs are near-black.
+# Tab 0 = W-Engine  (active in ref_2: yellow [213,207,0], luma≈185)
+# Tab 1 = Drive Disc (active in ref_1: white [255,255,255], luma≈255)
+_STORAGE_TAB_BBOXES: tuple[tuple[int, int, int, int], ...] = (
+    (1413, 135, 1430, 203),   # 0: W-Engine
+    (1413, 304, 1430, 325),   # 1: Drive Disc
+)
+
+# Measured active luma levels: engine≈185, disc≈255.  Inactive ≈ 12–30.
+# Any tab with mean_luma > this threshold can be considered active.
+STORAGE_TAB_ACTIVE_LUMA = 50
+
+
+def active_storage_tab(
+    frame: "Image.Image",
+    calib: "CalibrationResult",
+) -> int:
+    """Return the index of the currently active Storage category tab (0-based).
+
+    Samples the glow-stripe bbox for each known tab and returns the index with
+    the highest mean luma.  Tab 0 = W-Engine, Tab 1 = Drive Disc.
+
+    Raises ``ScreenAssertError`` if no tab exceeds ``STORAGE_TAB_ACTIVE_LUMA``
+    (i.e. the storage screen is probably not open).
+    """
+    import numpy as np
+
+    arr = np.array(frame)
+    best_idx, best_luma = 0, -1.0
+    for i, bbox in enumerate(_STORAGE_TAB_BBOXES):
+        x1, y1, x2, y2 = calib.scale_bbox(bbox)
+        region = arr[y1:y2, x1:x2]
+        if region.size == 0:
+            continue
+        luma = float(
+            0.299 * region[..., 0].mean()
+            + 0.587 * region[..., 1].mean()
+            + 0.114 * region[..., 2].mean()
+        )
+        if luma > best_luma:
+            best_luma = luma
+            best_idx = i
+    if best_luma < STORAGE_TAB_ACTIVE_LUMA:
+        raise ScreenAssertError(
+            f"No storage tab glow detected (max mean luma={best_luma:.1f}); "
+            "is the Storage inventory open?"
+        )
+    return best_idx
+
+
+# ── Helpers shared by all scan commands ──────────────────────────────────────
+
 def _countdown(seconds: int) -> None:
     """Count down, then bring the game window to the foreground."""
-    from .capture import focus_game_window
+    from youkai_ocr.capture import focus_game_window
     for i in range(seconds, 0, -1):
         print(f"  Starting in {i}s...", end="\r", flush=True)
         time.sleep(1)
@@ -21,7 +353,7 @@ def _countdown(seconds: int) -> None:
     print(f"  Scanning... ({status})", flush=True)
 
 
-def _make_first_item_check(phase: str):
+def _make_first_item_check(phase: str, *, interactive: bool = True, emitter=None):
     """Return a callback that warns if the first scanned item has uniformly low confidence."""
     def _check(item, conf: dict) -> None:
         if not conf:
@@ -35,6 +367,17 @@ def _make_first_item_check(phase: str):
                 "Inspect the preflight PNG in your archive dir to see what the scanner captured."
             )
         if len(low_fields) >= len(conf) // 2:
+            msg = (
+                f"First {phase} has low confidence on {len(low_fields)}/{len(conf)} fields: "
+                + ", ".join(f"{k}={v:.0f}%" for k, v in sorted(low_fields.items(), key=lambda x: x[1]))
+                + ". Inspect the preflight PNG in your archive dir."
+            )
+            if not interactive:
+                if emitter is not None:
+                    emitter.warning(msg)
+                else:
+                    print(f"\n  WARNING: {msg}")
+                return
             print(f"\n  WARNING: first {phase} has low confidence on {len(low_fields)}/{len(conf)} fields:")
             for field, score in sorted(low_fields.items(), key=lambda x: x[1]):
                 print(f"    {field}: {score:.0f}%")
@@ -50,18 +393,22 @@ def _preflight_frame(
     calib,
     archive_dir: "Path | None",
     phase: str,
-) -> None:
-    """Capture one frame, run basic sanity checks, and save it for inspection.
+    *,
+    interactive: bool = True,
+    emitter=None,
+) -> "Image.Image":
+    """Capture one frame, run basic sanity checks, save it, and return it.
 
     Raises RuntimeError if the frame looks unusable (black, wrong size).
-    Prints a warning and asks the user to confirm if brightness is marginal.
+    In interactive mode, prompts the user to confirm marginal brightness.
+    In non-interactive mode (porcelain), emits a warning event and continues.
     """
     import numpy as np
 
     frame = capture_fn()
 
     if archive_dir:
-        from .grid import DEFAULT_GRID
+        from youkai_ocr.grid import DEFAULT_GRID
         from PIL import ImageDraw
         annotated = frame.copy()
         draw = ImageDraw.Draw(annotated)
@@ -84,6 +431,14 @@ def _preflight_frame(
             "Did the game window resize?"
         )
 
+    # A5/F2 negative control: refuse Night-Light/filter-tinted frames outright —
+    # color matching (rarity) and Otsu thresholds degrade silently under tint.
+    from youkai_ocr.capture import check_color_hygiene
+    try:
+        check_color_hygiene(frame)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
     import numpy as np
     arr = np.array(frame)
     brightness = float(arr.mean())
@@ -95,23 +450,44 @@ def _preflight_frame(
             f"Captured frame is nearly black (mean brightness {brightness:.1f}). "
             "The game may be minimized, covered, or in fullscreen mode."
         )
-    # Dark UI (e.g. disc inventory) typically sits around 30–60; only warn below 15.
     if brightness < 15:
-        print(f"  — frame looks very dark, game may be obscured.")
+        msg = f"Frame looks very dark (brightness {brightness:.1f}), game may be obscured."
+        print(f"  — {msg}")
+        if not interactive:
+            if emitter is not None:
+                emitter.warning(msg)
+            return frame
         ans = input("  Continue anyway? [y/N] ").strip().lower()
         if ans != "y":
             raise RuntimeError("Scan aborted by user after dark-frame warning.")
     else:
         print("  — OK")
 
+    return frame
+
+
+# ── Sub-commands ──────────────────────────────────────────────────────────────
 
 def _cmd_calibrate(args: argparse.Namespace) -> None:
     from PIL import Image
-    from .capture import calibrate, grab_window
+    from youkai_ocr.capture import calibrate, grab_window, list_game_windows, pick_best_window
 
     if args.file:
         frame = Image.open(args.file).convert("RGB")
     else:
+        # Show every same-title window so a wrong-window grab is obvious.
+        cands = list_game_windows()
+        if cands:
+            print(f"Matching game windows ({len(cands)} — the scanner picks 16:9, then largest):")
+            chosen = pick_best_window(cands)
+            for c in cands:
+                mark = " <-- chosen" if c["hwnd"] == chosen["hwnd"] else ""
+                flag = "16:9" if c["is_16_9"] else f"{c['aspect']:.3f}"
+                print(f"  hwnd={c['hwnd']:>10}  {c['w']}×{c['h']} [{flag}]  "
+                      f"@({c['left']},{c['top']})  title={c['title']!r}{mark}")
+        else:
+            print("No visible, non-minimized game window found matching "
+                  "'ZenlessZoneZero'. Is the game running in Windowed mode?")
         frame = grab_window()
 
     result = calibrate(frame)
@@ -123,8 +499,8 @@ def _cmd_calibrate(args: argparse.Namespace) -> None:
 def _cmd_scan_engines(args: argparse.Namespace) -> None:
     import time
     from PIL import Image
-    from .capture import calibrate, grab_window
-    from .wengine_scanner import export_engines, scan_engines, scan_single_frame_engine
+    from youkai_ocr.capture import calibrate, grab_window
+    from youkai_ocr.wengine_scanner import export_engines, scan_engines, scan_single_frame_engine
 
     output = Path(args.output)
     archive_dir = Path(args.archive_dir) if args.archive_dir else None
@@ -196,8 +572,8 @@ def _cmd_scan_engines(args: argparse.Namespace) -> None:
 def _cmd_scan_agents(args: argparse.Namespace) -> None:
     import time
     from PIL import Image
-    from .capture import calibrate, grab_window
-    from .agent_scanner import export_agents, scan_agents, scan_single_frame_agent
+    from youkai_ocr.capture import calibrate, grab_window
+    from youkai_ocr.agent_scanner import export_agents, scan_agents, scan_single_frame_agent
 
     output = Path(args.output)
     archive_dir = Path(args.archive_dir) if args.archive_dir else None
@@ -256,6 +632,7 @@ def _cmd_scan_agents(args: argparse.Namespace) -> None:
             calib=calib,
             archive_dir=archive_dir,
             ocr_engine=args.engine,
+            debug_overlays=getattr(args, "debug_overlays", False),
         )
         elapsed = time.perf_counter() - t0
 
@@ -277,8 +654,8 @@ def _cmd_scan_agents(args: argparse.Namespace) -> None:
 def _cmd_scan(args: argparse.Namespace) -> None:
     import time
     from PIL import Image
-    from .capture import calibrate, grab_window
-    from .disc_scanner import export_discs, scan_discs, scan_single_frame
+    from youkai_ocr.capture import calibrate, grab_window
+    from youkai_ocr.disc_scanner import export_discs, scan_discs, scan_single_frame
 
     output = Path(args.output)
     archive_dir = Path(args.archive_dir) if args.archive_dir else None
@@ -350,117 +727,520 @@ def _cmd_scan(args: argparse.Namespace) -> None:
         print(f"\nExported to: {output}")
 
 
+def _write_review_report(issues: list[dict], path: "Path") -> None:
+    """F3: Write a human-readable review.txt for manual verification of low-confidence items."""
+    from io import StringIO
+    buf = StringIO()
+
+    def _section(title: str, rows: list[str]) -> None:
+        if not rows:
+            return
+        buf.write(f"\n{'─' * 72}\n{title} ({len(rows)})\n{'─' * 72}\n")
+        for r in rows:
+            buf.write(r + "\n")
+
+    # ── Critical fails (unknown_agent, no_slot, …) ───────────────────────────
+    critical = [i for i in issues if i.get("status") == "critical_fail"]
+    crit_rows = []
+    for issue in critical:
+        if "agent" in issue:
+            crit_rows.append(f"  [agent #{issue['agent']:03d}] {issue.get('type','?')}: {issue.get('message','')}")
+        elif "cell" in issue:
+            phase = "disc" if "disc" in issue else "engine"
+            crit_rows.append(f"  [{phase} cell #{issue['cell']:04d}] {issue.get('type','?')}: {issue.get('message','')}")
+        else:
+            crit_rows.append(f"  {issue}")
+    _section("CRITICAL FAILS — require manual fix before importing", crit_rows)
+
+    # ── Unknown / blank-key agents ───────────────────────────────────────────
+    unknown_agents = [
+        i for i in issues
+        if "agent" in i and i.get("status") in ("critical_fail", "low_confidence")
+        and i.get("key", "?") in ("", None)
+    ]
+    unk_rows = [
+        f"  [agent #{i['agent']:03d}] raw OCR name: {i.get('raw_name', i.get('fields', {}).get('name_raw', '(no raw)'))!r}  "
+        f"score={i.get('fields', {}).get('name', i.get('score', '?'))}"
+        for i in unknown_agents
+    ]
+    _section("UNKNOWN AGENT NAMES — add alias to agents.json or fix OCR", unk_rows)
+
+    # ── Low-confidence agents ────────────────────────────────────────────────
+    low_agents = [
+        i for i in issues
+        if "agent" in i and i.get("status") == "low_confidence"
+        and i.get("key", "?") not in ("", None)
+    ]
+    agent_rows = []
+    for issue in low_agents:
+        fields_str = "  ".join(f"{k}={v:.0f}%" for k, v in sorted(issue.get("fields", {}).items()))
+        agent_rows.append(f"  [agent #{issue['agent']:03d}] key={issue['key']!r}  low: {fields_str}")
+    _section("LOW-CONFIDENCE AGENT FIELDS — verify in-game", agent_rows)
+
+    # ── Low-confidence engines ───────────────────────────────────────────────
+    low_engines = [i for i in issues if "engine" in i and i.get("status") == "low_confidence"]
+    eng_rows = []
+    for issue in low_engines:
+        eng = issue["engine"]
+        fields_str = "  ".join(f"{k}={v:.0f}%" for k, v in sorted(issue.get("fields", {}).items()))
+        eng_rows.append(
+            f"  [cell #{issue['cell']:04d}] key={eng['key']!r}  lv={eng['level']}  "
+            f"ref={eng['refinement']}  low: {fields_str}"
+        )
+    _section("LOW-CONFIDENCE ENGINE FIELDS — verify key/rarity in-game", eng_rows)
+
+    # ── Low-confidence discs ─────────────────────────────────────────────────
+    low_discs = [i for i in issues if "disc" in i and i.get("status") == "low_confidence"]
+    disc_rows = []
+    for issue in low_discs:
+        disc = issue["disc"]
+        fields_str = "  ".join(f"{k}={v:.0f}%" for k, v in sorted(issue.get("fields", {}).items()))
+        disc_rows.append(
+            f"  [cell #{issue.get('cell','?'):>4}] set={disc.get('setKey','?')!r}  "
+            f"slot={disc.get('slotKey','?')}  lv={disc.get('level','?')}  low: {fields_str}"
+        )
+    _section("LOW-CONFIDENCE DISC FIELDS — verify set/stat in-game", disc_rows)
+
+    # ── Orphan equipment ─────────────────────────────────────────────────────
+    orphans = [i for i in issues if i.get("status") == "orphan"]
+    orp_rows = [f"  {i}" for i in orphans]
+    _section("ORPHAN EQUIPMENT — location cross-ref could not resolve", orp_rows)
+
+    summary_line = (
+        f"youkai-ocr review report\n"
+        f"  critical: {len(critical)}  unknown_agents: {len(unknown_agents)}  "
+        f"low_agents: {len(low_agents)}  low_engines: {len(low_engines)}  "
+        f"low_discs: {len(low_discs)}  orphans: {len(orphans)}\n"
+    )
+    content = summary_line + buf.getvalue()
+    if not buf.getvalue().strip():
+        content += "\nNo issues to review — all fields resolved above confidence threshold.\n"
+
+    path.write_text(content, encoding="utf-8")
+
+
+_VALID_PHASES: frozenset[str] = frozenset({"agents", "discs", "engines"})
+
+
+def select_phases(args) -> frozenset[str]:
+    """Return the validated set of phases to run.
+
+    Maps deprecated --agents-only to {"agents"}.
+    Raises ValueError on unknown or empty names.
+    """
+    if getattr(args, "agents_only", False):
+        return frozenset({"agents"})
+    raw = getattr(args, "phases", None) or "engines,discs,agents"
+    names = frozenset(p.strip() for p in raw.split(",") if p.strip())
+    if not names:
+        raise ValueError("--phases must not be empty")
+    unknown = names - _VALID_PHASES
+    if unknown:
+        raise ValueError(
+            f"Unknown phase name(s): {', '.join(sorted(unknown))}. "
+            f"Valid: {', '.join(sorted(_VALID_PHASES))}"
+        )
+    return names
+
+
 def _cmd_scan_all(args: argparse.Namespace) -> None:
-    """F1: Full ZodExport — discs + engines + agents with location wiring."""
+    """H5/H7c: Full ZodExport with run-dir persistence, screen assertions, and resume.
+
+    Default: auto-nav (no manual gates).  Pass --manual-nav to use the original
+    input()-gated flow.
+    """
+    import datetime
     import time
-    from .capture import calibrate_window
-    from .disc_scanner import scan_discs
-    from .wengine_scanner import scan_engines
-    from .agent_scanner import scan_agents, resolve_locations
-    from .zod import ZodExport
+    import json as _json
+    from youkai_ocr.capture import calibrate_window
+    from youkai_ocr.disc_scanner import scan_discs
+    from youkai_ocr.wengine_scanner import scan_engines
+    from youkai_ocr.agent_scanner import scan_agents, resolve_locations
+    from youkai_ocr.zod import ZodDisc, ZodWEngine, ZodExport
+    from youkai_ocr.progress import NullEmitter, ProgressEmitter
 
-    output = Path(args.output)
-    archive_dir = Path(args.archive_dir) if args.archive_dir else None
+    output     = Path(args.output)
+    resume_dir = Path(args.resume) if getattr(args, "resume", None) else None
+    manual_nav  = getattr(args, "manual_nav", False)
+    porcelain   = getattr(args, "porcelain", False)
+    interactive = not porcelain
 
-    calib, capture_fn = calibrate_window()
-    print(f"Game window found: {calib.frame_width}×{calib.frame_height}, "
-          f"offset: ({calib.window_left},{calib.window_top}), "
-          f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}")
+    # Run dir: always timestamped so consecutive runs don't overwrite frames.
+    run_ts = datetime.datetime.now().strftime("live_%Y%m%d_%H%M%S")
+    if args.archive_dir:
+        run_dir = Path(args.archive_dir) / run_ts
+    else:
+        run_dir = Path("archive") / run_ts
+    run_dir.mkdir(parents=True, exist_ok=True)
 
-    if archive_dir:
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Archiving crops to: {archive_dir}")
-
-    all_issues: list[dict] = []
-
-    # ── Step 1: Disc inventory ────────────────────────────────────────────────
-    print("\n[1/3] Drive Disc inventory — navigate there, then press Enter.")
-    input()
-    _countdown(5)
-    _preflight_frame(capture_fn, calib, archive_dir, "discs")
-    # Show where click #1 will land so the user can sanity-check before the scan.
-    from .grid import DEFAULT_GRID
-    cell0 = DEFAULT_GRID.cell_0_0_center
-    sx, sy = calib.to_screen(*cell0)
-    print(f"  First cell ref=({cell0[0]},{cell0[1]}) → screen=({sx},{sy})  "
-          f"window origin=({calib.window_left},{calib.window_top})")
-    t0 = time.perf_counter()
-    discs, disc_issues = scan_discs(
-        capture_fn=capture_fn, calib=calib, archive_dir=archive_dir, engine=args.engine,
-        on_first_item=_make_first_item_check("disc"),
+    # Emitter captures real stdout before _Tee redirects sys.stdout.
+    emitter: ProgressEmitter | NullEmitter = (
+        ProgressEmitter(sys.stdout) if porcelain else NullEmitter()
     )
-    all_issues.extend(disc_issues)
-    print(f"  Scanned {len(discs)} disc(s) in {time.perf_counter()-t0:.1f}s. Issues: {len(disc_issues)}")
+    tee = _Tee(run_dir / "scan.log", mirror=sys.stderr if porcelain else None)
+    import logging as _logging
+    _pkg_log = _logging.getLogger("youkai_ocr")
+    _log_handler = _logging.FileHandler(run_dir / "agent_scan.log", encoding="utf-8")
+    _log_handler.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _log_handler.setLevel(_logging.DEBUG)
+    _prev_level = _pkg_log.level
+    _pkg_log.setLevel(_logging.DEBUG)
+    _pkg_log.addHandler(_log_handler)
+    try:
+        print(f"Run dir: {run_dir}")
 
-    # ── Step 2: W-Engine inventory ────────────────────────────────────────────
-    print("\n[2/3] W-Engine inventory — navigate there, then press Enter.")
-    input()
-    _countdown(5)
-    _preflight_frame(capture_fn, calib, archive_dir, "engines")
-    t0 = time.perf_counter()
-    engines, engine_issues = scan_engines(
-        capture_fn=capture_fn, calib=calib, archive_dir=archive_dir, engine=args.engine,
-    )
-    all_issues.extend(engine_issues)
-    print(f"  Scanned {len(engines)} engine(s) in {time.perf_counter()-t0:.1f}s. Issues: {len(engine_issues)}")
+        calib, capture_fn = calibrate_window()
+        print(
+            f"Game window found: {calib.frame_width}×{calib.frame_height}, "
+            f"offset: ({calib.window_left},{calib.window_top}), "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+        )
 
-    # ── Step 3: Agent roster ──────────────────────────────────────────────────
-    print("\n[3/3] Agent roster — open an agent detail page, then press Enter.")
-    input()
-    _countdown(5)
-    _preflight_frame(capture_fn, calib, archive_dir, "agents")
-    t0 = time.perf_counter()
-    agents, agent_issues, equip_records = scan_agents(
-        capture_fn=capture_fn, calib=calib, archive_dir=archive_dir, ocr_engine=args.engine,
-    )
-    all_issues.extend(agent_issues)
-    print(f"  Scanned {len(agents)} agent(s) in {time.perf_counter()-t0:.1f}s. Issues: {len(agent_issues)}")
+        all_issues: list[dict] = []
+        phase_results: dict = {}
+        t_start = time.perf_counter()
 
-    # ── Resolve equipment locations ───────────────────────────────────────────
-    orphans = resolve_locations(equip_records, discs, engines)
-    if orphans:
-        print(f"\n  Location orphans (equipment cross-ref mismatches): {len(orphans)}")
-        all_issues.extend(orphans)
+        phases        = select_phases(args)
+        emitter.run_start(
+            run_dir=str(run_dir), output=str(output),
+            phases=[p for p in ("engines", "discs", "agents") if p in phases],
+        )
+        discs_cache   = run_dir / "discs.json"
+        engines_cache = run_dir / "engines.json"
+        resume_discs   = resume_dir / "discs.json"   if resume_dir else None
+        resume_engines = resume_dir / "engines.json" if resume_dir else None
 
-    # ── Dedupe + stable sort ──────────────────────────────────────────────────
-    # Agents: keep first occurrence per key (roster nav should never produce dupes,
-    # but guard anyway).
-    seen_agents: set[str] = set()
-    unique_agents = []
-    for a in agents:
-        if a.key not in seen_agents:
-            seen_agents.add(a.key)
-            unique_agents.append(a)
-    unique_agents.sort(key=lambda a: a.key)
+        skip_discs   = "discs"   not in phases or bool(resume_discs   and resume_discs.exists())
+        skip_engines = "engines" not in phases or bool(resume_engines and resume_engines.exists())
 
-    # Discs: no natural unique key; preserve scan order (stable, grid-traverse).
-    # Sort by set_key then slot_key for deterministic output.
-    discs.sort(key=lambda d: (d.set_key, d.slot_key))
+        if not manual_nav:
+            # ── Auto-nav path ────────────────────────────────────────────────
+            from youkai_ocr.capture import focus_game_window
+            focused = focus_game_window()
+            print(f"  Game window {'focused' if focused else 'WARNING: could not focus game window'}")
+            time.sleep(0.3)
+            frame = capture_fn()
+            if not _is_main_menu(frame, calib):
+                raise ScreenAssertError(
+                    "auto-nav: not on the Inter-Knot main-menu hub.\n"
+                    "Navigate there first, or use --manual-nav to gate each phase manually."
+                )
+            driver = _NavDriver(calib, capture_fn)
 
-    # Engines: sort by key.
-    engines.sort(key=lambda e: e.key)
+            storage_visited = False
 
-    # ── Assemble and write ────────────────────────────────────────────────────
-    export = ZodExport(characters=unique_agents, discs=discs, weapons=engines)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(export.to_json(), encoding="utf-8")
+            # ── Phase 1/3: W-Engines (tab 0 in Storage) ─────────────────────
+            emitter.phase_start(phase="engines")
+            if "engines" not in phases:
+                print("\n[1/3] W-Engine phase: skipped (--phases).")
+                engines = []
+                phase_results["engines"] = {"count": 0, "skipped": True}
+                emitter.phase_done(phase="engines", count=0, issues=0, elapsed=0.0)
+            elif resume_engines and resume_engines.exists():
+                print("\n[1/3] W-Engine phase: loading from resume cache.")
+                raw     = _json.loads(resume_engines.read_text())
+                engines = [ZodWEngine.from_dict(e) for e in raw]
+                phase_results["engines"] = {
+                    "count": len(engines), "issues": 0, "elapsed": 0.0, "resumed": True,
+                }
+                print(f"  Loaded {len(engines)} engine(s) from cache.")
+                emitter.phase_done(phase="engines", count=len(engines), issues=0, elapsed=0.0, resumed=True)
+            else:
+                driver.navigate_to_storage()
+                storage_visited = True
+                driver.switch_storage_tab(0, archive_dir=run_dir)
+                print("\n[1/3] W-Engine inventory — scanning…")
+                t0 = time.perf_counter()
+                engines, engine_issues = scan_engines(
+                    capture_fn=capture_fn, calib=calib, archive_dir=run_dir, engine=args.engine,
+                    on_item=lambda s, t: emitter.progress(phase="engines", scanned=s, total=t),
+                )
+                elapsed = time.perf_counter() - t0
+                all_issues.extend(engine_issues)
+                phase_results["engines"] = {
+                    "count": len(engines), "issues": len(engine_issues), "elapsed": round(elapsed, 1),
+                }
+                print(f"  Scanned {len(engines)} engine(s) in {elapsed:.1f}s. Issues: {len(engine_issues)}")
+                engines_cache.write_text(
+                    _json.dumps([e.to_dict() for e in engines], indent=2), encoding="utf-8"
+                )
+                print(f"  Phase output → {engines_cache}")
+                emitter.phase_done(phase="engines", count=len(engines), issues=len(engine_issues), elapsed=round(elapsed, 1))
 
-    print(f"\nExport written to: {output}")
-    print(f"  {len(unique_agents)} agent(s), {len(discs)} disc(s), {len(engines)} engine(s)")
+            # ── Phase 2/3: Drive Discs (tab 1 in Storage) ───────────────────
+            emitter.phase_start(phase="discs")
+            if "discs" not in phases:
+                print("\n[2/3] Drive Disc phase: skipped (--phases).")
+                discs = []
+                phase_results["discs"] = {"count": 0, "skipped": True}
+                emitter.phase_done(phase="discs", count=0, issues=0, elapsed=0.0)
+            elif resume_discs and resume_discs.exists():
+                print("\n[2/3] Drive Disc phase: loading from resume cache.")
+                raw   = _json.loads(resume_discs.read_text())
+                discs = [ZodDisc.from_dict(d) for d in raw]
+                phase_results["discs"] = {
+                    "count": len(discs), "issues": 0, "elapsed": 0.0, "resumed": True,
+                }
+                print(f"  Loaded {len(discs)} disc(s) from cache.")
+                emitter.phase_done(phase="discs", count=len(discs), issues=0, elapsed=0.0, resumed=True)
+            else:
+                if not storage_visited:
+                    driver.navigate_to_storage()
+                    storage_visited = True
+                else:
+                    time.sleep(2.0)  # let the game settle after engine scan scroll activity
+                driver.switch_storage_tab(1, archive_dir=run_dir)
+                print("\n[2/3] Drive Disc inventory — scanning…")
+                from youkai_ocr.grid import DEFAULT_GRID
+                cell0 = DEFAULT_GRID.cell_0_0_center
+                sx, sy = calib.to_screen(*cell0)
+                print(f"  First cell ref=({cell0[0]},{cell0[1]}) → screen=({sx},{sy})  "
+                      f"window origin=({calib.window_left},{calib.window_top})")
+                t0 = time.perf_counter()
+                discs, disc_issues = scan_discs(
+                    capture_fn=capture_fn, calib=calib, archive_dir=run_dir, engine=args.engine,
+                    on_first_item=_make_first_item_check("disc", interactive=interactive, emitter=emitter),
+                    on_item=lambda s, t: emitter.progress(phase="discs", scanned=s, total=t),
+                )
+                elapsed = time.perf_counter() - t0
+                all_issues.extend(disc_issues)
+                phase_results["discs"] = {
+                    "count": len(discs), "issues": len(disc_issues), "elapsed": round(elapsed, 1),
+                }
+                print(f"  Scanned {len(discs)} disc(s) in {elapsed:.1f}s. Issues: {len(disc_issues)}")
+                discs_cache.write_text(
+                    _json.dumps([d.to_dict() for d in discs], indent=2), encoding="utf-8"
+                )
+                print(f"  Phase output → {discs_cache}")
+                emitter.phase_done(phase="discs", count=len(discs), issues=len(disc_issues), elapsed=round(elapsed, 1))
 
-    if all_issues:
-        issues_path = output.with_suffix(".issues.json")
-        import json as _json
-        issues_path.write_text(_json.dumps(all_issues, indent=2), encoding="utf-8")
-        print(f"  {len(all_issues)} issue(s) written to: {issues_path}")
+            # Return to main menu before navigating to Agents
+            if "agents" in phases and storage_visited:
+                driver.return_to_main()
 
+            # ── Phase 3/3: Agent roster ──────────────────────────────────────
+            emitter.phase_start(phase="agents")
+            if "agents" in phases:
+                print("\n[3/3] Agent roster — navigating…")
+                driver.navigate_to_agents()
+                t0 = time.perf_counter()
+                agents, agent_issues, equip_records = scan_agents(
+                    capture_fn=capture_fn, calib=calib, archive_dir=run_dir,
+                    ocr_engine=args.engine,
+                    debug_overlays=getattr(args, "debug_overlays", False),
+                    on_item=lambda s, t: emitter.progress(phase="agents", scanned=s, total=t),
+                )
+            else:
+                agents, agent_issues, equip_records = [], [], []
+                phase_results["agents"] = {"count": 0, "skipped": True}
+                print("\n[3/3] Agent phase: skipped (--phases).")
+                emitter.phase_done(phase="agents", count=0, issues=0, elapsed=0.0)
+
+        else:
+            # ── Manual-nav path (--manual-nav) ───────────────────────────────
+            # ── Step 1: Drive Discs ──────────────────────────────────────────
+            emitter.phase_start(phase="discs")
+            if "discs" not in phases:
+                print("\n[1/3] Drive Disc phase: skipped (--phases).")
+                discs = []
+                phase_results["discs"] = {"count": 0, "skipped": True}
+                emitter.phase_done(phase="discs", count=0, issues=0, elapsed=0.0)
+            elif resume_discs and resume_discs.exists():
+                print("\n[1/3] Drive Disc phase: loading from resume cache.")
+                raw   = _json.loads(resume_discs.read_text())
+                discs = [ZodDisc.from_dict(d) for d in raw]
+                phase_results["discs"] = {
+                    "count": len(discs), "issues": 0, "elapsed": 0.0, "resumed": True,
+                }
+                print(f"  Loaded {len(discs)} disc(s) from cache.")
+                emitter.phase_done(phase="discs", count=len(discs), issues=0, elapsed=0.0, resumed=True)
+            else:
+                print("\n[1/3] Drive Disc inventory — navigate there, then press Enter.")
+                if interactive:
+                    input()
+                _countdown(5)
+                frame = _preflight_frame(capture_fn, calib, run_dir, "discs",
+                                         interactive=interactive, emitter=emitter)
+                _check_disc_screen(frame, calib, args.engine)
+                from youkai_ocr.grid import DEFAULT_GRID
+                cell0 = DEFAULT_GRID.cell_0_0_center
+                sx, sy = calib.to_screen(*cell0)
+                print(f"  First cell ref=({cell0[0]},{cell0[1]}) → screen=({sx},{sy})  "
+                      f"window origin=({calib.window_left},{calib.window_top})")
+                t0 = time.perf_counter()
+                discs, disc_issues = scan_discs(
+                    capture_fn=capture_fn, calib=calib, archive_dir=run_dir, engine=args.engine,
+                    on_first_item=_make_first_item_check("disc", interactive=interactive, emitter=emitter),
+                    on_item=lambda s, t: emitter.progress(phase="discs", scanned=s, total=t),
+                )
+                elapsed = time.perf_counter() - t0
+                all_issues.extend(disc_issues)
+                phase_results["discs"] = {
+                    "count": len(discs), "issues": len(disc_issues), "elapsed": round(elapsed, 1),
+                }
+                print(f"  Scanned {len(discs)} disc(s) in {elapsed:.1f}s. Issues: {len(disc_issues)}")
+                discs_cache.write_text(
+                    _json.dumps([d.to_dict() for d in discs], indent=2), encoding="utf-8"
+                )
+                print(f"  Phase output → {discs_cache}")
+                emitter.phase_done(phase="discs", count=len(discs), issues=len(disc_issues), elapsed=round(elapsed, 1))
+
+            # ── Step 2: W-Engines ────────────────────────────────────────────
+            emitter.phase_start(phase="engines")
+            if "engines" not in phases:
+                print("\n[2/3] W-Engine phase: skipped (--phases).")
+                engines = []
+                phase_results["engines"] = {"count": 0, "skipped": True}
+                emitter.phase_done(phase="engines", count=0, issues=0, elapsed=0.0)
+            elif resume_engines and resume_engines.exists():
+                print("\n[2/3] W-Engine phase: loading from resume cache.")
+                raw     = _json.loads(resume_engines.read_text())
+                engines = [ZodWEngine.from_dict(e) for e in raw]
+                phase_results["engines"] = {
+                    "count": len(engines), "issues": 0, "elapsed": 0.0, "resumed": True,
+                }
+                print(f"  Loaded {len(engines)} engine(s) from cache.")
+                emitter.phase_done(phase="engines", count=len(engines), issues=0, elapsed=0.0, resumed=True)
+            else:
+                print("\n[2/3] W-Engine inventory — navigate there, then press Enter.")
+                if interactive:
+                    input()
+                _countdown(5)
+                frame = _preflight_frame(capture_fn, calib, run_dir, "engines",
+                                         interactive=interactive, emitter=emitter)
+                _check_engine_screen(frame, calib, args.engine)
+                t0 = time.perf_counter()
+                engines, engine_issues = scan_engines(
+                    capture_fn=capture_fn, calib=calib, archive_dir=run_dir, engine=args.engine,
+                    on_item=lambda s, t: emitter.progress(phase="engines", scanned=s, total=t),
+                )
+                elapsed = time.perf_counter() - t0
+                all_issues.extend(engine_issues)
+                phase_results["engines"] = {
+                    "count": len(engines), "issues": len(engine_issues), "elapsed": round(elapsed, 1),
+                }
+                print(f"  Scanned {len(engines)} engine(s) in {elapsed:.1f}s. Issues: {len(engine_issues)}")
+                engines_cache.write_text(
+                    _json.dumps([e.to_dict() for e in engines], indent=2), encoding="utf-8"
+                )
+                print(f"  Phase output → {engines_cache}")
+                emitter.phase_done(phase="engines", count=len(engines), issues=len(engine_issues), elapsed=round(elapsed, 1))
+
+            # ── Step 3: Agent roster ─────────────────────────────────────────
+            emitter.phase_start(phase="agents")
+            if "agents" in phases:
+                print("\n[3/3] Agent roster — open the agent menu, then press Enter.")
+                if interactive:
+                    input()
+                _countdown(5)
+                frame = _preflight_frame(capture_fn, calib, run_dir, "agents",
+                                         interactive=interactive, emitter=emitter)
+                _check_agent_screen(frame, calib)
+                t0 = time.perf_counter()
+                agents, agent_issues, equip_records = scan_agents(
+                    capture_fn=capture_fn, calib=calib, archive_dir=run_dir,
+                    ocr_engine=args.engine,
+                    debug_overlays=getattr(args, "debug_overlays", False),
+                    on_item=lambda s, t: emitter.progress(phase="agents", scanned=s, total=t),
+                )
+            else:
+                agents, agent_issues, equip_records = [], [], []
+                phase_results["agents"] = {"count": 0, "skipped": True}
+                print("\n[3/3] Agent phase: skipped (--phases).")
+                emitter.phase_done(phase="agents", count=0, issues=0, elapsed=0.0)
+
+        if "agents" not in phase_results:
+            elapsed = time.perf_counter() - t0
+            all_issues.extend(agent_issues)
+            phase_results["agents"] = {
+                "count": len(agents), "issues": len(agent_issues), "elapsed": round(elapsed, 1),
+            }
+            emitter.phase_done(phase="agents", count=len(agents), issues=len(agent_issues), elapsed=round(elapsed, 1))
+            print(f"  Scanned {len(agents)} agent(s) in {elapsed:.1f}s. Issues: {len(agent_issues)}")
+            agents_cache = run_dir / "agents.json"
+            agents_cache.write_text(_json.dumps([a.to_dict() for a in agents], indent=2), encoding="utf-8")
+            print(f"  Phase output → {agents_cache}")
+
+        # ── Resolve equipment locations ──────────────────────────────────────
+        if "agents" in phases and "discs" in phases:
+            orphans = resolve_locations(equip_records, discs, engines)
+            if orphans:
+                print(f"\n  Location orphans (equipment cross-ref mismatches): {len(orphans)}")
+                all_issues.extend(orphans)
+
+        # ── Dedupe + stable sort ─────────────────────────────────────────────
+        seen_agents: set[str] = set()
+        unique_agents = []
+        for a in agents:
+            if a.key not in seen_agents:
+                seen_agents.add(a.key)
+                unique_agents.append(a)
+        unique_agents.sort(key=lambda a: a.key)
+        discs.sort(key=lambda d: (d.set_key, d.slot_key))
+        engines.sort(key=lambda e: e.key)
+
+        # ── Assemble and write export ────────────────────────────────────────
+        export = ZodExport(characters=unique_agents, discs=discs, weapons=engines)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(export.to_json(), encoding="utf-8")
+        print(f"\nExport written to: {output}")
+        print(f"  {len(unique_agents)} agent(s), {len(discs)} disc(s), {len(engines)} engine(s)")
+
+        if all_issues:
+            issues_path = run_dir / "issues.json"
+            issues_path.write_text(_json.dumps(all_issues, indent=2), encoding="utf-8")
+            print(f"  {len(all_issues)} issue(s) written to: {issues_path}")
+            review_path = run_dir / "review.txt"
+            _write_review_report(all_issues, review_path)
+            print(f"  Review report   → {review_path}")
+
+        # ── Write results.json ───────────────────────────────────────────────
+        total_elapsed = round(time.perf_counter() - t_start, 1)
+        results = {
+            "run_dir": str(run_dir),
+            "output": str(output),
+            "total_elapsed": total_elapsed,
+            "phases": phase_results,
+            "summary": {
+                "agents": len(unique_agents),
+                "discs": len(discs),
+                "engines": len(engines),
+                "issues": len(all_issues),
+            },
+        }
+        results_path = run_dir / "results.json"
+        results_path.write_text(_json.dumps(results, indent=2), encoding="utf-8")
+        print(f"  Results summary → {results_path}")
+
+        review_str = str(run_dir / "review.txt") if all_issues else None
+        emitter.done(
+            output=str(output), run_dir=str(run_dir),
+            summary=results["summary"],
+            review_path=review_str,
+        )
+
+    except BaseException as _exc:
+        import traceback as _tb
+        _tb_str = _tb.format_exc().strip()
+        _msg = str(_exc) or type(_exc).__name__
+        emitter.error(message=f"{_msg}\n---\n{_tb_str}" if _tb_str else _msg)
+        raise
+    finally:
+        _pkg_log.removeHandler(_log_handler)
+        _log_handler.close()
+        _pkg_log.setLevel(_prev_level)
+        tee.close()
+
+
+# ── CLI entry point ───────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="youkai-ocr",
         description="ZZZ inventory OCR scanner — exports ZodExport/GOOD JSON.",
     )
-    parser.add_argument("--version", action="version", version="youkai-ocr 0.1.0")
+    from youkai_ocr import __version__
+    parser.add_argument("--version", action="version", version=f"youkai-ocr {__version__}")
     subparsers = parser.add_subparsers(dest="command")
 
     # -- calibrate ----------------------------------------------------------------
@@ -488,6 +1268,8 @@ def main() -> None:
     _add_scan_args(scan_agt, "export/agents.json", "agent")
     scan_agt.add_argument("--skills-file", default=None, metavar="PATH",
                           help="Offline mode: skills-tab screenshot (defaults to --file if omitted).")
+    scan_agt.add_argument("--debug-overlays", action="store_true",
+                          help="Also save *_overlay.png frames with click targets + OCR crops drawn (needs --archive-dir).")
 
     # -- scan ---------------------------------------------------------------------
     scan = subparsers.add_parser("scan", help="Scan the Drive Disc inventory and export JSON.")
@@ -501,25 +1283,43 @@ def main() -> None:
     scan_all.add_argument("--output", "-o", default="export/youkai_export.json", metavar="PATH",
                           help="Output JSON path (default: export/youkai_export.json).")
     scan_all.add_argument("--archive-dir", "-a", default=None, metavar="DIR",
-                          help="Save raw field crops here for debugging.")
+                          help="Use this directory as the run dir (default: archive/run_<timestamp>).")
+    scan_all.add_argument("--resume", default=None, metavar="DIR",
+                          help="Resume from an existing run dir; skip phases with completed JSON files.")
     scan_all.add_argument("--engine", default="tesseract", choices=["tesseract"],
                           help="OCR engine (default: tesseract).")
+    scan_all.add_argument("--debug-overlays", action="store_true",
+                          help="Also save *_overlay.png agent frames with click targets + OCR crops drawn.")
+    scan_all.add_argument("--phases", default=None, metavar="LIST",
+                          help="Comma-separated phases to run: engines,discs,agents (default: all).")
+    scan_all.add_argument("--agents-only", action="store_true",
+                          help="Deprecated: use --phases agents. Skip disc and engine phases.")
+    scan_all.add_argument("--manual-nav", action="store_true", dest="manual_nav",
+                          help="Gate each phase with a manual Enter prompt instead of "
+                               "auto-navigating from the main-menu hub.")
+    scan_all.add_argument("--porcelain", action="store_true",
+                          help="Emit machine-readable JSONL progress events on stdout; "
+                               "redirect human-readable output to stderr.")
 
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
         sys.exit(0)
 
-    if args.command == "calibrate":
-        _cmd_calibrate(args)
-    elif args.command == "scan":
-        _cmd_scan(args)
-    elif args.command == "scan-engines":
-        _cmd_scan_engines(args)
-    elif args.command == "scan-agents":
-        _cmd_scan_agents(args)
-    elif args.command == "scan-all":
-        _cmd_scan_all(args)
+    try:
+        if args.command == "calibrate":
+            _cmd_calibrate(args)
+        elif args.command == "scan":
+            _cmd_scan(args)
+        elif args.command == "scan-engines":
+            _cmd_scan_engines(args)
+        elif args.command == "scan-agents":
+            _cmd_scan_agents(args)
+        elif args.command == "scan-all":
+            _cmd_scan_all(args)
+    except ScreenAssertError as exc:
+        print(f"\nABORT — wrong screen: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
