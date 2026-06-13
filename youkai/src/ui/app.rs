@@ -16,7 +16,6 @@ use crate::{
 #[derive(Clone, Copy, PartialEq)]
 enum FileDialogPurpose {
     OutputPath,
-    ScannerOverride,
     ExportFile,
 }
 
@@ -39,7 +38,6 @@ pub struct YoukaiApp {
     toasts: Toasts,
     power_tools_open: bool,
     bug_report_open: bool,
-    config_modal_open: bool,
     pub scan_state: ScanState,
     saved_state: SavedAppState,
     scan_handle: Option<ScanHandle>,
@@ -76,6 +74,8 @@ impl YoukaiApp {
             style.visuals.panel_fill = bg_color;
 
             style.visuals.widgets.inactive.bg_fill = widget_inactive_bg;
+            style.visuals.widgets.inactive.bg_stroke =
+                egui::Stroke::new(1.0, Color32::from_rgb(0xa8, 0x2b, 0x72));
             style.visuals.widgets.inactive.fg_stroke =
                 egui::Stroke::new(1.5, Color32::from_rgb(0xa8, 0x2b, 0x72));
             style.visuals.widgets.inactive.weak_bg_fill = widget_inactive_bg;
@@ -114,7 +114,6 @@ impl YoukaiApp {
             toasts,
             power_tools_open: false,
             bug_report_open: false,
-            config_modal_open: false,
             scan_state: ScanState::Idle,
             saved_state,
             scan_handle: None,
@@ -155,9 +154,6 @@ impl eframe::App for YoukaiApp {
             match self.file_dialog_purpose {
                 FileDialogPurpose::OutputPath => {
                     self.saved_state.scan_config.output = path;
-                }
-                FileDialogPurpose::ScannerOverride => {
-                    self.saved_state.scan_config.scanner_override = Some(path);
                 }
                 FileDialogPurpose::ExportFile => {
                     if let ScanState::Done { ref output, .. } = self.scan_state.clone() {
@@ -221,14 +217,6 @@ impl eframe::App for YoukaiApp {
                     }
                 }
 
-                if self.config_modal_open {
-                    let modal = Modal::new(Id::new("Scanner Config"))
-                        .show(ui.ctx(), |ui| self.config_modal(ui));
-                    if modal.should_close() {
-                        self.config_modal_open = false;
-                    }
-                }
-
                 // Grid_OS double-line window frame
                 let window_rect = rect.shrink2(egui::vec2(20.0, 40.0));
                 let frame_stroke_outer =
@@ -249,6 +237,7 @@ impl eframe::App for YoukaiApp {
                 );
 
                 ui.allocate_ui_at_rect(window_rect.shrink(8.0), |ui| {
+                    ui.shrink_clip_rect(window_rect.shrink(8.0));
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {
                             ui.label(
@@ -353,7 +342,7 @@ impl YoukaiApp {
     fn main_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let is_scanning = self.scan_handle.is_some();
 
-        ui.horizontal_top(|ui| {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
             // ── LEFT COLUMN ──────────────────────────────────────────
             ui.vertical(|ui| {
                 ui.set_width(360.0);
@@ -642,6 +631,7 @@ impl YoukaiApp {
     }
 
     fn params_config(&mut self, ui: &mut egui::Ui, is_scanning: bool) {
+        ui.spacing_mut().item_spacing.y = 2.0;
         ui.label(
             RichText::new("// SCAN PARAMETERS")
                 .color(Color32::from_rgb(0xff, 0x00, 0x90))
@@ -649,7 +639,6 @@ impl YoukaiApp {
                 .size(10.0),
         );
         ui.separator();
-        ui.add_space(4.0);
 
         // Mode selection
         ui.label(
@@ -673,46 +662,7 @@ impl YoukaiApp {
             );
         });
 
-        ui.add_space(8.0);
-
-        // Output path
-        ui.label(
-            RichText::new("OUTPUT PATH")
-                .color(Color32::from_rgb(0xa8, 0x2b, 0x72))
-                .monospace()
-                .size(9.0),
-        );
-        ui.add_enabled_ui(!is_scanning, |ui| {
-            ui.horizontal(|ui| {
-                let path_str = self
-                    .saved_state
-                    .scan_config
-                    .output
-                    .to_string_lossy()
-                    .to_string();
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(&path_str)
-                            .monospace()
-                            .size(9.0)
-                            .color(Color32::from_rgb(0xfd, 0xf5, 0xfa)),
-                    )
-                    .truncate(),
-                );
-                if ui
-                    .add(
-                        Button::new(RichText::new(" ... ").monospace().size(9.0))
-                            .min_size(egui::vec2(28.0, 0.0)),
-                    )
-                    .clicked()
-                {
-                    self.file_dialog_purpose = FileDialogPurpose::OutputPath;
-                    self.file_dialog.save_file();
-                }
-            });
-        });
-
-        ui.add_space(8.0);
+        ui.add_space(4.0);
 
         // Debug overlays
         ui.add_enabled_ui(!is_scanning, |ui| {
@@ -722,35 +672,6 @@ impl YoukaiApp {
             );
         });
 
-        ui.add_space(8.0);
-        ui.separator();
-        ui.add_space(4.0);
-
-        // Scanner override
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new("SCANNER OVERRIDE")
-                    .color(Color32::from_rgb(0xa8, 0x2b, 0x72))
-                    .monospace()
-                    .size(9.0),
-            );
-            if ui
-                .add(Button::new(RichText::new(" config ").monospace().size(9.0)))
-                .clicked()
-            {
-                self.config_modal_open = true;
-            }
-        });
-        let override_str = match &self.saved_state.scan_config.scanner_override {
-            Some(p) => p.to_string_lossy().to_string(),
-            None => "(auto-detect)".to_string(),
-        };
-        ui.label(
-            RichText::new(&override_str)
-                .monospace()
-                .size(8.5)
-                .color(Color32::from_rgb(0x80, 0x85, 0x90)),
-        );
     }
 
     fn params_done(&mut self, ui: &mut egui::Ui) {
@@ -1027,62 +948,6 @@ impl YoukaiApp {
         if amp_mult > 0.0 {
             ui.ctx().request_repaint();
         }
-    }
-
-    fn config_modal(&mut self, ui: &mut egui::Ui) {
-        ui.set_width(360.0);
-        ui.heading("Scanner Configuration");
-        ui.separator();
-        ui.add_space(4.0);
-
-        ui.label("Scanner command override:");
-        ui.horizontal(|ui| {
-            let override_str = match &self.saved_state.scan_config.scanner_override {
-                Some(p) => p.to_string_lossy().to_string(),
-                None => String::new(),
-            };
-            ui.label(
-                RichText::new(if override_str.is_empty() {
-                    "(auto-detect)"
-                } else {
-                    &override_str
-                })
-                .monospace()
-                .size(9.5)
-                .color(Color32::from_rgb(0xfd, 0xf5, 0xfa)),
-            );
-            if ui.button("Locate...").clicked() {
-                self.file_dialog_purpose = FileDialogPurpose::ScannerOverride;
-                self.file_dialog.pick_file();
-                ui.close();
-            }
-        });
-
-        if self.saved_state.scan_config.scanner_override.is_some()
-            && ui.button("Clear override (use auto-detect)").clicked()
-        {
-            self.saved_state.scan_config.scanner_override = None;
-        }
-
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new(
-                "Auto-detect order:\n  1. youkai-ocr.exe beside youkai.exe\n  2. python -m youkai_ocr",
-            )
-            .size(9.0)
-            .color(Color32::from_rgb(0x80, 0x85, 0x90)),
-        );
-
-        ui.separator();
-        egui::Sides::new().show(
-            ui,
-            |_ui| {},
-            |ui| {
-                if ui.button("Close").clicked() {
-                    ui.close();
-                }
-            },
-        );
     }
 
     fn power_tools_modal(&mut self, ui: &mut egui::Ui) {
