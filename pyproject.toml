@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "youkai-ocr"
 version = "0.1.0"
 description = "ZZZ inventory OCR scanner — exports ZodExport/GOOD JSON"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "opencv-python-headless>=4.9",
     "pytesseract>=0.3",

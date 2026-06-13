@@ -27,6 +27,7 @@ screenshots/
 # ── Rust build artifacts ──────────────────────────────────────────────────────
 youkai/target/
 youkai-portable/
+youkai-portable.zip
 youkai.exe
 youkai-error.log
 

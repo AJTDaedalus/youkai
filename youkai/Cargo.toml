@@ -3,7 +3,7 @@ name = "youkai"
 version = "0.1.17"
 authors = ["Konkers <konkers@konkers.net>"]
 edition = "2024"
-include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
+include = ["LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 rust-version = "1.85"
 
 [package.metadata.docs.rs]
