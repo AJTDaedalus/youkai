@@ -23,8 +23,6 @@ pub struct ScanConfig {
     #[serde(default = "ScanConfig::default_output")]
     pub output: PathBuf,
     #[serde(default)]
-    pub scanner_override: Option<PathBuf>,
-    #[serde(default)]
     pub debug_overlays: bool,
 }
 
@@ -33,7 +31,6 @@ impl Default for ScanConfig {
         Self {
             mode: ScanMode::Full,
             output: Self::default_output(),
-            scanner_override: None,
             debug_overlays: false,
         }
     }
@@ -123,7 +120,7 @@ impl ScanHandle {
 }
 
 fn build_command(config: &ScanConfig) -> (String, Vec<String>) {
-    let (program, mut args) = resolve_command(config.scanner_override.as_deref());
+    let (program, mut args) = resolve_command();
     args.push("scan-all".into());
     args.push("--porcelain".into());
     args.push("--output".into());
@@ -138,10 +135,7 @@ fn build_command(config: &ScanConfig) -> (String, Vec<String>) {
     (program, args)
 }
 
-fn resolve_command(override_path: Option<&std::path::Path>) -> (String, Vec<String>) {
-    if let Some(p) = override_path {
-        return (p.to_string_lossy().into_owned(), vec![]);
-    }
+fn resolve_command() -> (String, Vec<String>) {
     if let Ok(exe) = std::env::current_exe() {
         let exe_dir = match exe.parent() {
             Some(d) => d.to_path_buf(),
@@ -431,7 +425,6 @@ for l in lines:
         let config = ScanConfig {
             mode: ScanMode::Full,
             output: PathBuf::from("/tmp/out.json"),
-            scanner_override: None,
             debug_overlays: false,
         };
         let (_, args) = build_command(&config);
@@ -445,7 +438,6 @@ for l in lines:
         let config = ScanConfig {
             mode: ScanMode::DiscsOnly,
             output: PathBuf::from("/tmp/out.json"),
-            scanner_override: None,
             debug_overlays: false,
         };
         let (_, args) = build_command(&config);
@@ -458,14 +450,12 @@ for l in lines:
         let config = ScanConfig {
             mode: ScanMode::DiscsOnly,
             output: PathBuf::from("/custom/out.json"),
-            scanner_override: Some(PathBuf::from("/usr/bin/youkai-ocr")),
             debug_overlays: true,
         };
         let json = serde_json::to_string(&config).unwrap();
         let decoded: ScanConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.mode, ScanMode::DiscsOnly);
         assert_eq!(decoded.output, PathBuf::from("/custom/out.json"));
-        assert_eq!(decoded.scanner_override, Some(PathBuf::from("/usr/bin/youkai-ocr")));
         assert!(decoded.debug_overlays);
     }
 
@@ -474,7 +464,6 @@ for l in lines:
         let decoded: ScanConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(decoded.mode, ScanMode::Full);
         assert_eq!(decoded.output, ScanConfig::default_output());
-        assert!(decoded.scanner_override.is_none());
         assert!(!decoded.debug_overlays);
     }
 
