@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -467,9 +468,54 @@ def _preflight_frame(
 
 # ── Sub-commands ──────────────────────────────────────────────────────────────
 
+def _cmd_windows(args: argparse.Namespace) -> None:
+    """List every visible top-level window and mark which the scanner would pick."""
+    from youkai_ocr.capture import (
+        list_all_windows, list_game_windows, pick_best_window, get_accepted_titles,
+    )
+
+    all_wins  = list_all_windows()
+    matched   = list_game_windows()           # already filtered to accepted titles
+    chosen    = pick_best_window(matched)
+
+    if sys.platform != "win32":
+        print("Window enumeration is only available on Windows.")
+        return
+
+    if not all_wins:
+        print("No visible windows found (is the desktop accessible?).")
+        return
+
+    titles_str = ", ".join(f'"{t}"' for t in get_accepted_titles())
+    matched_hwnds = {c["hwnd"] for c in matched}
+
+    print(f"All visible windows ({len(all_wins)} total; accepted titles: {titles_str}):")
+    print(f"  {'hwnd':>10}  {'size':>12}  {'ar':>6}  {'position':>16}  title")
+    for w in all_wins:
+        flag   = "16:9" if w["is_16_9"] else f"{w['aspect']:.3f}"
+        pos    = f"@({w['left']},{w['top']})"
+        mark   = ""
+        if w["hwnd"] in matched_hwnds:
+            mark = " [matched]"
+        if chosen and w["hwnd"] == chosen["hwnd"]:
+            mark = " [matched] <-- scanner pick"
+        print(f"  {w['hwnd']:>10}  {w['w']}×{w['h']:>4} [{flag:>6}]  {pos:>16}  {w['title']!r}{mark}")
+
+    print()
+    if matched:
+        print(f"{len(matched)} window(s) match the accepted titles; scanner would pick hwnd={chosen['hwnd']}.")
+    else:
+        print(
+            "No windows match the accepted titles.\n"
+            "  Tip: run Chiaki (or your streaming client) and make a note of the\n"
+            "  title column above, then pass it to the scanner:\n"
+            '    youkai-ocr --window-title "exact title here" calibrate'
+        )
+
+
 def _cmd_calibrate(args: argparse.Namespace) -> None:
     from PIL import Image
-    from youkai_ocr.capture import calibrate, grab_window, list_game_windows, pick_best_window
+    from youkai_ocr.capture import calibrate, grab_window, list_game_windows, pick_best_window, get_accepted_titles
 
     if args.file:
         frame = Image.open(args.file).convert("RGB")
@@ -485,8 +531,9 @@ def _cmd_calibrate(args: argparse.Namespace) -> None:
                 print(f"  hwnd={c['hwnd']:>10}  {c['w']}×{c['h']} [{flag}]  "
                       f"@({c['left']},{c['top']})  title={c['title']!r}{mark}")
         else:
-            print("No visible, non-minimized game window found matching "
-                  "'ZenlessZoneZero'. Is the game running in Windowed mode?")
+            titles_str = ", ".join(f'"{t}"' for t in get_accepted_titles())
+            print(f"No visible, non-minimized game window found matching {titles_str}. "
+                  "Is the game running in Windowed mode?")
         frame = grab_window()
 
     result = calibrate(frame)
@@ -1240,7 +1287,24 @@ def main() -> None:
     )
     from youkai_ocr import __version__
     parser.add_argument("--version", action="version", version=f"youkai-ocr {__version__}")
+    # Global option — repeatable; appended to the accepted-titles list so the
+    # scanner also looks for windows whose title contains TITLE.
+    parser.add_argument(
+        "--window-title", action="append", metavar="TITLE", default=None,
+        help=(
+            "Additional window title to accept (repeatable). "
+            'e.g. --window-title "chiaki-ng". '
+            "Run `youkai-ocr windows` to discover the title of your streaming client. "
+            "Also settable via YOUKAI_WINDOW_TITLES env var (comma-separated)."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command")
+
+    # -- windows ------------------------------------------------------------------
+    subparsers.add_parser(
+        "windows",
+        help="List all visible windows and show which one the scanner would pick.",
+    )
 
     # -- calibrate ----------------------------------------------------------------
     cal = subparsers.add_parser("calibrate", help="Verify window detection and scale.")
@@ -1305,8 +1369,20 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
+    # Resolve accepted window titles from all sources (defaults, env, CLI flags)
+    # before any subcommand runs, so every capture call uses the merged list.
+    from youkai_ocr import capture as _capture
+    _capture.set_accepted_titles(
+        _capture.resolve_accepted_titles(
+            extra=args.window_title,
+            env=os.environ.get("YOUKAI_WINDOW_TITLES"),
+        )
+    )
+
     try:
-        if args.command == "calibrate":
+        if args.command == "windows":
+            _cmd_windows(args)
+        elif args.command == "calibrate":
             _cmd_calibrate(args)
         elif args.command == "scan":
             _cmd_scan(args)

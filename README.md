@@ -56,6 +56,36 @@ python -m youkai_ocr scan-agents   # Agent roster only
 python -m youkai_ocr calibrate
 ```
 
+### Chiaki / alternate client (PlayStation Remote Play)
+
+Youkai supports scanning ZZZ streamed via **chiaki-ng** (or another Remote Play client)
+with no extra flags — chiaki-ng's window title is a built-in default.
+
+If your client has a different title, use the three-step discovery recipe:
+
+1. Launch your streaming client and start the ZZZ stream.
+2. Run `youkai-ocr windows` — this lists every visible window with its title:
+   ```
+   youkai-ocr windows
+   ```
+3. Copy the exact title from the `title=` column and pass it on the command line:
+   ```
+   youkai-ocr --window-title "My Remote Play" scan-all ...
+   ```
+   Or set it persistently via the environment variable:
+   ```
+   YOUKAI_WINDOW_TITLES="My Remote Play" youkai-ocr scan-all ...
+   ```
+
+**Retail ZZZ is unaffected** — `ZenlessZoneZero` is always in the accepted-title list
+regardless of any `--window-title` or environment flags.
+
+**Chiaki-ng works out of the box** — `chiaki-ng` is a built-in default title; no flag needed.
+
+> Note: the chiaki-ng window renders the ZZZ stream at whatever resolution you set in
+> chiaki. Set it to a 16:9 resolution (1920×1080 recommended) so the scanner's aspect-ratio
+> check passes. Ensure the stream fills the client area with no black bars.
+
 ## Output
 
 `export/youkai_export.json` — ZOD-format export with `discs`, `weapons`, and `characters` arrays.
