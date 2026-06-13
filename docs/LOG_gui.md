@@ -369,3 +369,13 @@ The critical path (full scan works, export round-trips) is validated. Remaining 
 Decision: revert `app.rs` + `main.rs` to a1a197e (the proven reference_18 build, 800×500, no zoom) and ship that. app.rs+main.rs are git-verified identical to a1a197e. Deployed to repo root, WSL youkai-portable, and both Windows copies (md5 e470c21).
 
 **Still open:** original issue (bottom-right SCAN PARAMETERS box slightly clipped at the frame at 800×500) and the "make it bigger" request. Both require either a working visual test harness or a refactor of the fragile panel geometry to be size-independent before re-attempting. Do NOT re-attempt blind.
+
+## 2026-06-12 — T11 Run 1 (manual validation)
+
+Discs-only scan from GUI: ✓. File export: ✓. Review report button: ✓. GUI-minimized archive-frame check (minimized immediately after scan start): ✓. All Run 1 acceptance criteria met.
+
+**Still open:** Run 2 — KILL mid-scan, confirm subprocess dies and GUI resets to Idle.
+
+## 2026-06-12 — T11 Run 2 (manual validation)
+
+KILL mid-scan: ✓. Subprocess terminated cleanly. GUI reset to Idle: ✓. T11 all acceptance criteria met — marked done.

@@ -115,7 +115,7 @@ Order matters: T1–T5 (Python contract) before T6–T10 (Rust), T11–T12 last.
   testable if folded into ScanState observer (assert commands queued exactly once
   per transition).
 
-## T11 — Windows end-to-end validation (manual, live game)  [~]
+## T11 — Windows end-to-end validation (manual, live game)  ✓
 - **Do:** Build release exe on Windows. Validate: full scan from GUI; discs-only
   scan; KILL mid-scan (subprocess dies, GUI resets cleanly); clipboard + file
   export; review.txt button; GUI minimized during scan (no GUI pixels in archive
@@ -124,10 +124,8 @@ Order matters: T1–T5 (Python contract) before T6–T10 (Rust), T11–T12 last.
 - **Accept:** all checks pass; findings + any threshold fixes logged in
   LOG_gui.md; RUNBOOK.md gains a "GUI quickstart" section.
 - *Confirmed (2026-06-12)*: full scan from GUI ✓; clipboard export ✓.
-- *Still open — 2 runs:*
-  - **Run 1**: discs-only scan; file export; review.txt button; GUI-minimized
-    archive-frame check (minimize immediately after starting scan).
-  - **Run 2**: KILL mid-scan → confirm subprocess dies + GUI resets cleanly.
+- *Confirmed (2026-06-12)*: Run 1 ✓ — discs-only scan ✓; file export ✓; review.txt button ✓; GUI-minimized archive-frame check ✓.
+- *Confirmed (2026-06-12)*: Run 2 ✓ — KILL mid-scan ✓; subprocess dies ✓; GUI resets to Idle ✓.
 - *Deferred (not a v0.1 gate)*: CLI `--resume <run_dir>` — GUI is the
   entrypoint; resume-from-partial is a power-user escape hatch, not exposed in
   GUI. Re-evaluate if GUI gains a resume flow. `Child::kill()` subprocess-death
