@@ -11,7 +11,7 @@ from __future__ import annotations
 import ctypes
 import sys
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import numpy as np
 from PIL import Image
@@ -21,7 +21,12 @@ REFERENCE_H = 1080
 REFERENCE_ASPECT = REFERENCE_W / REFERENCE_H  # 1.7777…  (16:9)
 ASPECT_TOLERANCE = 0.01  # ±1% before rejection
 
-GAME_TITLE = "ZenlessZoneZero"
+DEFAULT_GAME_TITLES: tuple[str, ...] = ("ZenlessZoneZero", "chiaki-ng")
+
+# Module-level accepted title list; replaced by set_accepted_titles() in main()
+# before any capture call.  Starts equal to DEFAULT_GAME_TITLES so the module
+# works correctly when imported without going through the CLI entry point.
+_accepted_titles: tuple[str, ...] = DEFAULT_GAME_TITLES
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,60 @@ def _normalize_title(s: str) -> str:
     return "".join(s.lower().split())
 
 
+def title_matches(window_title: str, accepted: "Iterable[str]") -> bool:
+    """Return True if any accepted title is a normalized substring of window_title.
+
+    Pure function — no module state; unit-testable without a live window.
+    Case-insensitive, whitespace-insensitive (reuses _normalize_title).
+    """
+    norm = _normalize_title(window_title)
+    return any(_normalize_title(t) in norm for t in accepted)
+
+
+def resolve_accepted_titles(
+    extra: "Iterable[str] | None" = None,
+    env: "str | None" = None,
+) -> "tuple[str, ...]":
+    """Build the accepted-titles tuple from defaults + env var + extra iterable.
+
+    Merge order (lowest → highest priority, all merged as a union):
+      1. DEFAULT_GAME_TITLES
+      2. comma-split env string (e.g. YOUKAI_WINDOW_TITLES="A,B")
+      3. extra iterable (CLI --window-title values)
+
+    Dedupes preserving first-seen order; drops blank strings.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    candidates: list[str] = (
+        list(DEFAULT_GAME_TITLES)
+        + [s.strip() for s in (env or "").split(",")]
+        + list(extra or [])
+    )
+    for t in candidates:
+        if t and t not in seen:
+            seen.add(t)
+            result.append(t)
+    return tuple(result)
+
+
+def set_accepted_titles(titles: "Iterable[str]") -> None:
+    """Replace the module-level accepted-titles list (always unions in defaults).
+
+    Call this once in main() after parsing args; all capture functions read
+    the module state so no signature changes are needed throughout the call graph.
+    """
+    global _accepted_titles
+    # resolve_accepted_titles always starts with DEFAULT_GAME_TITLES, so the
+    # passed iterable is merged on top of the built-in defaults.
+    _accepted_titles = resolve_accepted_titles(extra=titles)
+
+
+def get_accepted_titles() -> "tuple[str, ...]":
+    """Return the current module-level accepted-titles tuple."""
+    return _accepted_titles
+
+
 def list_game_windows() -> list[dict]:
     """All visible, non-minimized, non-zero-client windows matching the game title.
 
@@ -151,8 +210,6 @@ def list_game_windows() -> list[dict]:
     except Exception:
         return out
 
-    target = _normalize_title(GAME_TITLE)
-
     def _cb(hwnd, _extra):
         try:
             if not win32gui.IsWindowVisible(hwnd):
@@ -160,7 +217,7 @@ def list_game_windows() -> list[dict]:
             if win32gui.IsIconic(hwnd):           # minimized → 0×0 client rect
                 return
             title = win32gui.GetWindowText(hwnd)
-            if target not in _normalize_title(title):
+            if not title_matches(title, get_accepted_titles()):
                 return
             _, _, cw, ch = win32gui.GetClientRect(hwnd)   # (0, 0, w, h)
             if cw <= 0 or ch <= 0:                # hidden/message-only helper window
@@ -175,6 +232,52 @@ def list_game_windows() -> list[dict]:
             })
         except Exception:
             return  # skip any window that errors; keep enumerating
+
+    try:
+        win32gui.EnumWindows(_cb, None)
+    except Exception:
+        pass
+    return out
+
+
+def list_all_windows() -> list[dict]:
+    """All visible, non-minimized, non-zero-client top-level windows — no title filter.
+
+    Same passive enumeration as list_game_windows() but returns every window,
+    not just those matching the accepted-titles list.  Used by the ``windows``
+    discovery subcommand so users can find the exact title of a non-default client
+    (e.g. a custom chiaki-ng build with a different window title).
+
+    Returns [] on non-win32 platforms (mirrors list_game_windows behaviour).
+    """
+    out: list[dict] = []
+    if sys.platform != "win32":
+        return out
+    try:
+        import win32gui  # pywin32
+    except Exception:
+        return out
+
+    def _cb(hwnd, _extra):
+        try:
+            if not win32gui.IsWindowVisible(hwnd):
+                return
+            if win32gui.IsIconic(hwnd):
+                return
+            title = win32gui.GetWindowText(hwnd)
+            _, _, cw, ch = win32gui.GetClientRect(hwnd)
+            if cw <= 0 or ch <= 0:
+                return
+            pt = _POINT(0, 0)
+            ctypes.windll.user32.ClientToScreen(hwnd, ctypes.byref(pt))
+            out.append({
+                "hwnd": hwnd, "title": title,
+                "left": pt.x, "top": pt.y, "right": pt.x + cw, "bottom": pt.y + ch,
+                "w": cw, "h": ch, "aspect": cw / ch,
+                "is_16_9": abs(cw / ch - REFERENCE_ASPECT) <= ASPECT_TOLERANCE,
+            })
+        except Exception:
+            return
 
     try:
         win32gui.EnumWindows(_cb, None)
@@ -225,10 +328,12 @@ def _require_window() -> tuple[int, int, int, int]:
         raise RuntimeError("Window capture is only supported on Windows.")
     result = _find_game_window()
     if result is None:
+        titles_str = ", ".join(f'"{t}"' for t in get_accepted_titles())
         raise RuntimeError(
-            f'Game window "{GAME_TITLE}" not found (no visible, non-minimized window '
-            "with a renderable client area). Ensure the game is running in Windowed "
-            "(not Borderless / Fullscreen) mode and is not minimized."
+            f"Game window not found (accepted titles: {titles_str}; "
+            "no visible, non-minimized window with a renderable client area). "
+            "Ensure the game is running in Windowed (not Borderless / Fullscreen) "
+            "mode and is not minimized."
         )
     left, top, right, bottom, _hwnd = result
     w, h = right - left, bottom - top

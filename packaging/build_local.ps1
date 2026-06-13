@@ -23,7 +23,7 @@ if (-not $GitSha) {
     $GitSha = (git -C $RepoRoot --no-pager -c safe.directory=* rev-parse --short HEAD 2>$null).Trim()
 }
 if (-not $GitSha) { $GitSha = "unknown" }
-$Version = "0.1.0+$GitSha"
+$Version = "0.2.0+$GitSha"
 Write-Host "Build version: $Version" -ForegroundColor Cyan
 
 # ── 2. Copy repo to local temp via wsl rsync (avoids UNC stall) ──────────────
@@ -38,7 +38,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "wsl rsync failed." }
 $InitFile = Join-Path $BuildRoot "src\youkai_ocr\__init__.py"
 $content  = Get-Content $InitFile -Raw
 # Replace the sentinel line exactly — the comment above it tags the line.
-$patched  = $content -replace '(__version__ = "0\.1\.0\+)[^"]*(")', "`${1}$GitSha`${2}"
+$patched  = $content -replace '(__version__ = "0\.2\.0\+)[^"]*(")', "`${1}$GitSha`${2}"
 Set-Content $InitFile $patched -NoNewline
 Write-Host "Patched __version__ = `"$Version`" in $InitFile" -ForegroundColor Green
 
