@@ -2,7 +2,7 @@
 #
 # Build command (run from the repo root on Windows):
 #
-#   python -m PyInstaller packaging/youkai-ocr.spec --clean
+#   python -m PyInstaller packaging/youkai.spec --clean
 #
 # Output: dist/youkai-ocr/youkai-ocr.exe  (onedir layout)
 #
