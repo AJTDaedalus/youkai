@@ -138,6 +138,8 @@ impl eframe::App for YoukaiApp {
             self.scan_state = new_state;
             if is_terminal {
                 self.scan_handle = None;
+                // Load-bearing: reader_thread calls request_repaint() on the terminal event,
+                // which wakes the minimized window so update() can un-minimize. Do not remove.
                 if self.occlusion_minimized {
                     ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(ViewportCommand::RequestUserAttention(

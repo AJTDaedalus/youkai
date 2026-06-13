@@ -32,4 +32,5 @@ To protect your Zenless Zone Zero account from anti-cheat detection (HoyoPlay An
     *   Avoid setting up active local HTTPS proxies (like mitmproxy/Fiddler with custom root certificates) for routing main game traffic, as SSL certificate pinning checks in modern HoYoverse clients can easily flag custom certificate authority authorities.
 5.  **Safe Testing Best Practices**:
     *   When first testing Youkai's packet parser or decryption logic on live game sessions, **always test using a secondary/alt account** rather than your primary main account to guarantee complete safety.
+6.  **OS-Side Input Automation (Permitted)**: youkai may move the mouse and press keys via standard OS input APIs (`pynput`) to navigate menus, exactly as a human would. This is *not* memory access, injection, or client modification — the OS delivers the events; the game cannot distinguish them from a physical device. Input is deliberately humanized (Bézier motion, timing jitter) and testing must still use a secondary/alt account per rule 5.
 

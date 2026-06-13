@@ -439,7 +439,6 @@ def _preflight_frame(
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
 
-    import numpy as np
     arr = np.array(frame)
     brightness = float(arr.mean())
     print(f"  Frame brightness: {brightness:.1f}/255", end="")

@@ -100,8 +100,9 @@ impl ScanHandle {
 
         {
             let state = state.clone();
+            let child_reap = child.clone();
             thread::spawn(move || {
-                reader_thread(stdout, state, stderr_lines, ctx);
+                reader_thread(stdout, state, stderr_lines, ctx, child_reap);
             });
         }
 
@@ -198,6 +199,7 @@ fn reader_thread(
     state: Arc<Mutex<ScanState>>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
     ctx: Option<egui::Context>,
+    child: Arc<Mutex<Option<Child>>>,
 ) {
     let repaint = || {
         if let Some(c) = &ctx {
@@ -295,6 +297,8 @@ fn reader_thread(
             ScanEvent::Warning { .. } => {}
         }
 
+        // Load-bearing: this repaint on Done/Error wakes the minimized window so
+        // update() in app.rs can un-minimize. Do not remove.
         repaint();
         if terminal {
             break;
@@ -313,6 +317,11 @@ fn reader_thread(
             run_dir: run_dir.map(PathBuf::from),
         };
         repaint();
+    }
+
+    // Reap the child so it doesn't become a zombie (Linux) or leak a handle (Windows).
+    if let Some(mut c) = child.lock().unwrap().take() {
+        let _ = c.wait();
     }
 }
 
