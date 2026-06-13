@@ -18,6 +18,9 @@ exports/
 # These are developer-curated calibration images used by the test suite.
 # DO NOT add user scan screenshots or account data here.
 
+# ── Local-only docs (operational runbook, kept off remote) ───────────────────
+docs/RUNBOOK.md
+
 # ── Raw packet captures (old research artifacts) ──────────────────────────────
 packet_research/
 
