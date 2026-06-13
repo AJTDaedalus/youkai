@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "youkai-ocr"
+name = "youkai"
 version = "0.1.0"
 description = "ZZZ inventory OCR scanner — exports ZodExport/GOOD JSON"
 requires-python = ">=3.12"
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-youkai-ocr = "youkai_ocr.cli:main"
+youkai = "youkai_ocr.cli:main"
 
 [project.optional-dependencies]
 dev = [

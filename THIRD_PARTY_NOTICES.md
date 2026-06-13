@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-youkai-portable.zip bundles the following third-party components.
+Youkai bundles the following third-party components.
 
 ---
 

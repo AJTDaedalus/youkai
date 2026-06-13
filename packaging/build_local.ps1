@@ -46,7 +46,7 @@ Write-Host "Patched __version__ = `"$Version`" in $InitFile" -ForegroundColor Gr
 Write-Host ""
 Write-Host "=== Running PyInstaller ===" -ForegroundColor Cyan
 Push-Location $BuildRoot
-python -m PyInstaller packaging\youkai-ocr.spec --clean -y
+python -m PyInstaller packaging\youkai.spec --clean -y
 if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Error "PyInstaller failed." }
 Pop-Location
 

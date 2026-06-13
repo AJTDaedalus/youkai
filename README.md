@@ -1,4 +1,4 @@
-# youkai-ocr
+# Youkai
 
 ZZZ inventory OCR scanner. Reads Drive Discs, W-Engines, and Agent stats directly from the game window and exports them as [ZOD](https://frzyc.github.io/zenless-optimizer/)-format JSON, importable into ZZZ-Optimizer and similar tools.
 
@@ -83,7 +83,7 @@ Output is the ZOD/GOOD JSON the [Zenless Optimizer](https://frzyc.github.io/zenl
 
 ## Safety
 
-youkai-ocr is passive: it reads the game window framebuffer (BitBlt) and sends synthetic mouse/keyboard input. It never reads process memory, modifies game files, or intercepts network traffic. See [docs/RUNBOOK.md §Safety rules](docs/RUNBOOK.md#safety-rules-required--read-before-first-use) for details.
+Youkai is passive: it reads the game window framebuffer (BitBlt) and sends synthetic mouse/keyboard input. It never reads process memory, modifies game files, or intercepts network traffic. See [docs/RUNBOOK.md §Safety rules](docs/RUNBOOK.md#safety-rules-required--read-before-first-use) for details.
 
 ## License
 
@@ -97,4 +97,4 @@ Bundled third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PART
 
 `youkai/src/zod.rs` — the original Rust ZOD schema definitions, kept as a field-name reference. The active Python implementation is in `src/youkai_ocr/zod.py`.
 
-> **Note:** The `youkai/` subdirectory is the **Rust GUI shell** — an egui frontend (`youkai.exe`) that spawns `youkai-ocr` as a subprocess and renders its JSONL event stream. The scanner logic lives entirely in `src/youkai_ocr/` (Python). `youkai/src/zod.rs` is kept as a field-name reference for the ZOD schema. See [D39 in docs/DECISIONS.md](docs/DECISIONS.md) for the architecture decision. The `irminsul/` subdirectory is an unmodified reference clone of the Genshin Impact sniffer the Rust skeleton was derived from.
+> **Note:** The `youkai/` subdirectory is the **Rust GUI shell** — an egui frontend (`youkai.exe`) that spawns the Python scanner as a subprocess and renders its JSONL event stream. The scanner logic lives entirely in `src/youkai_ocr/` (Python). `youkai/src/zod.rs` is kept as a field-name reference for the ZOD schema. The `irminsul/` subdirectory is an unmodified reference clone of the Genshin Impact sniffer the Rust skeleton was derived from.
