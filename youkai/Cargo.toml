@@ -33,6 +33,9 @@ tracing = { version = "0.1.41" }
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_UI_Shell"] }
+
 [build-dependencies]
 winresource = "0.1.23"
 

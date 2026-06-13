@@ -342,6 +342,32 @@ impl YoukaiApp {
     fn main_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let is_scanning = self.scan_handle.is_some();
 
+        if !crate::ui::admin::is_admin() {
+            egui::Frame::none()
+                .fill(Color32::from_rgb(0x1a, 0x0a, 0x00))
+                .stroke(egui::Stroke::new(1.2, Color32::from_rgb(0xff, 0x88, 0x00)))
+                .inner_margin(8.0)
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new("⚠ NOT RUNNING AS ADMINISTRATOR")
+                            .color(Color32::from_rgb(0xff, 0x88, 0x00))
+                            .strong()
+                            .size(11.0),
+                    );
+                    ui.add_space(2.0);
+                    ui.label(
+                        RichText::new(
+                            "ZZZ runs elevated under anti-cheat. Screen capture and \
+                             synthetic input require matching elevation. \
+                             Right-click youkai.exe → Run as administrator.",
+                        )
+                        .color(Color32::from_rgb(0xcc, 0x88, 0x44))
+                        .size(10.5),
+                    );
+                });
+            ui.add_space(6.0);
+        }
+
         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
             // ── LEFT COLUMN ──────────────────────────────────────────
             ui.vertical(|ui| {
