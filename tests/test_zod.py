@@ -108,7 +108,7 @@ def _make_export() -> ZodExport:
 def test_export_top_level_keys() -> None:
     d = _make_export().to_dict()
     assert set(d.keys()) == {"format", "version", "source", "characters", "discs", "weapons"}
-    assert d["format"] == "GOOD"
+    assert d["format"] == "eZOD"
     assert d["source"] == "Youkai"
     assert d["version"] == 1
 
@@ -146,6 +146,6 @@ def test_json_roundtrip() -> None:
     export = _make_export()
     raw = export.to_json()
     parsed = json.loads(raw)
-    assert parsed["format"] == "GOOD"
+    assert parsed["format"] == "eZOD"
     assert parsed["discs"][0]["setKey"] == "ShockstarDisco"
     assert parsed["characters"][0]["talent"]["core"] == 6

@@ -1,6 +1,6 @@
-# iZOD — Youkai Extended ZOD Format
+# eZOD — Youkai Extended ZOD Format
 
-ZOD ("Zenless Optimizer Data") is the community-standard JSON format for ZZZ inventory exports, accepted by [Zenless Optimizer](https://frzyc.github.io/zenless-optimizer/) and compatible tools. Youkai emits standard ZOD and extends it with an additive `talent` block on each character — hence **iZOD** (improved ZOD).
+ZOD ("Zenless Optimizer Data") is the community-standard JSON format for ZZZ inventory exports, accepted by [Zenless Optimizer](https://frzyc.github.io/zenless-optimizer/) and compatible tools. Youkai emits standard ZOD and extends it with an additive `talent` block on each character — hence **eZOD** (extended ZOD).
 
 Importers that ignore unknown fields are unaffected. Importers that read `talent` get full skill-rank data not available from standard scanners.
 
@@ -10,7 +10,7 @@ Importers that ignore unknown fields are unaffected. Importers that read `talent
 
 ```json
 {
-  "format":     "GOOD",
+  "format":     "eZOD",
   "version":    1,
   "source":     "Youkai",
   "characters": [ ... ],
@@ -21,7 +21,7 @@ Importers that ignore unknown fields are unaffected. Importers that read `talent
 
 | Field        | Type   | Value     | Notes |
 |--------------|--------|-----------|-------|
-| `format`     | string | `"GOOD"`  | Fixed. Identifies the format family. |
+| `format`     | string | `"eZOD"`  | Fixed. Identifies the format family. |
 | `version`    | int    | `1`       | Schema version. |
 | `source`     | string | `"Youkai"`| Identifies the exporter. |
 | `characters` | array  | `ZodAgent[]` | One entry per agent in the roster. |
@@ -286,7 +286,7 @@ Agents carry no gear list — reconstruct from `location` on the gear side.
 
 ## Backwards compatibility
 
-`talent` is an additive extension. The `format` field remains `"GOOD"` and `version` remains `1`. Importers that skip unknown object fields will read the file correctly. Importers that explicitly read `talent` will get full skill-rank data.
+`talent` is an additive extension. The `format` field remains `"eZOD"` and `version` remains `1`. Importers that skip unknown object fields will read the file correctly. Importers that explicitly read `talent` will get full skill-rank data.
 
 No existing ZOD fields have been removed or renamed. Youkai will maintain this guarantee across patch updates; breaking schema changes (if ever needed) would increment `version`.
 
@@ -296,7 +296,7 @@ No existing ZOD fields have been removed or renamed. Youkai will maintain this g
 
 ```json
 {
-  "format": "GOOD",
+  "format": "eZOD",
   "version": 1,
   "source": "Youkai",
   "characters": [
