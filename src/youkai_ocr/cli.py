@@ -1283,7 +1283,7 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="youkai-ocr",
-        description="ZZZ inventory OCR scanner — exports ZodExport/GOOD JSON.",
+        description="ZZZ inventory OCR scanner — exports ZodExport/eZOD JSON.",
     )
     from youkai_ocr import __version__
     parser.add_argument("--version", action="version", version=f"youkai-ocr {__version__}")
