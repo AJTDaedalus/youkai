@@ -1,4 +1,4 @@
-"""ZOD/GOOD export schema — mirrors youkai/src/zod.rs exactly.
+"""ZOD/eZOD export schema — mirrors youkai/src/zod.rs exactly.
 
 Field names must match the Rust serde camelCase output. Any schema change
 must be applied to both files in lockstep.
@@ -164,7 +164,7 @@ class ZodAgent:
 
 @dataclass
 class ZodExport:
-    format: str = "GOOD"
+    format: str = "eZOD"
     version: int = 1
     source: str = "Youkai"
     characters: list[ZodAgent] = field(default_factory=list)

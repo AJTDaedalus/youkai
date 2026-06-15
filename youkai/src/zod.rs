@@ -40,7 +40,7 @@ pub struct ZodAgent {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ZodExport {
-    pub format: String, // "GOOD"
+    pub format: String, // "eZOD"
     pub version: u32,   // 1
     pub source: String, // "Youkai"
     pub characters: Vec<ZodAgent>,
