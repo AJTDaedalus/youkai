@@ -98,7 +98,7 @@ Each run also writes a timestamped directory under `--archive-dir` containing:
 
 ## Export format (extended ZOD)
 
-Output is the ZOD/GOOD JSON the [Zenless Optimizer](https://frzyc.github.io/zenless-optimizer/) accepts (`format: "GOOD"`, `source: "Youkai"`), with `discs`, `weapons`, and `characters` arrays. Equipped relationships live on each disc/engine's `location` (the agent's key, or `""` if unequipped); characters carry no gear list — it's reconstructed downstream from `location`.
+Output is extended ZOD JSON for the [Zenless Optimizer](https://frzyc.github.io/zenless-optimizer/) (`format: "eZOD"`, `source: "Youkai"`), with `discs`, `weapons`, and `characters` arrays. Equipped relationships live on each disc/engine's `location` (the agent's key, or `""` if unequipped); characters carry no gear list — it's reconstructed downstream from `location`.
 
 **What youkai adds over baseline ZOD:** every character includes a `talent` object with all six skill ranks — the standard scanner export omits these:
 
@@ -109,7 +109,7 @@ Output is the ZOD/GOOD JSON the [Zenless Optimizer](https://frzyc.github.io/zenl
 }]
 ```
 
-`basic/dodge/assist/special/chain` are numeric skill levels; `core` is the Core Passive rank. The extension is additive and `format` stays `"GOOD"`, so importers that ignore unknown fields keep working, while those that read `talent` get full skill data.
+`basic/dodge/assist/special/chain` are numeric skill levels; `core` is the Core Passive rank. The extension is additive over baseline ZOD, so importers that ignore unknown fields keep working, while those that read `talent` get full skill data.
 
 ## Safety
 

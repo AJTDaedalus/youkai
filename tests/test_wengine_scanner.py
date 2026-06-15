@@ -105,7 +105,7 @@ def test_export_engines_roundtrip():
         export_engines(engines, path)
         data = json.loads(path.read_text())
 
-    assert data["format"] == "GOOD"
+    assert data["format"] == "eZOD"
     assert data["version"] == 1
     assert data["source"] == "Youkai"
     assert len(data["weapons"]) == 2
