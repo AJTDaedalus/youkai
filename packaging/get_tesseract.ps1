@@ -49,9 +49,10 @@ $src = Find-TesseractDir
 
 if ($src) {
     Write-Host "Found Tesseract at $src - copying files..." -ForegroundColor Cyan
-    New-Item -ItemType Directory -Force -Path (Join-Path $Dest "tessdata") | Out-Null
-    Copy-Item (Join-Path $src "tesseract.exe") $tessExe -Force
-    Copy-Item (Join-Path $src "tessdata\eng.traineddata") $engData -Force
+    New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+    # Copy the full install dir so all DLLs (libleptonica, libtesseract, etc.) are present.
+    # A partial copy (exe + tessdata only) causes DLL-not-found errors at runtime.
+    Copy-Item (Join-Path $src "*") $Dest -Recurse -Force
     Write-Host "Done - Tesseract ready at $Dest" -ForegroundColor Green
     exit 0
 }
@@ -80,9 +81,8 @@ if (-not (Test-Path (Join-Path $absTmp "tesseract.exe"))) {
     exit 1
 }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $Dest "tessdata") | Out-Null
-Copy-Item (Join-Path $absTmp "tesseract.exe") $tessExe -Force
-Copy-Item (Join-Path $absTmp "tessdata\eng.traineddata") $engData -Force
+New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+Copy-Item (Join-Path $absTmp "*") $Dest -Recurse -Force
 
 Remove-Item -Recurse -Force $absTmp
 Remove-Item -Force $installer

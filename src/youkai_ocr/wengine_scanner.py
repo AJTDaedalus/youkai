@@ -139,7 +139,9 @@ def _extract_engine(
         level_crop.save(dd / "level.png")
         refine_crop.save(dd / "refinement.png")
 
-    if name_conf < _CRITICAL_NAME_THRESHOLD:
+    if not key or name_conf < _CRITICAL_NAME_THRESHOLD:
+        # Empty key = normalize_engine rejected a below-floor match (T2); surface as
+        # critical_fail/unknown_engine rather than emitting a wrong or blank key.
         return (None, conf)
 
     engine = ZodWEngine(
@@ -214,6 +216,93 @@ def scan_engines(
         listener.stop()
 
     return engines, issues
+
+
+# ── Equip-slot engine extraction (agent equipment select-view) ───────────────
+# Layout: when the agent engine slot is clicked, the game shows the W-Engine
+# inventory with a detail panel on the right.  The currently-equipped engine is
+# highlighted in the grid and its info shown in the detail panel.
+#
+# Detail panel (1920×1080 reference coords, past the left thumbnail):
+#   x: 537–1060  (thumbnail occupies ~455–537)
+#   Name row:     y=118–165  (1-line name) or y=118–210 (2-line, ~40px taller)
+#   Level row:    y=165–210  (1-line) or y=210–250 (2-line)
+#   Star row:     y=210–255  (1-line) or y=250–295 (2-line)
+#
+# Stars in this view are white OUTLINE stars (refinement=1 shows no gold fill).
+# Gold fill appears only for refinement>1 and is detected by count_filled_stars.
+
+_EE_X0 = 537    # left edge of detail text (past thumbnail)
+_EE_X1 = 1060   # right edge of detail panel
+_EE_NAME_Y0 = 118   # name always starts here
+_EE_NAME_Y1 = 215   # covers both 1-line and 2-line names
+_EE_SCAN_Y1 = 310   # bottom of combined name+level+star scan region
+_EE_STAR_X0 = 600   # left edge of star row (past specialty icon)
+_EE_STAR_Y0 = 210   # star row start covering 1-line and 2-line cases
+_EE_STAR_Y1 = 305   # star row end
+_EE_LV_RE = re.compile(r"[Ll][vV][.\s]+(\d+)\s*/\s*(\d+)")
+
+
+def scan_equipped_engine_frame(
+    frame: Image.Image,
+    calib: CalibrationResult,
+    agent_key: str = "",
+    archive_dir: Optional[Path] = None,
+    engine: str | TextRecognizer = "tesseract",
+) -> Optional[ZodWEngine]:
+    """Extract a ZodWEngine from an equip-slot select-view frame.
+
+    Reads the engine detail panel shown in the agent equipment screen after
+    clicking the W-Engine slot (equip_slot_6.png from the archive).
+
+    Returns None on critical failure (key confidence too low).
+    """
+    recognizer = engine if isinstance(engine, TextRecognizer) else make_recognizer(engine)
+
+    def _c(ref_bbox: tuple) -> Image.Image:
+        x0, y0, x1, y1 = ref_bbox
+        return frame.crop((
+            int(x0 * calib.scale_x), int(y0 * calib.scale_y),
+            int(x1 * calib.scale_x), int(y1 * calib.scale_y),
+        ))
+
+    # ── Name + level block (covers 1-line and 2-line names) ──────────────────
+    block_crop = _c((_EE_X0, _EE_NAME_Y0, _EE_X1, _EE_SCAN_Y1))
+    block_text = recognizer.read_text(block_crop, "white_text_on_dark")
+
+    # ── Engine key ────────────────────────────────────────────────────────────
+    name_crop = _c((_EE_X0, _EE_NAME_Y0, _EE_X1, _EE_NAME_Y1))
+    name_text = recognizer.read_text(name_crop, "white_text_on_dark").replace("\n", " ").strip()
+    key, name_conf = normalize_engine(name_text)
+    if not key or name_conf < 30.0:
+        return None
+
+    # ── Level + ascension from "Lv. N/MAX" in the block ──────────────────────
+    m = _EE_LV_RE.search(block_text)
+    if m:
+        level, ascension = parse_level_with_ascension(f"Lv. {m.group(1)}/{m.group(2)}")
+    else:
+        level, ascension = 0, 0
+
+    # ── Refinement: count gold-filled stars; default to 1 if none visible ────
+    # Stars appear as white outlines at refinement=1; gold fill shows for >1.
+    star_crop = _c((_EE_STAR_X0, _EE_STAR_Y0, _EE_X1, _EE_STAR_Y1))
+    refinement = count_filled_stars(star_crop)
+
+    # ── Archive ───────────────────────────────────────────────────────────────
+    if archive_dir is not None:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        name_crop.save(archive_dir / "equip_engine_name.png")
+        star_crop.save(archive_dir / "equip_engine_stars.png")
+
+    return ZodWEngine(
+        key=key,
+        level=level,
+        ascension=ascension,
+        refinement=refinement,
+        location=agent_key,
+        lock=False,
+    )
 
 
 # ── Offline single-frame extraction ──────────────────────────────────────────

@@ -807,7 +807,7 @@
     {
       "id": "engine_0060",
       "expect": {
-        "key": "StarlightEngine",
+        "key": "StarlightEngineReplica",
         "level": 0,
         "ascension": 0,
         "refinement": 1

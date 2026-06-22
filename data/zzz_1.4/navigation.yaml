@@ -526,8 +526,16 @@ agent_menu:
   # (game_y=1041, the centre of the icon-label strip).
   # Full icon+label spans roughly y=1025-1055; y=1041 is a safe click target.
   bottom_nav:
-    storage:  {center: [1123, 1041]}   # 8th item; OCR text centre x=1123
-    agents:   {center: [1251, 1041]}   # 9th item; OCR text centre x=1251
+    # Updated 2026-06-15: ZZZ 1.5 added Achievements (6th item), shifting right.
+    storage:  {center: [1178, 1041]}   # 8th item (was 1123 pre-1.5)
+    agents:   {center: [1274, 1041]}   # 9th item (was 1251 pre-1.5)
+
+    # OCR-locate band: crop this strip from a main-menu frame, 3× upscale, threshold,
+    # then run pytesseract PSM 11 to locate word centers. Used to auto-adapt to layout
+    # drift when ZZZ adds new nav items. Hard-coded centers above are the fallback.
+    ocr_band:      [900, 1015, 1400, 1062]   # game-area coords (x0,y0,x1,y1)
+    ocr_upscale:   3
+    ocr_threshold: 90    # binary threshold for white label text
 
 # ─────────────────────────────────────────────
 # SCREEN SIGNATURES  (used by assert_screen / active_screen)

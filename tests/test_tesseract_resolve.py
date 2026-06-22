@@ -140,4 +140,6 @@ class _FrozenSys:
         self.frozen = True
         self._MEIPASS = str(meipass)
         self.platform = platform
-        self.argv = [str(meipass / "youkai.exe")]
+        _exe_name = "youkai.exe" if platform == "win32" else "youkai"
+        self.executable = str(meipass.parent / _exe_name)
+        self.argv = [self.executable]

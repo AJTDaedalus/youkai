@@ -29,9 +29,10 @@ from youkai_ocr.cli import (
     _is_main_menu,
     _make_first_item_check,
     _preflight_frame,
+    _reconcile_locations,
     select_phases,
 )
-from youkai_ocr.zod import ZodAgent, ZodDisc, ZodWEngine
+from youkai_ocr.zod import ZodAgent, ZodDisc, ZodSubstat, ZodWEngine
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -182,8 +183,7 @@ def _patched_scan_all(tmp_path: Path, args, disc_check=None, engine_check=None, 
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
          patch("youkai_ocr.disc_scanner.scan_discs", return_value=([disc], [])), \
          patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([engine], [])), \
-         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([agent], [], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([agent], [], [], [])), \
          patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()), \
          patch("youkai_ocr.cli._countdown"), \
          patch("youkai_ocr.cli._check_disc_screen",
@@ -288,8 +288,7 @@ def test_scan_all_resume_skips_disc_and_engine_phases(tmp_path):
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
          patch("youkai_ocr.disc_scanner.scan_discs") as mock_discs, \
          patch("youkai_ocr.wengine_scanner.scan_engines") as mock_engines, \
-         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([agent], [], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([agent], [], [], [])), \
          patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()), \
          patch("youkai_ocr.cli._countdown"), \
          patch("youkai_ocr.cli._check_agent_screen"), \
@@ -317,8 +316,7 @@ def test_scan_all_issues_written_to_run_dir(tmp_path):
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
          patch("youkai_ocr.disc_scanner.scan_discs", return_value=([], [])), \
          patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([], [])), \
-         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([agent], [issue], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([agent], [issue], [], [])), \
          patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()), \
          patch("youkai_ocr.cli._countdown"), \
          patch("youkai_ocr.cli._check_disc_screen"), \
@@ -393,7 +391,7 @@ def test_auto_nav_driver_walks_full_transition_graph(tmp_path):
     driver_calls: list[str] = []
 
     class _FakeDriver:
-        def __init__(self, _calib, _capture_fn):
+        def __init__(self, _calib, _capture_fn, *, archive_dir=None):
             pass
         def navigate_to_storage(self):
             driver_calls.append("navigate_to_storage")
@@ -411,8 +409,7 @@ def test_auto_nav_driver_walks_full_transition_graph(tmp_path):
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
          patch("youkai_ocr.disc_scanner.scan_discs",    return_value=([disc],   [])), \
          patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([engine], [])), \
-         patch("youkai_ocr.agent_scanner.scan_agents",  return_value=([agent],  [], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents",  return_value=([agent],  [], [], [])), \
          patch("youkai_ocr.cli._is_main_menu",          return_value=True), \
          patch("youkai_ocr.cli._NavDriver",              _FakeDriver), \
          patch("builtins.input") as mock_input:
@@ -459,7 +456,7 @@ def test_auto_nav_agents_only_skips_storage(tmp_path):
     driver_calls: list[str] = []
 
     class _FakeDriver:
-        def __init__(self, _calib, _capture_fn):
+        def __init__(self, _calib, _capture_fn, *, archive_dir=None):
             pass
         def navigate_to_storage(self):
             driver_calls.append("navigate_to_storage")
@@ -475,8 +472,7 @@ def test_auto_nav_agents_only_skips_storage(tmp_path):
             return _fake_frame()
 
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
-         patch("youkai_ocr.agent_scanner.scan_agents",  return_value=([agent], [], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents",  return_value=([agent], [], [], [])), \
          patch("youkai_ocr.cli._is_main_menu",          return_value=True), \
          patch("youkai_ocr.cli._NavDriver",              _FakeDriver), \
          patch("builtins.input"):
@@ -560,6 +556,105 @@ def test_scan_all_phases_discs_only_skips_engine_and_agent(tmp_path):
     assert results["phases"]["agents"]["count"] == 0
 
 
+# ── T3.1: Roster coverage check ──────────────────────────────────────────────
+
+def _make_owned_cells(n: int) -> list[tuple[int, int]]:
+    """Return n dummy (x, y) owned-cell tuples for mocking detect_owned_agent_cells."""
+    return [(100 + i * 10, 200) for i in range(n)]
+
+
+def test_coverage_no_warning_when_counts_match(tmp_path, capsys):
+    """No coverage warning when scanned agents == grid visible count."""
+    args = _make_args(tmp_path)
+    calib = _identity_calib()
+    agent = _sample_agent()
+
+    with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
+         patch("youkai_ocr.disc_scanner.scan_discs",       return_value=([], [])), \
+         patch("youkai_ocr.wengine_scanner.scan_engines",  return_value=([], [])), \
+         patch("youkai_ocr.agent_scanner.scan_agents",     return_value=([agent], [], [], [])), \
+         patch("youkai_ocr.agent_scanner.detect_owned_agent_cells", return_value=_make_owned_cells(1)), \
+         patch("youkai_ocr.cli._preflight_frame",          return_value=_fake_frame()), \
+         patch("youkai_ocr.cli._countdown"), \
+         patch("youkai_ocr.cli._check_disc_screen"), \
+         patch("youkai_ocr.cli._check_engine_screen"), \
+         patch("youkai_ocr.cli._check_agent_screen"), \
+         patch("builtins.input", return_value=""):
+        _cmd_scan_all(args)
+
+    out = capsys.readouterr().out
+    assert "WARNING: roster coverage" not in out
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert "coverage" in results
+    assert results["coverage"]["warning"] is False
+    assert results["coverage"]["agents_scanned"] == 1
+    assert results["coverage"]["roster_grid_visible"] == 1
+    assert results["coverage"]["gap"] == 0
+
+
+def test_coverage_warning_when_fewer_agents_scanned(tmp_path, capsys):
+    """Warning emitted and gap recorded when scanned count < grid visible count."""
+    args = _make_args(tmp_path)
+    calib = _identity_calib()
+    agent = _sample_agent()
+
+    with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
+         patch("youkai_ocr.disc_scanner.scan_discs",       return_value=([], [])), \
+         patch("youkai_ocr.wengine_scanner.scan_engines",  return_value=([], [])), \
+         patch("youkai_ocr.agent_scanner.scan_agents",     return_value=([agent], [], [], [])), \
+         patch("youkai_ocr.agent_scanner.detect_owned_agent_cells", return_value=_make_owned_cells(3)), \
+         patch("youkai_ocr.cli._preflight_frame",          return_value=_fake_frame()), \
+         patch("youkai_ocr.cli._countdown"), \
+         patch("youkai_ocr.cli._check_disc_screen"), \
+         patch("youkai_ocr.cli._check_engine_screen"), \
+         patch("youkai_ocr.cli._check_agent_screen"), \
+         patch("builtins.input", return_value=""):
+        _cmd_scan_all(args)
+
+    out = capsys.readouterr().out
+    assert "WARNING: roster coverage" in out
+    assert "3 owned" in out
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert results["coverage"]["warning"] is True
+    assert results["coverage"]["gap"] == 2
+    assert results["coverage"]["roster_grid_visible"] == 3
+    assert results["coverage"]["agents_scanned"] == 1
+    assert "Zhao" in results["coverage"]["scanned_keys"]
+
+
+def test_coverage_skipped_when_agents_phase_skipped(tmp_path):
+    """No coverage key in results.json when --phases discs (agents skipped)."""
+    args = SimpleNamespace(
+        output=str(tmp_path / "out.json"),
+        archive_dir=str(tmp_path / "base"),
+        engine="tesseract",
+        resume=None,
+        manual_nav=True,
+        phases="discs",
+    )
+    calib = _identity_calib()
+    disc = _sample_disc()
+
+    with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
+         patch("youkai_ocr.disc_scanner.scan_discs",    return_value=([disc], [])), \
+         patch("youkai_ocr.wengine_scanner.scan_engines") as mock_eng, \
+         patch("youkai_ocr.agent_scanner.scan_agents")  as mock_agt, \
+         patch("youkai_ocr.cli._preflight_frame",       return_value=_fake_frame()), \
+         patch("youkai_ocr.cli._countdown"), \
+         patch("youkai_ocr.cli._check_disc_screen"), \
+         patch("builtins.input", return_value=""):
+        _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert "coverage" not in results
+    mock_agt.assert_not_called()
+
+
 # ── Porcelain mode tests ──────────────────────────────────────────────────────
 
 def _make_porcelain_args(tmp_path: Path, phases: str | None = None) -> SimpleNamespace:
@@ -584,8 +679,7 @@ def _run_porcelain(tmp_path: Path, args) -> list[dict]:
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
          patch("youkai_ocr.disc_scanner.scan_discs", return_value=([_sample_disc()], [])), \
          patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([_sample_engine()], [])), \
-         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([_sample_agent()], [], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([_sample_agent()], [], [], [])), \
          patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()), \
          patch("youkai_ocr.cli._countdown"), \
          patch("youkai_ocr.cli._check_disc_screen"), \
@@ -815,8 +909,7 @@ def test_scan_all_porcelain_manual_nav_no_input_calls(tmp_path):
     with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
          patch("youkai_ocr.disc_scanner.scan_discs", return_value=([_sample_disc()], [])), \
          patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([_sample_engine()], [])), \
-         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([_sample_agent()], [], [])), \
-         patch("youkai_ocr.agent_scanner.resolve_locations", return_value=[]), \
+         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([_sample_agent()], [], [], [])), \
          patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()), \
          patch("youkai_ocr.cli._countdown"), \
          patch("youkai_ocr.cli._check_disc_screen"), \
@@ -847,3 +940,83 @@ def test_version_flag_prints_package_version(capsys):
     assert exc_info.value.code == 0
     out = capsys.readouterr().out
     assert youkai_ocr.__version__ in out
+
+
+# ── T1.5: _reconcile_locations unit tests ────────────────────────────────────
+
+def _disc(set_key, slot_key, main, level=15, rarity=4, location="", substats=None) -> ZodDisc:
+    return ZodDisc(
+        set_key=set_key, slot_key=slot_key, level=level, rarity=rarity,
+        main_stat_key=main, location=location, lock=False,
+        substats=substats or [],
+    )
+
+
+def _engine(key, level=60, location="") -> ZodWEngine:
+    return ZodWEngine(key=key, level=level, ascension=5, refinement=1, location=location, lock=False)
+
+
+def test_reconcile_exact_match_stamps_location():
+    inv = [_disc("ChaoticMetal", "4", "ATK")]
+    eq  = [_disc("ChaoticMetal", "4", "ATK", location="Zhu Yuan")]
+    orphans = _reconcile_locations(eq, [], inv, [])
+    assert inv[0].location == "Zhu Yuan"
+    assert len(orphans) == 0
+    assert len(inv) == 1  # no append
+
+
+def test_reconcile_no_match_appends_disc():
+    inv = [_disc("ShockstarDisc", "1", "HP")]
+    eq  = [_disc("ChaoticMetal", "4", "ATK", location="Zhu Yuan")]
+    orphans = _reconcile_locations(eq, [], inv, [])
+    assert len(inv) == 2
+    assert inv[1].location == "Zhu Yuan"
+    assert orphans[0]["status"] == "orphan"
+    assert orphans[0]["type"] == "disc"
+
+
+def test_reconcile_one_to_one_no_double_assign():
+    """Two equipped discs from different agents must not both match the same inventory disc."""
+    inv = [_disc("ChaoticMetal", "4", "ATK")]
+    eq1 = _disc("ChaoticMetal", "4", "ATK", location="Agent1")
+    eq2 = _disc("ChaoticMetal", "4", "ATK", location="Agent2")
+    orphans = _reconcile_locations([eq1, eq2], [], inv, [])
+    # First match stamps; second must append (not overwrite)
+    assert inv[0].location in ("Agent1", "Agent2")
+    assert len(inv) == 2
+    assert len(orphans) == 1
+
+
+def test_reconcile_engine_match_stamps_location():
+    inv_e = [_engine("StarlightEngine", level=60)]
+    eq_e  = [_engine("StarlightEngine", level=60, location="Nicole")]
+    orphans = _reconcile_locations([], [eq_e[0]], [], inv_e)
+    assert inv_e[0].location == "Nicole"
+    assert len(orphans) == 0
+    assert len(inv_e) == 1
+
+
+def test_reconcile_engine_no_match_appends():
+    inv_e = [_engine("StarlightEngine")]
+    eq_e  = [_engine("MissingEngine", location="Nicole")]
+    orphans = _reconcile_locations([], [eq_e[0]], [], inv_e)
+    assert len(inv_e) == 2
+    assert inv_e[1].location == "Nicole"
+    assert orphans[0]["type"] == "engine"
+
+
+def test_reconcile_backfills_empty_substat_key():
+    inv = [_disc("ChaoticMetal", "4", "ATK", substats=[ZodSubstat(key="", value=10.0)])]
+    eq  = [_disc("ChaoticMetal", "4", "ATK", location="Agent1",
+                 substats=[ZodSubstat(key="CRIT Rate", value=10.0)])]
+    _reconcile_locations(eq, [], inv, [])
+    assert inv[0].substats[0].key == "CRIT Rate"
+
+
+def test_reconcile_widens_to_set_slot_on_main_mismatch():
+    """If main_stat_key mismatches, fall back to set+slot match."""
+    inv = [_disc("ChaoticMetal", "4", "ATK%")]
+    eq  = [_disc("ChaoticMetal", "4", "ATK", location="Agent1")]  # "ATK" vs "ATK%"
+    orphans = _reconcile_locations(eq, [], inv, [])
+    assert inv[0].location == "Agent1"
+    assert len(orphans) == 0

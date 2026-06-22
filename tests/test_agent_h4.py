@@ -141,9 +141,12 @@ def test_ref9_no_engine(ref9, _rec):
 
 
 def test_ref10_engine(ref10, _rec):
+    """ref_10 slot 6 is a disc panel ("Astral Voice"), not an engine. The engine
+    normalizer must NOT snap that foreign title to a wrong engine key: with the T2
+    confidence floor the below-floor match (~50) is rejected → no confident engine.
+    Previously this only "passed" by garbage-matching garbage (TheRestrained @44)."""
     result = _extract_equip_frame(ref10, _CALIB, _rec, 6)
-    assert result is not None, "engine slot returned None from ref_10"
-    assert result["engine_key"] == "TheRestrained"
+    assert result is None, f"engine slot should reject the disc title, got {result!r}"
 
 
 # ── H25: Two-pass dim-badge classifier ────────────────────────────────────────
@@ -202,29 +205,29 @@ def test_h25_dim_badge_fallback(skill_idx, expected):
 # ── H25.1: Wide-b1 dim fallback for "0X" badges (zero-prefix, max=16 format) ─
 
 @pytest.mark.parametrize("fname,expected_value,description", [
-    ("badge_08_of_16.png", 8,  "dodge=8/16: wide '8' digit, tier high-fill"),
-    ("badge_09_of_16.png", 8,  "assist=9/16: wide '9' digit, off-by-1 acceptable"),
-    ("badge_07_of_12.png", 7,  "dodge=7/12: wide '7' digit, tier low-fill"),
-    ("badge_08_of_12_narrow.png", 8, "basic=8/12: narrow-bleed '8', original passing case"),
-    ("badge_03_of_12.png", 5,  "assist=3/12: wide '3' digit, tier mid-fill (off by 2)"),
+    ("badge_08_of_16.png", 8,  "dodge=8/16: '8' digit — hole-count=2 → 8 (T8)"),
+    ("badge_09_of_16.png", 9,  "assist=9/16: '9' digit — template-match, Bug-B2 fixed (T8)"),
+    ("badge_07_of_12.png", 7,  "dodge=7/12: wide '7' digit"),
+    ("badge_08_of_12_narrow.png", 8, "basic=8/12: narrow-bleed '8' — hole-count=2 → 8 (T8)"),
+    ("badge_03_of_12.png", 3,  "assist=3/12: '3' digit — template-match, Bug-B fixed (T8)"),
 ])
 def test_h25_1_wide_dim_badge_nonzero(fname, expected_value, description):
-    """H25.1: zero-prefix badges with wide second digit must not return 0."""
+    """H25.1 (T8): dim-badge units digits matched by template/hole-count, not fill-ratio tiers."""
     path = _BADGE_FIXTURES / fname
     if not path.exists():
         pytest.skip(f"badge fixture not found: {path}")
     crop = Image.open(path)
     got = _read_badge_crop(crop)
     assert got is not None and got != 0, (
-        f"{description}: classifier returned {got} (expected non-zero ≈ {expected_value})"
+        f"{description}: classifier returned {got} (expected {expected_value})"
     )
     assert got == expected_value, (
         f"{description}: expected {expected_value}, got {got}"
     )
 
 
-def test_h25_1_wide_dim_badge_confidence_below_threshold():
-    """H25.1: tier-estimated badges return confidence below _LOW_CONF_THRESHOLD (70)."""
+def test_h25_1_wide_dim_badge_confidence_above_threshold():
+    """T8: template/hole-count match is high-confidence (≥70) — no longer tier-estimated."""
     from youkai_ocr.agent_scanner import _LOW_CONF_THRESHOLD
     path = _BADGE_FIXTURES / "badge_08_of_16.png"
     if not path.exists():
@@ -233,7 +236,7 @@ def test_h25_1_wide_dim_badge_confidence_below_threshold():
     raw = _read_skill_badge(crop)
     assert raw is not None
     value, conf = raw
-    assert value != 0, f"should not return 0, got {value}"
-    assert conf < _LOW_CONF_THRESHOLD, (
-        f"tier-estimate confidence {conf} should be < {_LOW_CONF_THRESHOLD} to surface in issues"
+    assert value == 8, f"should return 8, got {value}"
+    assert conf >= _LOW_CONF_THRESHOLD, (
+        f"template/hole-count confidence {conf} should be ≥ {_LOW_CONF_THRESHOLD}"
     )

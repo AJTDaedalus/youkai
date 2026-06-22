@@ -172,6 +172,8 @@ def normalize_agent(text: str) -> tuple[str, float]:
     return (_agents[display], float(score))
 
 
+_ENGINE_NAME_SCORE_MIN = 80  # WRatio floor: below this the match is too uncertain
+
 _ENGINE_NAME_JUNK_RE = re.compile(r"[^A-Za-z0-9'\[\] -]")
 _ROMAN_CONFUSION_RE = re.compile(r"[Il1]+")
 
@@ -194,13 +196,23 @@ def _clean_engine_name(text: str) -> str:
 
 
 def normalize_engine(text: str) -> tuple[str, float]:
-    """Fuzzy-map W-Engine display name → (ZOD key, 0-100)."""
+    """Fuzzy-map W-Engine display name → (ZOD key, 0-100).
+
+    Returns ("", score) when the best match scores below _ENGINE_NAME_SCORE_MIN so
+    the caller's empty-key gate emits unknown_engine instead of silently snapping a
+    foreign name (e.g. a disc-set title bled into the engine slot) to the nearest
+    engine — the "Astral Voice → FrostfallSickle @50" failure mode (T2). Mirrors
+    normalize_agent. Lowest legit golden/equip engine scores ~83; foreign matches
+    sit ~50, so the floor cleanly separates them.
+    """
     _load()
     cleaned = _clean_engine_name(text)
     result = process.extractOne(cleaned, list(_engines.keys()), scorer=fuzz.WRatio)
     if result is None:
         return ("", 0.0)
     display, score, _ = result
+    if float(score) < _ENGINE_NAME_SCORE_MIN:
+        return ("", float(score))
     return (_engines[display], float(score))
 
 
