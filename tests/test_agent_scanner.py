@@ -559,7 +559,7 @@ def test_scan_agents_on_item_called_once_per_agent_monotonically(monkeypatch):
     monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
 
     calls: list[tuple[int, int | None]] = []
-    agents, _, _ = ag.scan_agents(
+    agents, _, _, _ = ag.scan_agents(
         lambda: Image.new("RGB", (1920, 1080)), calib=calib,
         on_item=lambda s, t: calls.append((s, t)),
     )
@@ -600,7 +600,68 @@ def test_scan_agents_on_item_omitted_no_error(monkeypatch):
     monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
     monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
 
-    agents, _, _ = ag.scan_agents(
+    agents, _, _, _ = ag.scan_agents(
         lambda: Image.new("RGB", (1920, 1080)), calib=calib,
     )
     assert len(agents) == 2
+
+
+def test_scan_agents_empty_key_below_floor_is_critical_fail(monkeypatch):
+    """T5: normalize_agent floors a junk name to ('', <real score>). A score in the
+    30–84 band sails past the < _CRITICAL_CONF gate, so the empty key itself must be
+    rejected — otherwise we'd build an agent with key="". Assert no agent is emitted
+    and the slot is flagged critical_fail."""
+    import youkai_ocr.agent_scanner as ag
+
+    class FakeListener:
+        def stop(self): pass
+
+    class FakeNavigator:
+        def __init__(self, *a, **k): pass
+        def scan(self):
+            dummy = Image.new("RGB", (1920, 1080), (80, 80, 80))
+            yield 0, dummy, dummy, []
+
+    calib = _identity_calib()
+
+    def fake_extract_base(frame, c, rec):
+        # empty key, but score 50 > _CRITICAL_CONF (30): the exact T5 gap
+        return "", 60, 5, {"key": 50.0, "level": 90.0, "ascension": 90.0}
+
+    def fake_extract_skills(frame, c, rec):
+        return 0, ZodTalent(basic=10, dodge=10, assist=10, special=10, chain=10, core=6), {}
+
+    _E = type("E", (), {"is_set": lambda s: False, "set": lambda s: None})()
+    monkeypatch.setattr(ag, "AgentNavigator", FakeNavigator)
+    monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ag, "make_kill_listener",
+                        lambda suppress_flag=None: (_E, FakeListener()))
+    monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
+    monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
+
+    agents, issues, _, _ = ag.scan_agents(
+        lambda: Image.new("RGB", (1920, 1080)), calib=calib,
+    )
+    assert agents == []
+    assert any(i["status"] == "critical_fail" for i in issues)
+
+
+def test_scan_single_frame_agent_empty_key_below_floor_returns_none(monkeypatch):
+    """T5: same gap on the offline single-frame path."""
+    import youkai_ocr.agent_scanner as ag
+
+    calib = _identity_calib()
+    frame = _dark_frame()
+
+    def fake_extract_base(f, c, rec):
+        return "", 60, 5, {"key": 50.0, "level": 90.0, "ascension": 90.0}
+
+    def fake_extract_skills(f, c, rec):
+        return 0, ZodTalent(basic=10, dodge=10, assist=10, special=10, chain=10, core=6), {}
+
+    monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
+    monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
+
+    agent, conf = ag.scan_single_frame_agent(frame, frame, calib)
+    assert agent is None

@@ -6,6 +6,7 @@ import pytest
 from youkai_ocr.normalizer import (
     normalize_agent,
     normalize_disc_set,
+    normalize_engine,
     normalize_main_stat,
     normalize_substat,
     parse_level,
@@ -233,3 +234,25 @@ def test_normalize_agent_full_names(text, expected_key):
 def test_normalize_agent_floor_rejects_garbage(garbage):
     key, score = normalize_agent(garbage)
     assert key == "", f"expected empty key for {garbage!r}, got {key!r} (score={score})"
+
+
+# ── normalize_engine floor (T2) ───────────────────────────────────────────────
+
+def test_normalize_engine_known_resolves():
+    key, score = normalize_engine("Steam Oven")
+    assert key == "SteamOven", f"got {key!r} (score={score})"
+    assert score >= 80.0
+
+
+@pytest.mark.parametrize("garbage", [
+    "Nonexistent Engine 9000",
+    "Astral Voice [1]",   # a disc-set title bled into the engine slot (ref_10, H4)
+    "",
+])
+def test_normalize_engine_floor_rejects_garbage(garbage):
+    """Below-floor matches return ('', <floor) so the caller emits unknown_engine
+    instead of snapping a foreign name to the nearest engine key."""
+    from youkai_ocr.normalizer import _ENGINE_NAME_SCORE_MIN
+    key, score = normalize_engine(garbage)
+    assert key == "", f"expected empty key for {garbage!r}, got {key!r} (score={score})"
+    assert score < _ENGINE_NAME_SCORE_MIN

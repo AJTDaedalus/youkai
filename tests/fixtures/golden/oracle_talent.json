@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "created": "2026-06-15",
+    "source": "live_20260609/live_20260610_065548",
+    "method": "Vision read of skills.png + skills_overlay.png for each agent_NNN folder; cross-checked against scanner agents.json output",
+    "confidence_key": {
+      "high": "Two images read consistently; digit shapes unambiguous",
+      "medium": "One image read; digit shape borderline (5 vs 8, 10 vs 12)"
+    },
+    "known_scanner_bugs": [
+      "Bug-A: Basic attack badge '07' reads as 1 (not 7) — '0' prefix clipped or '7' thresholded narrow",
+      "Bug-B: '03' dim-pass reads as 5 (not 3) — fill of '3' falls in 5-bucket (>=0.55)",
+      "Bug-B2: '06' S-rank reads as 8 (not 6) — fill of '6' falls in 8-bucket (>=0.70)",
+      "Bug-C: A-rank '13'/'14'/'15' out-of-12 reads as 12 or 10 — bright-pass only distinguishes 10/11/12 from second-digit fill, not 13-15"
+    ]
+  },
+  "agents": [
+    {
+      "key": "Zhao", "archive_idx": 0, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 10, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 10, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Lucia", "archive_idx": 1, "confidence": "high",
+      "talent_truth": {"basic": 8, "dodge": 1, "assist": 8, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 8, "dodge": 1, "assist": 8, "special": 12, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "YeShunguang", "archive_idx": 3, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 10, "assist": 10, "special": 11, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 10, "assist": 10, "special": 11, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "JuFufu", "archive_idx": 4, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 11, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 11, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Yixuan", "archive_idx": 5, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 12, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 12, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Vivian", "archive_idx": 7, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 11, "assist": 11, "special": 11, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 11, "assist": 11, "special": 11, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Jane", "archive_idx": 9, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 11, "assist": 3, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 11, "assist": 5, "special": 12, "chain": 11, "core": 6},
+      "mismatches": ["assist"],
+      "bug": "Bug-B: '03' reads as 5"
+    },
+    {
+      "key": "Miyabi", "archive_idx": 10, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 11, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 11, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Yanagi", "archive_idx": 11, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 10, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 10, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "OrphieMagus", "archive_idx": 12, "confidence": "high",
+      "talent_truth": {"basic": 7, "dodge": 7, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 1, "dodge": 7, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "mismatches": ["basic"],
+      "bug": "Bug-A: basic badge '07' reads as 1"
+    },
+    {
+      "key": "Soldier0Anby", "archive_idx": 13, "confidence": "high",
+      "talent_truth": {"basic": 11, "dodge": 1, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 11, "dodge": 1, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Burnice", "archive_idx": 14, "confidence": "high",
+      "talent_truth": {"basic": 8, "dodge": 7, "assist": 11, "special": 12, "chain": 12, "core": 6},
+      "scanner_output": {"basic": 8, "dodge": 7, "assist": 11, "special": 12, "chain": 12, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Caesar", "archive_idx": 15, "confidence": "high",
+      "talent_truth": {"basic": 3, "dodge": 1, "assist": 12, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 5, "dodge": 1, "assist": 12, "special": 12, "chain": 11, "core": 6},
+      "mismatches": ["basic"],
+      "bug": "Bug-B: '03' reads as 5"
+    },
+    {
+      "key": "Dialyn", "archive_idx": 16, "confidence": "high",
+      "talent_truth": {"basic": 11, "dodge": 7, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 11, "dodge": 7, "assist": 11, "special": 12, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Qingyi", "archive_idx": 17, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 5, "assist": 8, "special": 10, "chain": 8, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 5, "assist": 8, "special": 10, "chain": 8, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "ZhuYuan", "archive_idx": 18, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 11, "assist": 11, "special": 12, "chain": 12, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 11, "assist": 11, "special": 12, "chain": 12, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Trigger", "archive_idx": 20, "confidence": "high",
+      "talent_truth": {"basic": 12, "dodge": 10, "assist": 10, "special": 11, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 12, "dodge": 10, "assist": 10, "special": 11, "chain": 11, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Pulchra", "archive_idx": 21, "confidence": "high",
+      "talent_truth": {"basic": 8, "dodge": 5, "assist": 15, "special": 15, "chain": 14, "core": 6},
+      "scanner_output": {"basic": 8, "dodge": 5, "assist": 12, "special": 12, "chain": 12, "core": 6},
+      "mismatches": ["assist", "special", "chain"],
+      "bug": "Bug-C: A-rank '15' and '14' read as 12 (bright-pass 10/11/12 bucket)"
+    },
+    {
+      "key": "Lucy", "archive_idx": 22, "confidence": "medium",
+      "talent_truth": {"basic": 8, "dodge": 5, "assist": 5, "special": 15, "chain": 5, "core": 6},
+      "scanner_output": {"basic": 8, "dodge": 5, "assist": 5, "special": 12, "chain": 5, "core": 6},
+      "mismatches": ["special"],
+      "bug": "Bug-C: A-rank '15' reads as 12"
+    },
+    {
+      "key": "Anton", "archive_idx": 23, "confidence": "high",
+      "talent_truth": {"basic": 15, "dodge": 8, "assist": 8, "special": 15, "chain": 15, "core": 5},
+      "scanner_output": {"basic": 10, "dodge": 8, "assist": 8, "special": 12, "chain": 12, "core": 5},
+      "mismatches": ["basic", "special", "chain"],
+      "bug": "Bug-C: A-rank '15' reads as 10 or 12 depending on fill ratio of '5' digit"
+    },
+    {
+      "key": "Rina", "archive_idx": 24, "confidence": "high",
+      "talent_truth": {"basic": 6, "dodge": 3, "assist": 11, "special": 11, "chain": 11, "core": 6},
+      "scanner_output": {"basic": 8, "dodge": 5, "assist": 11, "special": 11, "chain": 11, "core": 6},
+      "mismatches": ["basic", "dodge"],
+      "bug": "Bug-B2: '06' reads as 8 (fill of '6' >= 0.70); Bug-B: '03' reads as 5"
+    },
+    {
+      "key": "Nicole", "archive_idx": 25, "confidence": "high",
+      "talent_truth": {"basic": 11, "dodge": 11, "assist": 12, "special": 12, "chain": 10, "core": 6},
+      "scanner_output": {"basic": 11, "dodge": 11, "assist": 12, "special": 12, "chain": 10, "core": 6},
+      "mismatches": []
+    },
+    {
+      "key": "Anby", "archive_idx": 26, "confidence": "high",
+      "talent_truth": {"basic": 13, "dodge": 11, "assist": 11, "special": 13, "chain": 11, "core": 4},
+      "scanner_output": {"basic": 12, "dodge": 11, "assist": 11, "special": 12, "chain": 11, "core": 4},
+      "mismatches": ["basic", "special"],
+      "bug": "Bug-C: A-rank '13' reads as 12 (fill of '3' < 0.66 in bright pass)"
+    },
+    {
+      "key": "Ben", "archive_idx": 28, "confidence": "high",
+      "talent_truth": {"basic": 7, "dodge": 7, "assist": 8, "special": 12, "chain": 7, "core": 3},
+      "scanner_output": {"basic": 1, "dodge": 7, "assist": 8, "special": 12, "chain": 7, "core": 3},
+      "mismatches": ["basic"],
+      "bug": "Bug-A: basic badge '07' reads as 1"
+    }
+  ],
+  "summary": {
+    "agents_checked": 26,
+    "agents_all_correct": 15,
+    "agents_with_mismatches": 9,
+    "total_field_mismatches": 15,
+    "bugs": {
+      "Bug-A": {
+        "description": "Basic attack badge reads '07' as 1 — zero prefix stripped, narrow '7' triggers single-blob→1 in pass-1",
+        "affected_agents": ["OrphieMagus", "Ben"],
+        "fix": "Ensure left_w crop covers full badge width, or special-case single wide blob in pass-2"
+      },
+      "Bug-B": {
+        "description": "'03' dim-pass reads as 5 — fill of '3' >= 0.55 falls in 5-bucket",
+        "affected_agents": ["Jane (assist)", "Caesar (basic)", "Rina (dodge)"],
+        "fix": "Add intermediate bucket for '3' shape (partially open, no enclosed region) — fill 0.55-0.65 but concave only one side"
+      },
+      "Bug-B2": {
+        "description": "'06' S-rank reads as 8 — fill of '6' >= 0.70 falls in 8-bucket",
+        "affected_agents": ["Rina (basic)"],
+        "fix": "Lower _BADGE_HIGH_FILL threshold or add shape check to distinguish '6' (one closed loop) from '8' (two closed loops)"
+      },
+      "Bug-C": {
+        "description": "A-rank values 13-15 (out of 16) read as 10-12 — bright pass uses same bucket as 10/11/12 but second digit is 3/4/5 not 0/1/2",
+        "affected_agents": ["Pulchra (assist/special/chain)", "Lucy (special)", "Anton (basic/special/chain)", "Anby (basic/special)"],
+        "fix": "After bright-pass 10/11/12 classification, check if max denominator is 16 (A-rank); if so add 3 to result (13/14/15 map via same second-digit shapes)"
+      }
+    }
+  }
+}

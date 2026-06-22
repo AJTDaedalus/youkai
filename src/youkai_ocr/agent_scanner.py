@@ -16,8 +16,10 @@ Usage::
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+import sys
 import time
 from pathlib import Path
 from threading import Event
@@ -30,10 +32,12 @@ import numpy as np
 from PIL import Image
 
 from .capture import CalibrationResult
+from .disc_scanner import scan_equipped_disc_frame
 from .grid import make_kill_listener
 from .input_utils import jitter, natural_click
 from .normalizer import normalize_agent, normalize_disc_set, normalize_engine, parse_level, parse_slot
 from .recognize import TextRecognizer, make_recognizer
+from .wengine_scanner import scan_equipped_engine_frame
 from .zod import ZodAgent, ZodDisc, ZodExport, ZodTalent, ZodWEngine
 
 # ── Navigation constants (navigation.yaml, 1920×1080 ref coords) ─────────────
@@ -137,12 +141,13 @@ _SLOT_PANEL_DARK_FRAC_MIN = 0.08    # dark pixels (luma<30) / total > this → p
 # Fix: gate on the full detail-panel BODY (main stat + substats — which DIFFER between two discs of one
 # set, ref_8 — where the title does not) AND require it to be STABLE across two captures (so a mid-fade
 # frame is never banked).  Generous budget: the per-agent OCR pause downstream dwarfs this.
-_SLOT_GATE_POLLS      = 10
+_SLOT_GATE_POLLS      = 20    # 20×0.35 ≈ 7s; doubled from 10 to survive disc→engine panel transitions
 _SLOT_GATE_POLL_S     = 0.35
 _SLOT_DETAIL_BBOX     = (610, 120, 965, 600)  # title + main-stat + substats (stops before the
                                               # same-for-a-set set-effect text); switch-detect signal
 _SLOT_CHANGE_MIN_BITS = 8     # body pHash Hamming > this vs the previous slot → panel switched (new disc)
-_SLOT_STABLE_MAX_BITS = 6     # body pHash Hamming ≤ this across two captures → panel animation settled
+_SLOT_STABLE_MAX_BITS = 10    # body pHash Hamming ≤ this across two captures → panel animation settled
+                              # relaxed from 6 to 10 to tolerate minor background/model animation drift
 
 # Empty-slot detection (H18 / issue 3 — calibrated from reference_17, Koleda fully unequipped).
 # Equipped discs/engines come in many colour schemes, but the UNEQUIPPED state is distinctive
@@ -476,13 +481,118 @@ def detect_owned_agent_cells(
     return owned
 
 
-_BADGE_THRESHOLD_HI = 180   # primary threshold: works for bright (maxed/near-maxed) badges
-_BADGE_THRESHOLD_LO = 130   # H25 fallback: dim sub-maxed badges have max pixel ≈ 177
-_BADGE_NARROW_W     = 48    # blob width (3× scale) below which a digit is "1"
-_BADGE_ROUND_FILL   = 0.65  # fill-ratio above which a digit blob is "0"-shaped (round)
-_BADGE_THIN_FILL    = 0.65  # fill-ratio below which a narrow-ish digit is "1" not "8"
-_BADGE_HIGH_FILL    = 0.70  # H25.1: wide-b1 fill above which digit is round/looped (8, 9)
-_BADGE_MID_FILL     = 0.55  # H25.1: wide-b1 fill above which digit is partially-closed (5, 6)
+_BADGE_THRESHOLD_HI   = 180   # primary threshold: works for bright (maxed/near-maxed) badges
+_BADGE_THRESHOLD_LO   = 130   # H25 fallback: dim sub-maxed badges have max pixel ≈ 177
+_BADGE_NARROW_W       = 48    # blob width (3× scale) below which a digit is "1"
+_BADGE_ROUND_FILL     = 0.65  # fill-ratio above which a b0 blob is "0"-shaped (round)
+_BADGE_GLYPH_W        = 24    # normalised glyph canvas width (must match badge_glyphs.json)
+_BADGE_GLYPH_H        = 36    # normalised glyph canvas height
+_BADGE_MATCH_FLOOR    = 0.70  # cosine similarity below which the match is low-confidence
+
+_badge_glyph_templates: dict[int, np.ndarray] | None = None
+
+
+def _load_badge_glyphs() -> dict[int, np.ndarray]:
+    """Lazily load per-digit mean templates from badge_glyphs.json."""
+    global _badge_glyph_templates
+    if _badge_glyph_templates is not None:
+        return _badge_glyph_templates
+    if getattr(sys, "frozen", False):
+        data_dir = Path(sys._MEIPASS) / "data" / "zzz_1.4"
+    else:
+        data_dir = Path(__file__).parent.parent.parent / "data" / "zzz_1.4"
+    fixture = data_dir / "badge_glyphs.json"
+    data = json.loads(fixture.read_text())
+    templates: dict[int, np.ndarray] = {}
+    for d_str, samples in data["glyphs"].items():
+        arrs = np.array(samples, dtype=np.float32) / 255.0
+        templates[int(d_str)] = np.median(arrs, axis=0)
+    _badge_glyph_templates = templates
+    return templates
+
+
+def _b1_hole_count(canvas: np.ndarray) -> int:
+    """Count enclosed background regions (holes) in a 24×36 binary glyph canvas.
+
+    Reliable discriminator for '8' (2 holes) vs '9'/'0'/'6'/'4' (1 hole) vs
+    open digits (0 holes).  Pad with background-colour before flood-filling so
+    the outer region is always connected regardless of whether the glyph touches
+    the canvas edge.
+    """
+    h, w = canvas.shape
+    inv    = 255 - canvas
+    padded = np.pad(inv, 1, mode="constant", constant_values=255)
+    mask   = np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), dtype=np.uint8)
+    cv2.floodFill(padded, mask, (0, 0), 128)          # flood outer background
+    holes  = (padded[1 : h + 1, 1 : w + 1] == 255).astype(np.uint8)
+    n, _   = cv2.connectedComponents(holes)
+    return n - 1                                       # subtract background label
+
+
+def _match_b1_glyph(b1_crop: np.ndarray, valid_digits: set[int]) -> tuple[int, float]:
+    """Template-match a b1 binary blob against the per-digit reference set.
+
+    b1_crop: binary uint8 array (any size).
+    valid_digits: restrict search to these digit values (caller supplies context constraints).
+
+    Uses topological hole-count to pre-constrain candidates before cosine matching:
+      2 holes → digit is '8' (returned immediately with high confidence)
+      1 hole  → cosine match within {valid ∩ {0,4,6,9}}
+      0 holes → cosine match within {valid ∩ {1,2,3,5,7}}
+
+    Returns (digit, confidence) where confidence is cosine similarity × 100.
+    """
+    scale  = min(_BADGE_GLYPH_W / b1_crop.shape[1], _BADGE_GLYPH_H / b1_crop.shape[0])
+    new_w  = max(1, int(b1_crop.shape[1] * scale))
+    new_h  = max(1, int(b1_crop.shape[0] * scale))
+    scaled = cv2.resize(b1_crop, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    _, scaled = cv2.threshold(scaled, 127, 255, cv2.THRESH_BINARY)
+    canvas = np.zeros((_BADGE_GLYPH_H, _BADGE_GLYPH_W), dtype=np.uint8)
+    y_off  = (_BADGE_GLYPH_H - new_h) // 2
+    x_off  = (_BADGE_GLYPH_W - new_w) // 2
+    canvas[y_off : y_off + new_h, x_off : x_off + new_w] = scaled
+
+    holes = _b1_hole_count(canvas)
+    if holes >= 2 and 8 in valid_digits:
+        # "8" is the only digit that reliably produces two enclosed holes at
+        # 24×36.  Bypass cosine matching — it routinely loses to the "9"
+        # template (which is identical to "0" in our dataset) for this shape.
+        return 8, 90.0
+
+    query     = canvas.flatten().astype(np.float32) / 255.0
+    query_n   = float(np.linalg.norm(query))
+    templates = _load_badge_glyphs()
+    best_digit, best_score = min(valid_digits), -1.0
+    for digit, tmpl in templates.items():
+        if digit not in valid_digits:
+            continue
+        tmpl_n = float(np.linalg.norm(tmpl))
+        if query_n < 1e-6 or tmpl_n < 1e-6:
+            score = 0.0
+        else:
+            score = float(np.dot(query, tmpl)) / (query_n * tmpl_n)
+        if score > best_score:
+            best_score, best_digit = score, digit
+    # "3" vs "6" disambiguation: cosine matching confuses open-arc "3" glyphs
+    # with the single "6" template when the "6" template (Rina's dim badge) renders
+    # similarly to some "3" badges.  Waist density (rows 8–18 / total pixels) is a
+    # reliable tiebreaker: "6" has a smooth middle transition (≥ 0.30 density)
+    # while "3" has a narrow waist (< 0.30).  Only fires when "6" wins and both
+    # "3" and "6" are valid candidates.
+    if best_digit == 6 and 3 in valid_digits and holes == 0:
+        total_px = float(canvas.sum())
+        if total_px > 0:
+            waist_density = float(canvas[8:18, :].sum()) / total_px
+            if waist_density < 0.30:
+                best_digit = 3
+                best_score = float(np.dot(query, templates[3])) / (
+                    query_n * float(np.linalg.norm(templates[3])) + 1e-9
+                )
+
+    conf = best_score * 100.0
+    if conf < _BADGE_MATCH_FLOOR * 100.0:
+        conf = min(conf, _LOW_CONF_THRESHOLD - 1.0)
+    return best_digit, conf
 
 
 def _read_skill_badge(badge_crop: Image.Image) -> tuple[int, float] | None:
@@ -490,78 +600,62 @@ def _read_skill_badge(badge_crop: Image.Image) -> tuple[int, float] | None:
 
     Returns (value, confidence) or None if completely unclassifiable.
 
-    Two-pass approach (H25/H25.1):
-
-    Pass 1 — threshold 180 (bright badges, values 10–12 or higher):
-      b0 narrow + b1 narrow           → (11, 90)
-      b0 narrow + b1 wide, fill>0.66  → (10, 90)   "0" is round
-      b0 narrow + b1 wide, fill≤0.66  → (12, 90)   "2" has concave curves
-      single narrow blob              → (1,  90)
-
-    Pass 2 — threshold 130 fallback (dim badges, values 1–9, zero-prefixed "0X"):
-      b0 wide + b0_fill>0.65 ("0" prefix):
-        b1 narrow, fill<0.65          → (1,  85)   "01"
-        b1 narrow, fill≥0.65          → (8,  85)   "08" narrow-bleed variant
-        b1 wide, fill≥0.70            → (8,  65)   "08"/"09" — round/looped digit
-        b1 wide, fill≥0.55            → (5,  45)   "05"/"06" — partially closed
-        b1 wide, fill<0.55            → (7,  40)   "07" or similar open digit
-
-    Tier confidence (65/45/40) is below _LOW_CONF_THRESHOLD (70) → surfaces in issues.
+    b0 (tens place): shape heuristic — narrow→"1" prefix, wide+round→"0" prefix.
+    b1 (units place): template-matched against badge_glyphs.json reference set.
+    Below-floor cosine similarity (<_BADGE_MATCH_FLOOR) → confidence <70, flagged.
     """
     arr = np.array(badge_crop.convert("RGB"))
     h, w = arr.shape[:2]
     arr_up = cv2.resize(arr, (w * 3, h * 3), interpolation=cv2.INTER_LANCZOS4)
     gray = cv2.cvtColor(arr_up, cv2.COLOR_RGB2GRAY)
 
-    def _classify(binary: np.ndarray, dim_fallback: bool) -> tuple[int, float] | None:
+    def _blobs(binary: np.ndarray) -> list:
         left_w = int(binary.shape[1] * 0.52)
         n, _, stats, centroids = cv2.connectedComponentsWithStats(binary[:, :left_w])
-        blobs = [
+        found = [
             (stats[i], centroids[i])
             for i in range(1, n)
             if stats[i, cv2.CC_STAT_AREA] > 200
         ]
-        blobs.sort(key=lambda x: x[1][0])
+        found.sort(key=lambda x: x[1][0])
+        return found
+
+    def _classify(binary: np.ndarray, dim_fallback: bool) -> tuple[int, float] | None:
+        blobs = _blobs(binary)
         if not blobs:
             return None
         b0_s = blobs[0][0]
         b0_w = b0_s[cv2.CC_STAT_WIDTH]
         if len(blobs) == 1:
             return (1, 90.0) if b0_w < _BADGE_NARROW_W else None
-        b1_s = blobs[1][0]
-        b1_w = b1_s[cv2.CC_STAT_WIDTH]
-        b1_h = b1_s[cv2.CC_STAT_HEIGHT]
-        b1_a = b1_s[cv2.CC_STAT_AREA]
-        b1_fill = b1_a / (b1_w * b1_h) if b1_w * b1_h > 0 else 0.0
-        if b0_w < _BADGE_NARROW_W:   # leading "1"
-            if b1_w < _BADGE_NARROW_W:
-                return (11, 90.0)
-            return (10, 90.0) if b1_fill > 0.66 else (12, 90.0)
+
+        b1_s  = blobs[1][0]
+        b1_x  = int(b1_s[cv2.CC_STAT_LEFT])
+        b1_y  = int(b1_s[cv2.CC_STAT_TOP])
+        b1_bw = int(b1_s[cv2.CC_STAT_WIDTH])
+        b1_bh = int(b1_s[cv2.CC_STAT_HEIGHT])
+        b1_crop = binary[b1_y : b1_y + b1_bh, b1_x : b1_x + b1_bw]
+
+        if b0_w < _BADGE_NARROW_W:
+            # b0 is "1" → level is 10 + b1_digit; valid units are 0–6 (max skill level 16)
+            b1_digit, b1_conf = _match_b1_glyph(b1_crop, valid_digits=set(range(7)))
+            return (10 + b1_digit, b1_conf)
+
         if dim_fallback:
-            # Dim-badge pass-2: leading wide blob is "0" (zero-prefix "0X" format)
-            b0_h = b0_s[cv2.CC_STAT_HEIGHT]
-            b0_a = b0_s[cv2.CC_STAT_AREA]
+            b0_h    = b0_s[cv2.CC_STAT_HEIGHT]
+            b0_a    = b0_s[cv2.CC_STAT_AREA]
             b0_fill = b0_a / (b0_w * b0_h) if b0_w * b0_h > 0 else 0.0
-            if b0_fill > _BADGE_ROUND_FILL:   # confirmed "0" prefix
-                if b1_w < _BADGE_NARROW_W:    # narrow second digit
-                    return (1, 85.0) if b1_fill < _BADGE_THIN_FILL else (8, 85.0)
-                # Wide second digit (H25.1): tier-classify by fill ratio.
-                # Confidence below _LOW_CONF_THRESHOLD (70) → surfaces in issues.
-                if b1_fill >= _BADGE_HIGH_FILL:    # ≥0.70: round/looped (8, 9)
-                    return (8, 65.0)
-                elif b1_fill >= _BADGE_MID_FILL:   # ≥0.55: partially closed (5, 6)
-                    return (5, 45.0)
-                else:                               # <0.55: angled/open (4, 7)
-                    return (7, 40.0)
+            if b0_fill > _BADGE_ROUND_FILL:
+                # b0 is "0" → level is b1_digit; valid units are 1–9 (level 0 doesn't exist)
+                b1_digit, b1_conf = _match_b1_glyph(b1_crop, valid_digits=set(range(1, 10)))
+                return (b1_digit, b1_conf)
         return None
 
-    # Pass 1: bright threshold (correct fill-ratio discrimination for 10/11/12)
     _, binary_hi = cv2.threshold(gray, _BADGE_THRESHOLD_HI, 255, cv2.THRESH_BINARY)
     result = _classify(binary_hi, dim_fallback=False)
     if result is not None:
         return result
 
-    # Pass 2: dim-badge fallback
     _, binary_lo = cv2.threshold(gray, _BADGE_THRESHOLD_LO, 255, cv2.THRESH_BINARY)
     return _classify(binary_lo, dim_fallback=True)
 
@@ -905,7 +999,9 @@ def _extract_equip_frame(
         }
     else:
         engine_key, conf = normalize_engine(title_text)
-        if conf < _EQUIP_CONF_MIN:
+        if not engine_key or conf < _EQUIP_CONF_MIN:
+            # Empty key = below-floor match rejected by normalize_engine (T2): a disc
+            # title bled into the engine slot. No confident engine here.
             return None
         return {
             "slot_idx": slot_idx,
@@ -1534,16 +1630,16 @@ def scan_agents(
     ocr_engine: str = "tesseract",
     debug_overlays: bool = False,
     on_item: Optional[callable] = None,
-) -> tuple[list[ZodAgent], list[dict], list[dict]]:
+) -> tuple[list[ZodAgent], list[dict], list[ZodDisc], list[ZodWEngine]]:
     """Scan all agents in the roster. Game must be on the agent detail page.
 
     on_item: optional callback(scanned, total) called after each agent position
     is processed (owned or skipped). total is always None for agents.
 
-    Returns (agents, issues, equip_records).
-    equip_records contains one entry per equipped slot, suitable for
-    resolve_locations(). Call resolve_locations() after scanning discs and
-    engines to populate their location fields.
+    Returns (agents, issues, equipped_discs, equipped_engines).
+    equipped_discs and equipped_engines carry full ZodDisc/ZodWEngine objects
+    with location already set to the owning agent key. Pass these to the
+    fingerprint reconciliation step (T1.5) to stamp location on scanned discs/engines.
     """
     recognizer = make_recognizer(ocr_engine)
     suppress_flag: list = [False]   # shared with kill listener to allow nav Escapes
@@ -1553,7 +1649,8 @@ def scan_agents(
 
     agents: list[ZodAgent] = []
     issues: list[dict] = []
-    equip_records: list[dict] = []
+    equipped_discs: list[ZodDisc] = []
+    equipped_engines: list[ZodWEngine] = []
     scanned = 0
 
     try:
@@ -1586,7 +1683,10 @@ def scan_agents(
                                 dd / f"equip_slot_{i}_overlay.png")
 
             scanned += 1
-            if base_conf["key"] < _CRITICAL_CONF:
+            # Empty key = normalize_agent rejected a below-floor match (T5); its real
+            # sub-floor score (e.g. 30–84) sails past the < _CRITICAL_CONF gate, so the
+            # key itself must be checked or we'd build an agent with an empty key.
+            if not key or base_conf["key"] < _CRITICAL_CONF:
                 issues.append({
                     "agent": agent_idx,
                     "status": "critical_fail",
@@ -1617,14 +1717,23 @@ def scan_agents(
                             "skill": _sname,
                         })
 
-            # E4: parse each equipment slot frame to build location cross-reference
+            # E4: parse each equipment slot frame with full extractors
             for slot_idx, equip_frame in enumerate(equipment_frames):
-                if equip_frame is None:        # empty slot (H18) — nothing equipped to cross-ref
+                if equip_frame is None:        # empty slot (H18) — nothing equipped
                     continue
-                rec = _extract_equip_frame(equip_frame, calib, recognizer, slot_idx)
-                if rec is not None:
-                    rec["agent_key"] = key
-                    equip_records.append(rec)
+                if slot_idx < 6:
+                    disc, _ = scan_equipped_disc_frame(
+                        equip_frame, calib, agent_key=key,
+                        slot_key=_slot_number(slot_idx), engine=recognizer,
+                    )
+                    if disc is not None:
+                        equipped_discs.append(disc)
+                else:
+                    w_engine = scan_equipped_engine_frame(
+                        equip_frame, calib, agent_key=key, engine=recognizer,
+                    )
+                    if w_engine is not None:
+                        equipped_engines.append(w_engine)
 
             agents.append(ZodAgent(
                 key=key,
@@ -1638,7 +1747,7 @@ def scan_agents(
     finally:
         listener.stop()
 
-    return agents, issues, equip_records
+    return agents, issues, equipped_discs, equipped_engines
 
 
 # ── Offline single-frame extraction ──────────────────────────────────────────
@@ -1658,7 +1767,8 @@ def scan_single_frame_agent(
     key, level, ascension, base_conf = _extract_base_stats(base_frame, calib, recognizer)
     mindscape, talent, skill_conf = _extract_skills(skills_frame, calib, recognizer)
     conf = {**base_conf, **skill_conf}
-    if base_conf["key"] < _CRITICAL_CONF:
+    # Empty key = normalize_agent rejected a below-floor match (T5); see scan_agents.
+    if not key or base_conf["key"] < _CRITICAL_CONF:
         return None, conf
     return ZodAgent(
         key=key,

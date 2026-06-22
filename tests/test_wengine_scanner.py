@@ -12,8 +12,11 @@ from PIL import Image
 from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.matchers import count_filled_stars
 from youkai_ocr.normalizer import parse_level_with_ascension
-from youkai_ocr.wengine_scanner import _crop, export_engines
+from youkai_ocr.wengine_scanner import _crop, export_engines, scan_equipped_engine_frame
 from youkai_ocr.zod import ZodWEngine
+
+_ARCHIVE = Path(__file__).parent.parent / "archive" / "live_20260605"
+_CALIB_1080 = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
 
 
 # ── parse_level_with_ascension ────────────────────────────────────────────────
@@ -208,3 +211,22 @@ def test_scan_engines_on_item_omitted_no_error(monkeypatch):
 
     engines, _ = ws.scan_engines(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
     assert len(engines) == 2
+
+
+# ── T1.3: scan_equipped_engine_frame ─────────────────────────────────────────
+
+def test_scan_equipped_engine_frame_starlight():
+    """agent_018/equip_slot_6.png (Starlight Engine Lv.60, ref=1) → correct key/level."""
+    p = _ARCHIVE / "agent_018" / "equip_slot_6.png"
+    if not p.exists():
+        pytest.skip("archive agent_018/equip_slot_6.png missing")
+
+    frame = Image.open(p).convert("RGB")
+    result = scan_equipped_engine_frame(frame, _CALIB_1080, agent_key="agent_018")
+
+    assert result is not None, "scan_equipped_engine_frame returned None (key conf too low)"
+    assert result.key == "StarlightEngine", f"expected StarlightEngine, got {result.key!r}"
+    assert result.level == 60, f"expected level=60, got {result.level}"
+    assert result.ascension == 5, f"expected ascension=5, got {result.ascension}"
+    assert result.refinement >= 1, "refinement must be ≥ 1"
+    assert result.location == "agent_018"

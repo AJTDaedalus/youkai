@@ -148,17 +148,20 @@ def resolve_tesseract() -> tuple[str | None, Path | None]:
     _exe = "tesseract.exe" if sys.platform == "win32" else "tesseract"
 
     # Slot 1: bundled tesseract/ dir beside the frozen/dev app root.
+    # PyInstaller ≤5 onedir: sys._MEIPASS == exe dir.
+    # PyInstaller 6+ onedir: sys._MEIPASS == exe_dir/_internal — check both.
     if getattr(sys, "frozen", False):
-        app_root = Path(getattr(sys, "_MEIPASS"))
+        candidates = [Path(getattr(sys, "_MEIPASS")), Path(sys.executable).parent]
     elif sys.argv and sys.argv[0]:
-        app_root = Path(sys.argv[0]).parent
+        candidates = [Path(sys.argv[0]).parent]
     else:
-        app_root = Path.cwd()
+        candidates = [Path.cwd()]
 
-    bundled = app_root / "tesseract" / _exe
-    if bundled.exists():
-        tessdata = bundled.parent / "tessdata"
-        return str(bundled), (tessdata if tessdata.is_dir() else None)
+    for app_root in candidates:
+        bundled = app_root / "tesseract" / _exe
+        if bundled.exists():
+            tessdata = bundled.parent / "tessdata"
+            return str(bundled), (tessdata if tessdata.is_dir() else None)
 
     # Slot 2: default Windows install path.
     if sys.platform == "win32":

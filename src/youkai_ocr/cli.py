@@ -18,9 +18,11 @@ class ScreenAssertError(RuntimeError):
 
 # ── Auto-nav constants ────────────────────────────────────────────────────────
 
-# Main-hub bottom-nav click targets (ref_11, measured H7a, game-area coords).
-_NAV_STORAGE_CENTER = (1123, 1041)
-_NAV_AGENTS_CENTER  = (1251, 1041)
+# Main-hub bottom-nav click targets (game-area coords, 1920×1080).
+# Updated 2026-06-15: ZZZ 1.5 added "Achievements" between Notices and Inter-Knot,
+# shifting Storage (was 1123→1178) and Agents (was 1251→1274) one slot right.
+_NAV_STORAGE_CENTER = (1178, 1041)
+_NAV_AGENTS_CENTER  = (1274, 1041)
 
 # Click center of each storage tab circle button (horizontal row, measured from
 # ref_1/ref_2 active-circle centroids; game-area coords at 1920×1080).
@@ -42,6 +44,12 @@ _AGENT_MENU_SIG_THRESH = 1000  # teal_pixel_count > this → agent selection men
 _SCREEN_TIMEOUT_S = 8.0   # max seconds to wait for a screen transition
 _SCREEN_POLL_S    = 0.3   # poll interval inside wait_for
 _NAV_SETTLE_S     = 0.5   # post-click settle before polling begins
+
+# Bottom-nav OCR-locate parameters (game-area coords, 1920×1080).
+# Crop band covers the text-label row of all bottom-nav icons.
+_NAV_OCR_BAND    = (900, 1015, 1400, 1062)
+_NAV_OCR_UPSCALE = 3
+_NAV_OCR_THRESH  = 90
 
 
 # ── Screen predicates ─────────────────────────────────────────────────────────
@@ -83,6 +91,69 @@ def _is_storage_screen(frame: "Image.Image", calib) -> bool:
         return False
 
 
+def locate_bottom_nav_button(
+    frame: "Image.Image",
+    calib,
+    label: str,
+) -> tuple[int, int] | None:
+    """OCR the bottom-nav strip and return the ref-coord center of the named button.
+
+    label must be "storage" or "agents" (case-insensitive).
+    Returns None if the word is not found (non-main-menu frame or OCR miss) so
+    callers can fall back to hard-coded constants.
+    """
+    import cv2
+    import numpy as np
+    import pytesseract
+    from youkai_ocr.recognize import resolve_tesseract
+
+    cmd, tessdata = resolve_tesseract()
+    if cmd is not None:
+        pytesseract.pytesseract.tesseract_cmd = cmd
+    if tessdata is not None:
+        import os as _os
+        _os.environ["TESSDATA_PREFIX"] = str(tessdata)
+
+    x0, y0, x1, y1 = calib.scale_bbox(_NAV_OCR_BAND)
+    arr = np.array(frame)
+    crop = arr[y0:y1, x0:x1]
+    if crop.size == 0:
+        return None
+
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY) if crop.ndim == 3 else crop
+    h_b, w_b = gray.shape
+    up = cv2.resize(
+        gray,
+        (w_b * _NAV_OCR_UPSCALE, h_b * _NAV_OCR_UPSCALE),
+        interpolation=cv2.INTER_CUBIC,
+    )
+    _, thresh = cv2.threshold(up, _NAV_OCR_THRESH, 255, cv2.THRESH_BINARY)
+
+    from PIL import Image as _PIL
+    data = pytesseract.image_to_data(
+        _PIL.fromarray(thresh),
+        config="--psm 11",
+        output_type=pytesseract.Output.DICT,
+    )
+
+    target = label.lower()
+    for i, word in enumerate(data["text"]):
+        if word.lower() == target:
+            w_box = data["width"][i]
+            h_box = data["height"][i]
+            if w_box == 0 or h_box == 0:
+                continue
+            cx_up = data["left"][i] + w_box / 2
+            cy_up = data["top"][i] + h_box / 2
+            cx_frame = x0 + cx_up / _NAV_OCR_UPSCALE
+            cy_frame = y0 + cy_up / _NAV_OCR_UPSCALE
+            ref_x = round(cx_frame / calib.scale_x)
+            ref_y = round(cy_frame / calib.scale_y)
+            return ref_x, ref_y
+
+    return None
+
+
 # ── Auto-nav driver ───────────────────────────────────────────────────────────
 
 class _NavDriver:
@@ -92,9 +163,10 @@ class _NavDriver:
     them to absolute screen coords for mouse input.
     """
 
-    def __init__(self, calib, capture_fn) -> None:
+    def __init__(self, calib, capture_fn, *, archive_dir=None) -> None:
         self._calib      = calib
         self._capture_fn = capture_fn
+        self._archive_dir = archive_dir
         self._mouse      = None
         self._kbd        = None
 
@@ -115,10 +187,22 @@ class _NavDriver:
         focus_game_window()
         time.sleep(0.15)
 
-    def _click(self, ref_x: int, ref_y: int) -> None:
+    def _click(self, ref_x: int, ref_y: int, *, label: str = "") -> None:
         from youkai_ocr.input_utils import natural_click
         sx, sy = self._calib.to_screen(ref_x, ref_y)
+        if label:
+            print(f"  [auto-nav] → screen ({sx}, {sy})  ref ({ref_x}, {ref_y})", flush=True)
         natural_click(self._mouse_ctrl(), sx, sy)
+
+    def _capture_pre_click(self, name: str) -> "Image.Image":
+        """Capture the frame before a nav click, optionally archiving it."""
+        frame = self._capture_fn()
+        if self._archive_dir is not None:
+            import pathlib
+            p = pathlib.Path(self._archive_dir) / f"nav_pre_{name}.png"
+            frame.save(p)
+            print(f"  [auto-nav] pre-click frame → {p}", flush=True)
+        return frame
 
     def _press_escape(self) -> None:
         from pynput.keyboard import Key
@@ -148,10 +232,28 @@ class _NavDriver:
     def navigate_to_storage(self) -> "Image.Image":
         from youkai_ocr.input_utils import jitter as _jitter
         self._focus()
-        print("  [auto-nav] clicking Storage…", flush=True)
-        self._click(*_NAV_STORAGE_CENTER)
+        pre = self._capture_pre_click("storage")
+        center = locate_bottom_nav_button(pre, self._calib, "storage") or _NAV_STORAGE_CENTER
+        print(f"  [auto-nav] clicking Storage at ref {center}…", flush=True)
+        self._click(*center, label="Storage")
         time.sleep(_jitter(_NAV_SETTLE_S, 0.2))
-        return self.wait_for(_is_storage_screen)
+        deadline = time.time() + _SCREEN_TIMEOUT_S
+        poll = 0
+        while True:
+            frame = self._capture_fn()
+            if _is_storage_screen(frame, self._calib):
+                return frame
+            if time.time() >= deadline:
+                raise ScreenAssertError(
+                    f"Storage screen did not appear within {_SCREEN_TIMEOUT_S:.0f}s."
+                )
+            poll += 1
+            if poll % 10 == 0:
+                self._focus()
+                print("  [auto-nav] re-clicking Storage…", flush=True)
+                center = locate_bottom_nav_button(frame, self._calib, "storage") or _NAV_STORAGE_CENTER
+                self._click(*center, label="Storage")
+            time.sleep(_SCREEN_POLL_S)
 
     def switch_storage_tab(self, tab_idx: int, archive_dir=None) -> "Image.Image":
         from youkai_ocr.input_utils import jitter as _jitter
@@ -191,6 +293,7 @@ class _NavDriver:
     def return_to_main(self) -> "Image.Image":
         from youkai_ocr.input_utils import jitter as _jitter
         self._focus()
+        self._capture_pre_click("escape")
         print("  [auto-nav] pressing Escape → main menu…", flush=True)
         self._press_escape()
         time.sleep(_jitter(_NAV_SETTLE_S, 0.2))
@@ -199,10 +302,28 @@ class _NavDriver:
     def navigate_to_agents(self) -> "Image.Image":
         from youkai_ocr.input_utils import jitter as _jitter
         self._focus()
-        print("  [auto-nav] clicking Agents…", flush=True)
-        self._click(*_NAV_AGENTS_CENTER)
+        pre = self._capture_pre_click("agents")
+        center = locate_bottom_nav_button(pre, self._calib, "agents") or _NAV_AGENTS_CENTER
+        print(f"  [auto-nav] clicking Agents at ref {center}…", flush=True)
+        self._click(*center, label="Agents")
         time.sleep(_jitter(_NAV_SETTLE_S, 0.2))
-        return self.wait_for(_is_agent_selection_menu)
+        deadline = time.time() + _SCREEN_TIMEOUT_S
+        poll = 0
+        while True:
+            frame = self._capture_fn()
+            if _is_agent_selection_menu(frame, self._calib):
+                return frame
+            if time.time() >= deadline:
+                raise ScreenAssertError(
+                    f"Agent selection menu did not appear within {_SCREEN_TIMEOUT_S:.0f}s."
+                )
+            poll += 1
+            if poll % 10 == 0:
+                self._focus()
+                print("  [auto-nav] re-clicking Agents…", flush=True)
+                center = locate_bottom_nav_button(frame, self._calib, "agents") or _NAV_AGENTS_CENTER
+                self._click(*center, label="Agents")
+            time.sleep(_SCREEN_POLL_S)
 
 
 # ── Screen preflight checks ───────────────────────────────────────────────────
@@ -673,7 +794,7 @@ def _cmd_scan_agents(args: argparse.Namespace) -> None:
             print(f"Archiving crops to: {archive_dir}")
 
         t0 = time.perf_counter()
-        agents, issues, _equip_records = scan_agents(
+        agents, issues, _eq_discs, _eq_engines = scan_agents(
             capture_fn=capture_fn,
             calib=calib,
             archive_dir=archive_dir,
@@ -868,6 +989,112 @@ def _write_review_report(issues: list[dict], path: "Path") -> None:
 _VALID_PHASES: frozenset[str] = frozenset({"agents", "discs", "engines"})
 
 
+# ── T1.5: fingerprint reconciliation ─────────────────────────────────────────
+
+def _substat_key_overlap(a: "ZodDisc", b: "ZodDisc") -> int:
+    """Count of matching non-empty substat keys between two discs."""
+    ak = {s.key for s in a.substats if s.key}
+    bk = {s.key for s in b.substats if s.key}
+    return len(ak & bk)
+
+
+def _backfill_disc_substats(inv: "ZodDisc", eq: "ZodDisc") -> None:
+    """Fill empty substat keys in inv from eq when values match closely."""
+    for inv_sub in inv.substats:
+        if inv_sub.key:
+            continue
+        for eq_sub in eq.substats:
+            if eq_sub.key and abs(eq_sub.value - inv_sub.value) < 0.01:
+                inv_sub.key = eq_sub.key
+                break
+
+
+def _reconcile_locations(
+    equipped_discs: list["ZodDisc"],
+    equipped_engines: list["ZodWEngine"],
+    discs: list["ZodDisc"],
+    engines: list["ZodWEngine"],
+) -> list[dict]:
+    """T1.5: Match equipped gear against inventory by fingerprint.
+
+    For each equipped disc/engine (location already set by scan_agents):
+      match    → stamp location on the inventory entry; backfill empty substat keys.
+      no-match → append the equipped entry to the list (inventory missed it; never drop).
+    Guarantees 1:1: each inventory entry is matched at most once.
+    Returns informational orphan dicts for entries that were appended rather than matched.
+    """
+    from youkai_ocr.zod import ZodDisc, ZodWEngine
+
+    orphans: list[dict] = []
+    matched_disc_idx: set[int] = set()
+
+    for eq in equipped_discs:
+        if not eq.location:
+            continue
+        # Primary filter: set + slot + main_stat_key (most discriminating trio)
+        candidates = [
+            (i, d) for i, d in enumerate(discs)
+            if i not in matched_disc_idx
+            and d.set_key == eq.set_key
+            and d.slot_key == eq.slot_key
+            and d.main_stat_key == eq.main_stat_key
+        ]
+        if not candidates:
+            # Widen to set+slot only (main_stat OCR can drift between reads)
+            candidates = [
+                (i, d) for i, d in enumerate(discs)
+                if i not in matched_disc_idx
+                and d.set_key == eq.set_key
+                and d.slot_key == eq.slot_key
+            ]
+
+        if not candidates:
+            discs.append(ZodDisc(
+                set_key=eq.set_key, slot_key=eq.slot_key, level=eq.level,
+                rarity=eq.rarity, main_stat_key=eq.main_stat_key,
+                location=eq.location, lock=eq.lock, substats=list(eq.substats),
+            ))
+            orphans.append({
+                "status": "orphan", "type": "disc", "agent": eq.location,
+                "set_key": eq.set_key, "slot_key": eq.slot_key,
+                "message": "equipped disc not found in inventory scan; appended",
+            })
+        else:
+            best_i, best_d = max(
+                candidates,
+                key=lambda x: (_substat_key_overlap(x[1], eq), -abs(x[1].level - eq.level)),
+            )
+            best_d.location = eq.location
+            _backfill_disc_substats(best_d, eq)
+            matched_disc_idx.add(best_i)
+
+    matched_eng_idx: set[int] = set()
+    for eq in equipped_engines:
+        if not eq.location:
+            continue
+        candidates = [
+            (i, e) for i, e in enumerate(engines)
+            if i not in matched_eng_idx
+            and e.key == eq.key
+        ]
+        if not candidates:
+            engines.append(ZodWEngine(
+                key=eq.key, level=eq.level, ascension=eq.ascension,
+                refinement=eq.refinement, location=eq.location, lock=eq.lock,
+            ))
+            orphans.append({
+                "status": "orphan", "type": "engine", "agent": eq.location,
+                "key": eq.key,
+                "message": "equipped engine not found in inventory scan; appended",
+            })
+        else:
+            best_i, best_e = min(candidates, key=lambda x: abs(x[1].level - eq.level))
+            best_e.location = eq.location
+            matched_eng_idx.add(best_i)
+
+    return orphans
+
+
 def select_phases(args) -> frozenset[str]:
     """Return the validated set of phases to run.
 
@@ -901,7 +1128,7 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
     from youkai_ocr.capture import calibrate_window
     from youkai_ocr.disc_scanner import scan_discs
     from youkai_ocr.wengine_scanner import scan_engines
-    from youkai_ocr.agent_scanner import scan_agents, resolve_locations
+    from youkai_ocr.agent_scanner import scan_agents
     from youkai_ocr.zod import ZodDisc, ZodWEngine, ZodExport
     from youkai_ocr.progress import NullEmitter, ProgressEmitter
 
@@ -944,6 +1171,7 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
 
         all_issues: list[dict] = []
         phase_results: dict = {}
+        grid_count = 0   # owned cells visible in the initial agent-menu frame (coverage check)
         t_start = time.perf_counter()
 
         phases        = select_phases(args)
@@ -971,7 +1199,7 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                     "auto-nav: not on the Inter-Knot main-menu hub.\n"
                     "Navigate there first, or use --manual-nav to gate each phase manually."
                 )
-            driver = _NavDriver(calib, capture_fn)
+            driver = _NavDriver(calib, capture_fn, archive_dir=run_dir)
 
             storage_visited = False
 
@@ -1068,16 +1296,19 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             emitter.phase_start(phase="agents")
             if "agents" in phases:
                 print("\n[3/3] Agent roster — navigating…")
-                driver.navigate_to_agents()
+                agent_menu_frame = driver.navigate_to_agents()
+                from youkai_ocr.agent_scanner import detect_owned_agent_cells as _detect_cells
+                grid_count = len(_detect_cells(agent_menu_frame, calib))
+                print(f"  Roster grid (first page): {grid_count} owned cell(s) visible")
                 t0 = time.perf_counter()
-                agents, agent_issues, equip_records = scan_agents(
+                agents, agent_issues, equipped_discs, equipped_engines = scan_agents(
                     capture_fn=capture_fn, calib=calib, archive_dir=run_dir,
                     ocr_engine=args.engine,
                     debug_overlays=getattr(args, "debug_overlays", False),
                     on_item=lambda s, t: emitter.progress(phase="agents", scanned=s, total=t),
                 )
             else:
-                agents, agent_issues, equip_records = [], [], []
+                agents, agent_issues, equipped_discs, equipped_engines = [], [], [], []
                 phase_results["agents"] = {"count": 0, "skipped": True}
                 print("\n[3/3] Agent phase: skipped (--phases).")
                 emitter.phase_done(phase="agents", count=0, issues=0, elapsed=0.0)
@@ -1182,15 +1413,18 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                 frame = _preflight_frame(capture_fn, calib, run_dir, "agents",
                                          interactive=interactive, emitter=emitter)
                 _check_agent_screen(frame, calib)
+                from youkai_ocr.agent_scanner import detect_owned_agent_cells as _detect_cells
+                grid_count = len(_detect_cells(frame, calib))
+                print(f"  Roster grid (first page): {grid_count} owned cell(s) visible")
                 t0 = time.perf_counter()
-                agents, agent_issues, equip_records = scan_agents(
+                agents, agent_issues, equipped_discs, equipped_engines = scan_agents(
                     capture_fn=capture_fn, calib=calib, archive_dir=run_dir,
                     ocr_engine=args.engine,
                     debug_overlays=getattr(args, "debug_overlays", False),
                     on_item=lambda s, t: emitter.progress(phase="agents", scanned=s, total=t),
                 )
             else:
-                agents, agent_issues, equip_records = [], [], []
+                agents, agent_issues, equipped_discs, equipped_engines = [], [], [], []
                 phase_results["agents"] = {"count": 0, "skipped": True}
                 print("\n[3/3] Agent phase: skipped (--phases).")
                 emitter.phase_done(phase="agents", count=0, issues=0, elapsed=0.0)
@@ -1207,12 +1441,14 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             agents_cache.write_text(_json.dumps([a.to_dict() for a in agents], indent=2), encoding="utf-8")
             print(f"  Phase output → {agents_cache}")
 
-        # ── Resolve equipment locations ──────────────────────────────────────
-        if "agents" in phases and "discs" in phases:
-            orphans = resolve_locations(equip_records, discs, engines)
-            if orphans:
-                print(f"\n  Location orphans (equipment cross-ref mismatches): {len(orphans)}")
-                all_issues.extend(orphans)
+        # ── T1.5: fingerprint reconciliation ────────────────────────────────
+        reconcile_orphans = _reconcile_locations(
+            equipped_discs, equipped_engines, discs, engines,
+        )
+        if reconcile_orphans:
+            print(f"  Reconciliation: {len(reconcile_orphans)} equipped item(s) "
+                  "not found in inventory — appended to export.")
+        all_issues.extend(reconcile_orphans)
 
         # ── Dedupe + stable sort ─────────────────────────────────────────────
         seen_agents: set[str] = set()
@@ -1240,6 +1476,30 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             _write_review_report(all_issues, review_path)
             print(f"  Review report   → {review_path}")
 
+        # ── T3.1: Roster coverage check ──────────────────────────────────────
+        coverage: dict = {}
+        if "agents" in phases and grid_count > 0:
+            crit_fail_agents = [i for i in all_issues if i.get("status") == "critical_fail" and "agent" in i]
+            scanned_keys = [a.key for a in unique_agents]
+            gap = grid_count - len(unique_agents)
+            coverage = {
+                "roster_grid_visible": grid_count,
+                "agents_scanned": len(unique_agents),
+                "gap": max(gap, 0),
+                "warning": gap > 0,
+                "scanned_keys": scanned_keys,
+            }
+            if crit_fail_agents:
+                coverage["critical_fail_count"] = len(crit_fail_agents)
+            if gap > 0:
+                print(
+                    f"\n  WARNING: roster coverage: scanned {len(unique_agents)} agent(s) but "
+                    f"roster grid (first page) shows {grid_count} owned. "
+                    f"Gap: {gap}. Some agents may have been missed or the grid was not fully visible."
+                )
+                if crit_fail_agents:
+                    print(f"  {len(crit_fail_agents)} agent visit(s) failed OCR — see issues.json.")
+
         # ── Write results.json ───────────────────────────────────────────────
         total_elapsed = round(time.perf_counter() - t_start, 1)
         results = {
@@ -1254,6 +1514,8 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                 "issues": len(all_issues),
             },
         }
+        if coverage:
+            results["coverage"] = coverage
         results_path = run_dir / "results.json"
         results_path.write_text(_json.dumps(results, indent=2), encoding="utf-8")
         print(f"  Results summary → {results_path}")

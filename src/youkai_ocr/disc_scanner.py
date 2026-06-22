@@ -64,11 +64,16 @@ def read_disc_count(
 
 # ── Field bboxes in 1920×1080 reference coords (disc_inventory.detail_panel) ─
 
-# Full detail panel (also saved to archive/). Reference origin = (1421, 100);
-# the G5 panel-slot windows below are panel-local (relative to this origin).
-_PANEL_BBOX = (1421, 100, 1860, 870)
-_PANEL_W = _PANEL_BBOX[2] - _PANEL_BBOX[0]   # 439
-_PANEL_H = _PANEL_BBOX[3] - _PANEL_BBOX[1]   # 770
+# Panel origin for the disc inventory detail view. All _*_REL constants below
+# are panel-local (relative to this origin). Call _abs_bbox(rel, origin) to
+# translate before passing to _crop().
+_PANEL_ORIGIN: tuple[int, int] = (1421, 100)
+_PANEL_W = 439   # 1860 - 1421
+_PANEL_H = 770   # 870  - 100
+
+# Kept for make_golden_draft.py and any other callers that import _PANEL_BBOX.
+_PANEL_BBOX = (_PANEL_ORIGIN[0], _PANEL_ORIGIN[1],
+               _PANEL_ORIGIN[0] + _PANEL_W, _PANEL_ORIGIN[1] + _PANEL_H)
 
 # G5 slot-recovery windows, panel-local. Pass A catches 1-line names whose
 # "[N]" is pushed right (past the clipped title bbox); Pass B catches 2-line
@@ -76,17 +81,24 @@ _PANEL_H = _PANEL_BBOX[3] - _PANEL_BBOX[1]   # 770
 _PANEL_SLOT_PASS_A = (0, 158, 300, 210)
 _PANEL_SLOT_PASS_B = (0, 200, 180, 290)
 
-_TITLE_BBOX = (1421, 270, 1660, 385)
-_RARITY_BBOX = (1421, 402, 1452, 436)
-_LEVEL_BBOX = (1451, 402, 1582, 436)
-_MAIN_NAME_BBOX = (1421, 490, 1720, 527)
-_MAIN_VAL_BBOX = (1720, 490, 1855, 527)
-_SUBSTAT_BBOXES: list[tuple[tuple, tuple]] = [
-    ((1421, 566, 1760, 607), (1760, 566, 1855, 607)),
-    ((1421, 617, 1760, 658), (1760, 617, 1855, 658)),
-    ((1421, 668, 1760, 709), (1760, 668, 1855, 709)),
-    ((1421, 720, 1760, 760), (1760, 720, 1855, 760)),
+# Panel-local field bboxes (x0, y0, x1, y1 relative to _PANEL_ORIGIN).
+_TITLE_REL        = (0,   170, 239, 285)   # abs: (1421,270,1660,385)
+_RARITY_REL       = (0,   302,  31, 336)   # abs: (1421,402,1452,436)
+_LEVEL_REL        = (30,  302, 161, 336)   # abs: (1451,402,1582,436)
+_MAIN_NAME_REL    = (0,   390, 299, 427)   # abs: (1421,490,1720,527)
+_MAIN_VAL_REL     = (299, 390, 434, 427)   # abs: (1720,490,1855,527)
+_SUBSTAT_RELS: list[tuple[tuple, tuple]] = [
+    ((0, 466, 339, 507), (339, 466, 434, 507)),   # abs rows: 566-607
+    ((0, 517, 339, 558), (339, 517, 434, 558)),   # abs rows: 617-658
+    ((0, 568, 339, 609), (339, 568, 434, 609)),   # abs rows: 668-709
+    ((0, 620, 339, 660), (339, 620, 434, 660)),   # abs rows: 720-760
 ]
+
+
+def _abs_bbox(rel: tuple[int, int, int, int], origin: tuple[int, int]) -> tuple[int, int, int, int]:
+    ox, oy = origin
+    x0, y0, x1, y1 = rel
+    return (x0 + ox, y0 + oy, x1 + ox, y1 + oy)
 
 # Lock detection: crop bottom strip of each thumbnail cell to read "Lv. N [L]" text.
 # Offsets are relative to cell center in reference coords.
@@ -179,19 +191,24 @@ def _extract_disc(
     recognizer: TextRecognizer,
     archive_dir: Optional[Path],
     disc_idx: int,
+    panel_origin: tuple[int, int] = _PANEL_ORIGIN,
 ) -> tuple[Optional[ZodDisc], dict]:
     """Extract one ZodDisc from a captured frame.
 
     Returns (disc, confidence_map). disc is None on critical failure.
     confidence_map maps field names → 0-100 confidence scores.
+
+    panel_origin: top-left of the detail panel in 1920×1080 reference coords.
+    Defaults to _PANEL_ORIGIN (inventory view). Pass a different origin to read
+    from the agent equipment select-view frame (T1.2).
     """
     conf: dict[str, float] = {}
 
     # ── Title: set name + slot ─────────────────────────────────────────────
-    title_crop = _crop(frame, calib, _TITLE_BBOX)
+    title_crop = _crop(frame, calib, _abs_bbox(_TITLE_REL, panel_origin))
     title_text = recognizer.read_text(title_crop, "white_text_on_dark").replace("\n", " ").strip()
 
-    panel_crop = _crop(frame, calib, _PANEL_BBOX)
+    panel_crop = _crop(frame, calib, _abs_bbox((0, 0, _PANEL_W, _PANEL_H), panel_origin))
     slot = parse_slot(title_text)
     if slot is None:
         # Tier-3 fallback: long names clip/wrap the title "[N]"; recover it from
@@ -203,7 +220,7 @@ def _extract_disc(
     conf["set"] = set_conf
 
     # ── Rarity ────────────────────────────────────────────────────────────
-    rarity_crop = _crop(frame, calib, _RARITY_BBOX)
+    rarity_crop = _crop(frame, calib, _abs_bbox(_RARITY_REL, panel_origin))
     try:
         rarity = detect_rarity(rarity_crop)
         conf["rarity"] = 95.0
@@ -212,7 +229,7 @@ def _extract_disc(
         conf["rarity"] = 0.0
 
     # ── Level ──────────────────────────────────────────────────────────────
-    level_crop = _crop(frame, calib, _LEVEL_BBOX)
+    level_crop = _crop(frame, calib, _abs_bbox(_LEVEL_REL, panel_origin))
     level_text = recognizer.read_line(level_crop, "white_text_on_dark")
     level = parse_level(level_text)
     if level is None:
@@ -227,7 +244,7 @@ def _extract_disc(
     conf["lock"] = 80.0
 
     # ── Main stat ─────────────────────────────────────────────────────────
-    main_name_crop = _crop(frame, calib, _MAIN_NAME_BBOX)
+    main_name_crop = _crop(frame, calib, _abs_bbox(_MAIN_NAME_REL, panel_origin))
     main_name_text = recognizer.read_line(main_name_crop, "white_text_on_dark").strip()
 
     main_key, main_conf = normalize_main_stat(main_name_text, slot or 0)
@@ -239,7 +256,9 @@ def _extract_disc(
     # Never break on a single empty OCR read — short names ("HP") and dim rows
     # ("PEN") read empty on the bright pass and were silently dropped pre-F2.
     substats: list[ZodSubstat] = []
-    for i, (name_bbox, val_bbox) in enumerate(_SUBSTAT_BBOXES):
+    for i, (name_rel, val_rel) in enumerate(_SUBSTAT_RELS):
+        name_bbox = _abs_bbox(name_rel, panel_origin)
+        val_bbox = _abs_bbox(val_rel, panel_origin)
         name_crop = _crop(frame, calib, name_bbox)
         val_crop = _crop(frame, calib, val_bbox)
         name_text = recognizer.read_line(name_crop, "white_text_on_dark").strip()
@@ -247,6 +266,14 @@ def _extract_disc(
         if not name_text or name_text in {"-", "--"}:
             name_text = recognizer.read_line(name_crop, "white_text_on_dark_dim").strip()
             dim_pass = True
+        if not name_text or name_text in {"-", "--"}:
+            # Short names like "HP" (2 chars) are unreadable at native size;
+            # 2× upscale gives Tesseract enough pixels to resolve them.
+            name_big = name_crop.resize(
+                (name_crop.width * 2, name_crop.height * 2), Image.LANCZOS
+            )
+            name_text = recognizer.read_line(name_big, "white_text_on_dark").strip()
+            dim_pass = False
         if name_text and fuzz.partial_ratio(name_text.lower(), "set effect") >= 75:
             break   # footer header — end of the substat list
         # Read the value at two scales and vote: the decimal point vanishes
@@ -467,18 +494,234 @@ def scan_single_frame(
     calib: CalibrationResult,
     archive_dir: Optional[Path] = None,
     engine: str = "tesseract",
+    panel_origin: tuple[int, int] = _PANEL_ORIGIN,
 ) -> tuple[Optional["ZodDisc"], dict]:
     """Extract one disc from a static frame — no synthetic input, no navigator.
 
-    Assumes the disc detail panel is already visible on the right side of the
-    frame. Used for offline testing / debugging from reference screenshots.
+    Assumes the disc detail panel is already visible. Used for offline testing
+    and for reading equipped-disc select-view frames (pass panel_origin for
+    the equipped view's panel position).
 
     Returns (disc, confidence_map). disc is None on critical failure.
     """
     recognizer = make_recognizer(engine)
     # Use cell (0, 0) center as a dummy position for the lock strip crop.
     cx, cy = DEFAULT_GRID.cell_center(0, 0)
-    return _extract_disc(frame, calib, cx, cy, recognizer, archive_dir, 0)
+    return _extract_disc(frame, calib, cx, cy, recognizer, archive_dir, 0, panel_origin)
+
+
+# ── Equip-slot panel extraction (agent equipment select-view) ─────────────────
+# Layout: disc info panel sits at x≈610-1065 on the agent equipment page after
+# the user clicks a disc slot. Rarity row Y shifts by ~50px when the set name
+# wraps to two lines — we probe both positions and anchor from the rarity icon.
+#
+# Sub-row Y positions are VARIABLE (each roll-count indicator "+N" takes extra
+# vertical space). We use a single PSM-6 block read over the stat region and
+# parse the resulting multi-line text — no per-row Y calibration needed.
+
+_EQUIP_X0   = 610    # left edge of disc-info panel (absolute, 1920×1080)
+_EQUIP_X1   = 1065   # right edge
+
+_EQUIP_TITLE_Y0 = 120    # title always starts here
+_EQUIP_TITLE_Y1 = 215    # tall enough for 2-line set names (covers both cases)
+_EQUIP_TITLE_X1 = 870    # title text ends well before the rarity icon
+
+# Rarity icon probe: try 1-line title position first, fall back to 2-line.
+# Tight 32×28px crop centred on the icon avoids the dark surround that caused p75
+# to miss the golden S-rank centroid when using the wider 38×48px cell crop.
+_EQUIP_RARITY_PROBE_YS   = (165, 215)
+_EQUIP_RARITY_ICON_X0    = 614   # tight icon crop left edge
+_EQUIP_RARITY_ICON_X1    = 646   # tight icon crop right edge
+_EQUIP_RARITY_ICON_DY0   = 12    # icon crop top relative to probe y0
+_EQUIP_RARITY_ICON_DY1   = 40    # icon crop bottom relative to probe y0
+_EQUIP_RARITY_H          = 48    # full rarity/level row height (for level bbox)
+
+# Block read: from rarity_y+100 (just past the "Main Stat" dim header) to
+# rarity_y+420 (covers 4 substats with roll indicators + "Set Effect" line).
+_EQUIP_BLOCK_DY0 = 100
+_EQUIP_BLOCK_DY1 = 420
+
+# Lines matching these (case-insensitive) are section headers — skip them.
+_EQUIP_HEADER_LINES = frozenset({"main stat", "sub-stats", "sub stats", "substats"})
+
+
+def _equip_detect_rarity(
+    frame: Image.Image, calib: CalibrationResult
+) -> tuple[int, int]:
+    """Probe for the rarity icon in the equip-slot panel; return (rarity, rarity_y).
+
+    Tries 1-line-title position first (y=165), then 2-line-title (y=215).
+    Falls back to 4 (S-rank) and y=165 if neither probe succeeds.
+    """
+    for y0 in _EQUIP_RARITY_PROBE_YS:
+        crop = _crop(frame, calib, (
+            _EQUIP_RARITY_ICON_X0, y0 + _EQUIP_RARITY_ICON_DY0,
+            _EQUIP_RARITY_ICON_X1, y0 + _EQUIP_RARITY_ICON_DY1,
+        ))
+        try:
+            return detect_rarity(crop), y0
+        except ValueError:
+            continue
+    return 4, _EQUIP_RARITY_PROBE_YS[0]
+
+
+def _equip_parse_stat_block(block_text: str) -> tuple[Optional[str], list[tuple[str, str]]]:
+    """Parse a PSM-6 block read of the equip-slot disc info panel.
+
+    Returns (main_stat_raw, [(sub_name_raw, sub_val_raw), ...]).
+    main_stat_raw and each sub_name_raw include the roll-count suffix if present
+    (e.g. "CRIT Rate +3"); normalize_substat handles the stripping internally.
+    """
+    main_raw: Optional[str] = None
+    subs_raw: list[tuple[str, str]] = []
+    in_subs = False
+
+    for raw_line in block_text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        llow = line.lower()
+        if llow in _EQUIP_HEADER_LINES:
+            if "sub" in llow:
+                in_subs = True
+            continue
+        if fuzz.partial_ratio(llow, "set effect") >= 75:
+            break
+        if re.match(r"^\+\d+$", line):
+            continue   # standalone roll-count indicator
+
+        # Split last token as value; rest is name.
+        parts = line.split()
+        if not parts:
+            continue
+        val_text = parts[-1]
+        if parse_numeric(val_text) is None:
+            continue   # no parseable value → noise line
+        name_text = " ".join(parts[:-1]).strip()
+        if not name_text:
+            continue
+
+        if not in_subs:
+            if main_raw is None:
+                main_raw = (name_text, val_text)
+        else:
+            subs_raw.append((name_text, val_text))
+
+    return main_raw, subs_raw
+
+
+def scan_equipped_disc_frame(
+    frame: Image.Image,
+    calib: CalibrationResult,
+    agent_key: str,
+    slot_key: int,
+    archive_dir: Optional[Path] = None,
+    engine: "str | TextRecognizer" = "tesseract",
+) -> tuple[Optional[ZodDisc], dict]:
+    """Extract a ZodDisc from an equip-slot select-view frame.
+
+    Reads the disc detail panel shown in the agent equipment screen after
+    clicking a disc slot. Location is set to agent_key by construction.
+
+    slot_key: in-game disc slot number (1-6), used as the ZodDisc slot_key
+    and for main-stat slot normalization.
+
+    Uses PSM-6 block OCR over the stat region — avoids per-row Y calibration
+    and correctly reads values even when sub-row pitch varies with roll counts.
+
+    Returns (disc, confidence_map). disc is None on critical failure.
+    """
+    recognizer = engine if isinstance(engine, TextRecognizer) else make_recognizer(engine)
+    conf: dict[str, float] = {}
+
+    # ── Title → set key ───────────────────────────────────────────────────
+    title_crop = _crop(frame, calib, (_EQUIP_X0, _EQUIP_TITLE_Y0, _EQUIP_TITLE_X1, _EQUIP_TITLE_Y1))
+    title_text = recognizer.read_text(title_crop, "white_text_on_dark").replace("\n", " ").strip()
+    set_key, set_conf = normalize_disc_set(title_text)
+    conf["set"] = set_conf
+    conf["slot"] = 100.0   # authoritative from caller
+
+    # ── Rarity (anchors the dynamic layout) ────────────────────────────────
+    rarity, rarity_y = _equip_detect_rarity(frame, calib)
+    conf["rarity"] = 95.0
+
+    # ── Level ──────────────────────────────────────────────────────────────
+    level_crop = _crop(frame, calib, (
+        _EQUIP_RARITY_ICON_X1 + 5, rarity_y,
+        _EQUIP_X1, rarity_y + _EQUIP_RARITY_H,
+    ))
+    level_text = recognizer.read_line(level_crop, "white_text_on_dark")
+    level = parse_level(level_text)
+    if level is None:
+        m = re.search(r"\d+", level_text)
+        level = int(m.group()) if m else 0
+    conf["level"] = 90.0 if 0 <= level <= 15 else 0.0
+
+    # ── Main stat + substats (single PSM-6 block read) ────────────────────
+    block_crop = _crop(frame, calib, (
+        _EQUIP_X0, rarity_y + _EQUIP_BLOCK_DY0,
+        _EQUIP_X1, rarity_y + _EQUIP_BLOCK_DY1,
+    ))
+    block_text = recognizer.read_text(block_crop, "white_text_on_dark")
+    main_raw, subs_raw = _equip_parse_stat_block(block_text)
+
+    # Main stat
+    if main_raw is not None:
+        main_name_text, main_val_text = main_raw
+        main_key, main_conf = normalize_main_stat(main_name_text, slot_key)
+        pct_seen = "%" in main_val_text
+        if pct_seen and main_key in _FLAT_TO_PERCENT:
+            main_key = _FLAT_TO_PERCENT[main_key]
+    else:
+        main_key, main_conf = "", 0.0
+    conf["main_stat"] = main_conf
+
+    # Substats
+    substats: list[ZodSubstat] = []
+    for i, (name_text, val_text) in enumerate(subs_raw[:4]):
+        stat_key, stat_conf = normalize_substat(name_text)
+        pct_seen = "%" in val_text
+        val = parse_numeric(val_text)
+        if val is None:
+            val = 0.0
+            stat_conf = min(stat_conf, 30.0)
+
+        key = stat_key
+        if pct_seen and stat_key in _FLAT_TO_PERCENT:
+            pct_key = _FLAT_TO_PERCENT[stat_key]
+            if _value_plausible(pct_key, val):
+                key = pct_key
+        if not pct_seen and not _value_plausible(key, val):
+            flat_key = _PERCENT_TO_FLAT.get(key)
+            if flat_key and _value_plausible(flat_key, val):
+                key = flat_key
+        if not _value_plausible(key, val):
+            stat_conf = min(stat_conf, 30.0)
+
+        conf[f"substat_{i + 1}"] = stat_conf
+        substats.append(ZodSubstat(key=key, value=val))
+
+    # ── Archive ────────────────────────────────────────────────────────────
+    if archive_dir is not None:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        title_crop.save(archive_dir / f"equip_disc_s{slot_key}_title.png")
+        block_crop.save(archive_dir / f"equip_disc_s{slot_key}_block.png")
+
+    if set_conf < _CRITICAL_SET_THRESHOLD:
+        conf["_fail_reason"] = f"low_set_conf:{set_conf:.0f}:title={title_text!r}"
+        return (None, conf)
+
+    disc = ZodDisc(
+        set_key=set_key,
+        slot_key=str(slot_key),
+        level=level,
+        rarity=rarity,
+        main_stat_key=main_key,
+        location=agent_key,
+        lock=False,
+        substats=substats,
+    )
+    return (disc, conf)
 
 
 # ── C3: Export ────────────────────────────────────────────────────────────────
