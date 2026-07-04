@@ -192,7 +192,7 @@ no repair path can fire on ambiguous input (asserted).
 
 ---
 
-## T10 — `revalidate` CLI: fix the June 22 export offline [ ]
+## T10 — `revalidate` CLI: fix the June 22 export offline [x]
 
 **Files:** `src/youkai_ocr/cli.py` (new subcommand), `tests/test_cli_revalidate.py`.
 

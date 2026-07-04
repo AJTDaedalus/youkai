@@ -823,3 +823,129 @@ as-is per the established baseline-noise precedent from T7/T8. Full suite:
 Next: T10 — `revalidate` CLI subcommand to fix the June 22 export offline
 (archive-only replay, no game/pynput; corrected export + repair report,
 delivered as `_revalidated` suffix per T10's Do §2).
+
+---
+
+## T10 — `revalidate` CLI: fix the June 22 export offline (Worker, 2026-07-04)
+
+**Done.** New `youkai-ocr revalidate --archive <dir> --out <export.json>
+[--report <report.json>] [--limit N]` subcommand in `cli.py`. For each
+`disc_NNNN/panel.png` in the archive, pastes the 439×770 crop onto a
+1920×1080 black canvas at `(1421, 100)` (the same trick already duplicated in
+`test_golden_replay.py`/`test_disc_scanner.py` — kept as a third, identical
+duplicate per the handoff's explicit permission, rather than importing a
+private cross-module helper) and replays it through `scan_single_frame` with
+an identity `CalibrationResult`. Confirmed T9's framing was right: because
+`scan_single_frame`/`_extract_disc` re-runs **real OCR** on the panel image
+(not just re-reading the already-exported `discs.json` values), it captures
+the same live `roll_suffix`/`pct_seen` evidence a fresh scan would — DESIGN
+Open Question 6's "T10 has strictly less evidence than T9" concern doesn't
+apply to this design; it only would have applied to an archive-replay that
+trusted the stale `discs.json` numbers as inputs instead of re-deriving them
+from pixels.
+
+**location/lock merge:** `disc.location`/`disc.lock` are overwritten from the
+archive's `discs.json[i]` by index after each `scan_single_frame` call, since
+a static panel crop has no thumbnail strip to read lock from (per DESIGN
+Integration point 5 / TASKS T10).
+
+**Report gate — design decision left open by the handoff, now resolved:**
+the report's `unrepairable` classification comes from an explicit second
+`validate_disc(disc)` call in `cli.py` on the final, location/lock-merged
+disc — not from whatever residual-violation state `conf` was left in inside
+`scan_single_frame`. Verified after the full run that this choice was inert
+(location/lock aren't validated fields, so it can't change any outcome) but
+kept it anyway: it decouples the report's authoritative gate from
+`scan_single_frame`'s internal bookkeeping, so a future change to how `conf`
+folds violations can't silently desync the report from what `validate_disc`
+actually says about the exported disc. Confirmed post-run: 0 discs anywhere
+in the corrected export carry a residual `validate_disc` violation outside
+the 58 explicitly reported as `unrepairable`.
+
+**Per-disc report shape** reuses `disc_rules.Repair`'s `{field, before, after,
+rule}` and `Violation`'s `{field, code, observed, expected, severity}` shapes
+verbatim (dict-ified), matching `conf["_repairs"]`'s existing shape from T9 —
+no new schema invented. Each entry also carries `index` and a `status` of
+`clean` / `repaired` / `unrepairable` / `missing_panel` / `critical_fail`.
+
+**Resilience:** a bare `except Exception` around each disc's
+`scan_single_frame` call (with `noqa: BLE001`) turns any single bad panel
+into a `critical_fail` report entry (falling back to the raw archived disc)
+rather than aborting a 2000+-disc sweep on one outlier. Not exercised by the
+real run (no exceptions raised), but exists precisely so one never gets
+silently discovered 60 minutes into a re-run.
+
+**`--limit N`:** added per the handoff's "consider… don't over-build"
+framing — a plain slice of `raw_discs` before the loop, no parallelism. Used
+during development to sanity-check the harness against 20 real archive discs
+in ~40s before committing to the full 2090-disc, ~67-minute run.
+
+**Archive run (June 22 archive, `live_20260622_093014`, all 2090 discs):**
+took 4001.8s (~66.7 min) at ~1.9s/disc — consistent with T8's per-disc OCR
+cost (6 real-tesseract crops per disc: title, rarity, level, main-name,
+main-value, substat block), not a regression introduced by this task.
+
+```
+total: 2090   clean: 1912   repaired: 120   unrepairable: 58
+repair rules used:      roll_budget=111  lattice_neighbor=18  roll_suffix=4
+unrepairable codes:     sub_not_on_lattice=55  dup_substat=4
+                        sub_equals_main=3  roll_budget=1  sub_count=1
+```
+
+178 invariant-violating discs total (120 repaired + 58 unrepairable) — close
+to DESIGN's "~171" estimate from the earlier fixture-curation sweep (that
+number came from a partial/manual sample, not a full-archive count, so exact
+agreement wasn't expected). `WutheringSalon` now appears as a real `setKey`
+in the corrected export (previously mis-normalized per DESIGN Open Question
+5 / the E1 sweep), confirming TASKS' expected outcome. The 58 unrepairable
+discs are exactly the cases `repair_disc`'s conservative policy is designed
+to refuse rather than guess on (DESIGN "Repair policy" step 4) — left for
+manual review, not silently exported wrong.
+
+**Verified acceptance criterion directly** (not just trusted the report):
+loaded the corrected export, ran `validate_disc` fresh on every one of the
+2090 discs, and confirmed 0 discs outside the reported 58 `unrepairable`
+carry any violation — the report's classification and the export's actual
+state agree exactly.
+
+**Delivered to** `youkai-portable/youkai-portable/export/youkai_export_revalidated.json`
+(947,140 bytes), alongside the original `youkai_export.json` (1,114,342
+bytes, untouched) — never overwritten, per TASKS' explicit instruction.
+Full report (`docs/_t10_run/report.json`, 263KB, git-ignored run artifact —
+not committed) has the per-disc breakdown for whoever does the T11 manual
+review of the 58 unrepairable discs.
+
+**New tests (`tests/test_cli_revalidate.py`, 9):** all mock
+`youkai_ocr.disc_scanner.scan_single_frame` (real-OCR coverage of the
+repair pipeline itself already lives in T8/T9's golden-replay and
+`test_disc_scanner.py` tests — this file only proves the CLI harness: index
+merge, status classification, report/summary shape, missing-panel and
+critical-fail fallback to the raw archived disc, and `--limit`). Two tests
+(`test_revalidate_counts_clean_disc_when_no_repairs_no_violations`,
+`test_revalidate_counts_repaired_disc_from_conf_repairs`) additionally patch
+`youkai_ocr.disc_rules.validate_disc` to `[]`, since the hand-built sample
+disc fixture used for classification tests isn't itself lattice-valid at
+its chosen level/rarity — patching isolates the classification logic being
+tested from real lattice arithmetic.
+
+**Files touched:** `src/youkai_ocr/cli.py` (`_cmd_revalidate`,
+`_revalidate_panel_to_frame`, `revalidate` subparser + dispatch),
+`tests/test_cli_revalidate.py` (new, 9 tests), `docs/TASKS_disc_validation.md`
+(T10 checked off).
+
+**Verification:** `pytest tests/test_cli_revalidate.py` → 9 passed.
+`pytest -q` (full suite) → **635 passed** (0:08:30), no regressions (same
+635 as T9 — this task added and removed the same net test count via a
+separate file). `ruff check src/youkai_ocr/cli.py tests/test_cli_revalidate.py`
+→ 26 errors, **same as the pre-`git stash` baseline** (confirmed via
+`git stash`/re-check, matching T7-T9's methodology) — `test_cli_revalidate.py`
+itself is clean; the one new F821 my first draft introduced (a
+`"Image.Image"` string forward-ref on `_revalidate_panel_to_frame`, following
+this file's existing-but-out-of-scope pattern) was removed before commit
+rather than left as "more of the same baseline noise," since it was a line
+I authored, not inherited. Repo-wide `ruff check .` → 59 errors, consistent
+with the established ~57-60 baseline.
+
+Next: T11 — docs + wrap-up (DESIGN status update, README/RUNBOOK note for
+`revalidate`, final full pytest + ruff check, PR `feat/disc-validation` →
+`dev` with the June 22 repair statistics from this entry).
