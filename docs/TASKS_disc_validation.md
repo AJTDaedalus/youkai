@@ -40,7 +40,7 @@ clean apart from the intentionally-untouched `reference/youkai_export.json` ✓.
 
 ---
 
-## T2 — Data: refresh `disc_sets.json` to the live set list [ ]
+## T2 — Data: refresh `disc_sets.json` to the live set list [x]
 
 **Files:** `data/zzz_1.4/disc_sets.json`; `tests/test_normalizer.py`.
 

@@ -103,3 +103,51 @@ B-rank growth carried DESIGN's explicit assumption (1/3 per level) with the
 full suite `python -m pytest -q` → **524 passed** (0:05:56), no regressions.
 
 Next: T2 — refresh `disc_sets.json` to the live 37-set list.
+
+## T2 — Data: refresh `disc_sets.json` to the live set list (Worker, 2026-07-04)
+
+**Done — with a significant correction to the DESIGN premise.** DESIGN's 37-set list came
+from the wiki's `Category:Drive Discs` page dump, but that category is not filtered for
+released-vs-removed status. Queried the fandom MediaWiki API directly (`api.php`,
+UA-gated — direct page fetch is still 402'd, matches the planning-session note) for each
+of the 11 "new" set names DESIGN listed:
+
+- **`Category:Removed` + `Category:Drive Disc Missing ID`** (beta/datamined stub pages,
+  never released — **excluded**): Assassin's Ballad, Doom Grindcore, Ecstatic Punk,
+  Mammoth Electro, Monsoon Funk, Noisy Pop, Twisted Grindcore, Unicorn Electro,
+  Vagabond Folk. (9 of the 11.)
+- **`Category:Released in Version 3.0`** (real, live — **added**): The Sky Ablaze,
+  Wuthering Salon. (2 of the 11.) Both are independently confirmed by the June 22 archive
+  itself — these are the two sets the E1 re-OCR sweep found being misread as
+  SwingJazz/WhiteWaterBallad/BranchBladeSong/ThunderMetal (105 + 68 discs respectively).
+
+Cross-checked the full `Category:Drive Discs` dump (39 members, 2 are subcategories → 37
+pages, matching DESIGN's count) against `Category:Removed`: confirmed none of the
+existing 26 keys overlap with the removed set — the existing table was already clean.
+
+**Files changed:**
+- `data/zzz_1.4/disc_sets.json`: added `"The Sky Ablaze": "TheSkyAblaze"`,
+  `"Wuthering Salon": "WutheringSalon"` (28 keys total now); `_meta` records the source
+  query and the exclusion list with rationale.
+- `tests/test_normalizer.py`: `test_normalize_disc_set_wuthering_salon`,
+  `test_normalize_disc_set_the_sky_ablaze` (both ≥95 on a `"Name [N]"`-shaped input);
+  `test_disc_sets_old_26_keys_unchanged` (regression, full old keyset present);
+  `test_disc_sets_excludes_removed_beta_stubs` (asserts the 9 excluded display names are
+  absent from the table, so a future careless "helpful" merge doesn't reintroduce them).
+
+**Verification against the acceptance criterion** ("every June-22 title in the re-OCR
+sweep matches some set at ≥80"): ran `normalize_disc_set` over all 2090 rows of
+`docs/diag_title_reocr_20260704.json`. Result: 52/2090 still score <80, but 46 of those
+are the *already-correct* key at low confidence — the exact cases DESIGN flagged as T3's
+job (`BunnyInWonderland` 2-line-title reads at 68–73, `ShockstarDisco` dropped-char at
+78) — and 6 are pre-existing blank-OCR crops (empty string in, degenerate 0-score match
+out), unrelated to the set table and out of scope for T2. Zero *wrong*-key matches
+remain. Confirms T2 fully resolves E1 down to the residual T3 is designed to handle.
+
+`pytest tests/test_normalizer.py` → 104 passed (100 prior + 4 new). Full suite:
+`python -m pytest -q` → **528 passed** (0:05:55), no regressions. `ruff check
+tests/test_normalizer.py` clean (repo-wide `ruff check` still shows 61 pre-existing
+violations in unrelated files, out of scope for this task — `disc_sets.json` is not
+Python so not lint-checked).
+
+Next: T3 — normalizer unknown-set score floor (`_SET_NAME_SCORE_MIN = 60`).

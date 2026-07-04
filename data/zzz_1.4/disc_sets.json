@@ -1,8 +1,9 @@
 {
   "_meta": {
-    "source": "AdeptiScanner-ZZZ ArtifactInfo.json (DataVersion 2.7, github.com/D1firehail/AdeptiScanner-ZZZ)",
+    "source": "AdeptiScanner-ZZZ ArtifactInfo.json (DataVersion 2.7, github.com/D1firehail/AdeptiScanner-ZZZ) + zenless-zone-zero.fandom.com Category:Drive Discs (retrieved 2026-07-04 via api.php, UA-gated)",
     "description": "ZZZ Drive Disc set display names (English PC client) → ZOD key. File covers all sets up to data v2.7; sets added after 1.4 are included so the scanner handles newer discs without a code change. Patch by adding entries; do not rename existing keys.",
-    "last_updated": "2026-06-02"
+    "last_updated": "2026-07-04",
+    "2026-07-04_update": "Added The Sky Ablaze + Wuthering Salon (confirmed via wiki Category:Released in Version 3.0, and observed directly in the June 22 archive OCR sweep, see docs/DESIGN_disc_validation.md E1). The wiki's Category:Drive Discs lists 37 pages total, but 9 of those (Assassin's Ballad, Doom Grindcore, Ecstatic Punk, Mammoth Electro, Monsoon Funk, Noisy Pop, Twisted Grindcore, Unicorn Electro, Vagabond Folk) carry Category:Removed + Category:Drive Disc Missing ID — beta/datamined stub pages, never released. Excluded; see docs/LOG_disc_validation.md T2."
   },
   "disc_sets": {
     "Woodpecker Electro": "WoodpeckerElectro",
@@ -30,6 +31,8 @@
     "White Water Ballad": "WhiteWaterBallad",
     "Shining Aria": "ShiningAria",
     "Bunny in Wonderland": "BunnyInWonderland",
-    "Notes From the Chained": "NotesFromTheChained"
+    "Notes From the Chained": "NotesFromTheChained",
+    "The Sky Ablaze": "TheSkyAblaze",
+    "Wuthering Salon": "WutheringSalon"
   }
 }
