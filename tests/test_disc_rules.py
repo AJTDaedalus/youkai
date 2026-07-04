@@ -276,13 +276,19 @@ def test_dup_substat_violation():
     assert any(v.code == "dup_substat" and v.observed == "pen" for v in violations)
 
 
-def test_sub_equals_main_is_warning_not_error():
-    """E4: substat duplicates main stat (slot-1 flat HP main, hp substat)."""
+def test_sub_equals_main_is_error():
+    """E4: substat duplicates main stat (slot-1 flat HP main, hp substat).
+
+    DESIGN OQ3 resolved (T8): every one of the 10 real sub_equals_main hits
+    found in the June 22 archive turned out to be a flat/percent key-flip
+    misread (E3) colliding with the main key, never a genuine same-key
+    collision -- see docs/DESIGN_disc_validation.md OQ3 and LOG T8 entry.
+    """
     disc = _disc(4, slot="1", level=0, main_key="hp", subs=[("hp", 112)])
     violations = validate_disc(disc)
     hit = [v for v in violations if v.code == "sub_equals_main"]
     assert len(hit) == 1
-    assert hit[0].severity == "warning"
+    assert hit[0].severity == "error"
 
 
 def test_sub_rolls_exceed_max_for_level():

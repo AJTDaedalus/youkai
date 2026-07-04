@@ -214,7 +214,7 @@ def _validate_substats(disc: ZodDisc, rules: RarityRules) -> list[Violation]:
     for i, sub in enumerate(disc.substats):
         if sub.key == disc.main_stat_key:
             violations.append(
-                Violation(f"substat[{i}]", "sub_equals_main", sub.key, "!= main_stat_key", "warning")
+                Violation(f"substat[{i}]", "sub_equals_main", sub.key, "!= main_stat_key", "error")
             )
 
     return violations

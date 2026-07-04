@@ -267,6 +267,7 @@ def _extract_disc(
         main_value = main_v2 if main_v2 is not None else main_v1
     if main_value is not None:
         conf["main_stat_value"] = main_value
+        conf["main_stat_pct_seen"] = "%" in mv1 or "%" in mv2
 
     # ── Substats ──────────────────────────────────────────────────────────
     # Row contract (golden-replay/F2): a real substat row always has a numeric
@@ -312,6 +313,7 @@ def _extract_disc(
         roll_suffix = parse_roll_suffix(name_text) if name_text else None
         if roll_suffix is not None:
             conf[f"substat_{i + 1}_roll_suffix"] = float(roll_suffix)
+        conf[f"substat_{i + 1}_pct_seen"] = pct_seen
         if dim_pass:
             stat_conf = min(stat_conf, 65.0)   # surfaced in issues for review
 
@@ -708,6 +710,7 @@ def scan_equipped_disc_frame(
         main_value = parse_numeric(main_val_text)
         if main_value is not None:
             conf["main_stat_value"] = main_value
+            conf["main_stat_pct_seen"] = pct_seen
     else:
         main_key, main_conf = "", 0.0
     conf["main_stat"] = main_conf
@@ -719,6 +722,7 @@ def scan_equipped_disc_frame(
         if roll_suffix is not None:
             conf[f"substat_{i + 1}_roll_suffix"] = float(roll_suffix)
         pct_seen = "%" in val_text
+        conf[f"substat_{i + 1}_pct_seen"] = pct_seen
         val = parse_numeric(val_text)
         if val is None:
             val = 0.0

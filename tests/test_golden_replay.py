@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pytest
@@ -22,6 +22,7 @@ from youkai_ocr.capture import CalibrationResult, calibrate, check_color_hygiene
 from youkai_ocr.disc_scanner import scan_single_frame as scan_single_frame_disc
 from youkai_ocr.wengine_scanner import scan_single_frame_engine
 from youkai_ocr.agent_scanner import scan_single_frame_agent
+from youkai_ocr.disc_rules import Evidence, SubstatEvidence, repair_disc
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
 LABELS = FIXTURES / "labels.json"
@@ -30,6 +31,13 @@ LABELS = FIXTURES / "labels.json"
 NAME_GATE = 0.99   # ≥99% of name/key fields must be correct
 NUMERIC_GATE = 0.98  # ≥98% of numeric fields must be correct
 SILENT_WRONG_CONF = 70  # a wrong value must have confidence below this
+
+# T8: post-repair gate for tests/fixtures/golden's discs_repair_cases — discs
+# curated specifically to exercise known OCR error classes (E1-E5). Their raw
+# scan is expected to differ from ground truth; disc_rules.repair_disc must
+# close most of that gap, and whatever it can't fix must be flagged, never
+# silently wrong.
+POST_REPAIR_NUMERIC_GATE = 0.98
 
 
 REFERENCE_W = 1920
@@ -157,6 +165,113 @@ def test_disc_golden_replay(labels):
         assert num_rate >= NUMERIC_GATE, (
             f"Numeric accuracy {num_rate:.1%} < {NUMERIC_GATE:.0%} "
             f"({acc.num_correct}/{acc.num_total})"
+        )
+
+
+# ── Disc repair-case replay (T8) ───────────────────────────────────────────────
+
+def _build_evidence(conf: dict, num_substats: int) -> Evidence:
+    """Reconstruct disc_rules.Evidence from the conf dict's evidence keys
+    (T4 roll_suffix, T5 main_stat_value, T8 pct_seen) — the same raw
+    observations disc_scanner.py already captures during extraction, not yet
+    threaded into a live Evidence object at the call site (that wiring is T9's
+    job). Building it here is exactly the "enough wiring to prove the gate"
+    T8 calls for, without integrating repair_disc into the scan path itself.
+    """
+    substats = tuple(
+        SubstatEvidence(
+            roll_suffix=(
+                int(conf[f"substat_{i + 1}_roll_suffix"])
+                if f"substat_{i + 1}_roll_suffix" in conf else None
+            ),
+            pct_seen=conf.get(f"substat_{i + 1}_pct_seen"),
+        )
+        for i in range(num_substats)
+    )
+    return Evidence(
+        main_value_raw=conf.get("main_stat_value"),
+        substats=substats,
+    )
+
+
+def test_disc_golden_replay_post_repair(labels):
+    """§10 post-repair gate (T8), over the *full* curated golden disc set
+    (labels["discs"] + labels["discs_repair_cases"]) — DESIGN's Testing
+    Strategy specifies ≥98% numeric accuracy after repair across the whole
+    ~30+-panel golden set, not just the deliberately-adversarial subset.
+    disc_rules.repair_disc must close most of the gap the repair-case discs
+    exercise (E1-E5 error classes) while leaving the already-clean discs
+    untouched. Zero silent-wrong: any post-repair value that still differs
+    from ground truth must carry either low confidence or a residual
+    violation from repair_disc — never an unflagged wrong answer.
+    """
+    calib = _identity_calib()
+    num_total, num_correct = 0, 0
+    silent_wrongs: list[str] = []
+    failures: list[str] = []
+
+    items = labels.get("discs", []) + labels.get("discs_repair_cases", [])
+    if not items:
+        pytest.skip("no discs in labels.json")
+
+    for item in items:
+        disc_id: str = item["id"]
+        expect: dict = item["expect"]
+        panel_path = FIXTURES / "discs" / f"{disc_id}.png"
+        if not panel_path.exists():
+            pytest.skip(f"panel missing: {panel_path}")
+
+        frame = _panel_to_frame(panel_path)
+        disc, conf = scan_single_frame_disc(frame, calib)
+        if disc is None:
+            failures.append(f"{disc_id}: extraction returned None (conf={conf})")
+            continue
+
+        evidence = _build_evidence(conf, len(disc.substats))
+        result = repair_disc(disc, evidence)
+        repaired = result.disc
+        violated_fields = {v.field for v in result.violations}
+
+        def check(got: Any, expected: Any, conf_val: float, violated: bool, label: str) -> None:
+            nonlocal num_total, num_correct
+            num_total += 1
+            match = got == expected or (
+                isinstance(got, float) and isinstance(expected, float)
+                and abs(got - expected) < 0.05
+            )
+            if match:
+                num_correct += 1
+            elif conf_val < SILENT_WRONG_CONF or violated:
+                pass  # flagged — not silent
+            else:
+                silent_wrongs.append(
+                    f"{label}: got={got!r} expected={expected!r} conf={conf_val:.0f}"
+                )
+
+        check(repaired.main_stat_key, expect["main_stat_key"], conf.get("main_stat", 0.0),
+              "main_stat_key" in violated_fields, f"{disc_id}.main_stat_key")
+
+        exp_subs = expect.get("substats", [])
+        got_subs = repaired.substats or []
+        for i, (got_sub, exp_sub) in enumerate(zip(got_subs, exp_subs)):
+            field = f"substat[{i}]"
+            key_conf = conf.get(f"substat_{i + 1}", 0.0)
+            check(got_sub.key, exp_sub["key"], key_conf, field in violated_fields,
+                  f"{disc_id}.sub{i}.key")
+            check(got_sub.value, exp_sub["value"], key_conf, field in violated_fields,
+                  f"{disc_id}.sub{i}.value")
+
+    assert not silent_wrongs, (
+        f"Silent wrong values after repair (conf ≥ {SILENT_WRONG_CONF}, no violation):\n"
+        + "\n".join(silent_wrongs)
+    )
+    assert failures == [], "Extraction failures:\n" + "\n".join(failures)
+
+    if num_total:
+        rate = num_correct / num_total
+        assert rate >= POST_REPAIR_NUMERIC_GATE, (
+            f"Post-repair numeric accuracy {rate:.1%} < {POST_REPAIR_NUMERIC_GATE:.0%} "
+            f"({num_correct}/{num_total})"
         )
 
 

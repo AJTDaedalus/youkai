@@ -3,7 +3,8 @@
     "source": "https://zenless-zone-zero.fandom.com/wiki/Drive_Disc",
     "retrieved": "2026-07-04",
     "description": "Disc Drive main-stat / substat expected-value tables and roll-budget rules, for disc_rules.py's validator/repair (see docs/DESIGN_disc_validation.md 'Expected-value tables'). Rarity keys are ZodDisc.rarity ints: 4=S, 3=A, 2=B. Main/substat keys are the ZOD keys from stats.json (main_stats_by_slot / substats) — reconciled key-for-key, not retyped independently. Cross-verified against the June 22 archive: A-rank hp/atk substat bases (75/13) contradict stats.json's stale substat_step_values block (79/15, unused dead data sourced from AdeptiScanner 2026-06-02) — archive samples (75.0, 13.0, 26.0=13*2) confirm the wiki values here, not stats.json's.",
-    "b_rank_growth_note": "B-rank main-stat growth is unverified on the wiki (only 1 B-rank disc observed in the archive); assumed 1/3 per level so max multiplier is 4.0x at max level 9, matching S and A."
+    "b_rank_growth_note": "B-rank main-stat growth is unverified on the wiki (only 1 B-rank disc observed in the archive); assumed 1/3 per level so max multiplier is 4.0x at max level 9, matching S and A.",
+    "wind_dmg_note": "Added 2026-07-04 (T8): 'Wind DMG Bonus' is a legitimate 6th element main stat (slot 5), same base/growth as the other 5 element DMG bonuses. Confirmed by archive evidence (Wuthering Salon slot-5 discs, formula-exact at levels 6/12) and by user; not a scanner bug."
   },
 
   "rarities": {
@@ -28,6 +29,7 @@
     "ice_dmg_":       { "2": 2.5, "3": 5,   "4": 7.5 },
     "physical_dmg_":  { "2": 2.5, "3": 5,   "4": 7.5 },
     "ether_dmg_":     { "2": 2.5, "3": 5,   "4": 7.5 },
+    "wind_dmg_":      { "2": 2.5, "3": 5,   "4": 7.5 },
     "anomMas_":       { "2": 2.5, "3": 5,   "4": 7.5 },
     "impact_":        { "2": 1.5, "3": 3,   "4": 4.5 },
     "enerRegen_":     { "2": 5,   "3": 10,  "4": 15  }
