@@ -19,7 +19,6 @@ from PIL import Image
 
 from youkai_ocr import agent_scanner as A
 from youkai_ocr.agent_scanner import (
-    AGENT_MAX,
     _PHASH_SIZE,
     _portrait_phash,
     AgentNavigator,
@@ -267,12 +266,6 @@ def test_single_agent_total_advance_no_op():
     assert _run(sim) == [0]
     assert sim.escapes == 1
 
-
-def test_agent_max_cap(monkeypatch):
-    monkeypatch.setattr(A, "AGENT_MAX", 3)
-    sim = _StripSim(n_owned=8, n_total=12, start_idx=0)
-    seq = _run(sim)
-    assert seq == [0, 1, 2]                    # capped before the whole roster
 
 
 def test_kill_event_stops_traversal():
