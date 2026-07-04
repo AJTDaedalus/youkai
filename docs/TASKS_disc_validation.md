@@ -111,7 +111,7 @@ matches some set at ≥80 once this lands.
 
 ---
 
-## T6 — `disc_rules.py`: validator (pure, TDD) [ ]
+## T6 — `disc_rules.py`: validator (pure, TDD) [x]
 
 **Files:** new `src/youkai_ocr/disc_rules.py`; `tests/test_disc_rules.py`.
 

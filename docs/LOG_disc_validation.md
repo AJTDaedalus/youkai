@@ -345,3 +345,75 @@ Next: T6 — `disc_rules.py`: validator (pure, TDD). Per DESIGN Architecture: `E
 `Violation`, `expected_main_value`, `substat_base`, `validate_disc`. This is where
 `conf["main_stat_value"]` (T5) and `conf[f"substat_{i}_roll_suffix"]` (T4) evidence
 finally get consumed — the extractor side of both signals is now done.
+
+## T6 — `disc_rules.py`: validator (pure, TDD) (Worker, 2026-07-04)
+
+**Done.** Implemented `Evidence`, `SubstatEvidence`, `Violation`, `expected_main_value`,
+`substat_base`, and `validate_disc` in `src/youkai_ocr/disc_rules.py` (extending the
+module T1 already created for `load_disc_values`). `_load_main_stats_by_slot()` reads
+`stats.json:main_stats_by_slot` directly (source of truth, not re-derived) to back the
+`main_key_slot` check.
+
+**All 8 DESIGN-specified checks implemented, each its own violation code:**
+`rarity_range`, `slot_range`, `level_range`, `main_key_slot`, `main_value_mismatch`,
+`sub_not_on_lattice`, `sub_rolls_exceed_max`, `roll_budget`, `sub_count`, `dup_substat`,
+`sub_equals_main` (11 codes total — DESIGN's list groups a couple together). `roll_budget`
+only evaluates when every substat line is on-lattice, per DESIGN (`_validate_substats`
+tracks per-line `k` as `Optional[int]`, `None` short-circuits the budget sum).
+`sub_equals_main` emits `severity="warning"` per DESIGN OQ3 (unconfirmed pending T8
+fixture review). A substat key absent from `substat_base` (never observed in practice,
+but defensive) is skipped rather than raising — no new violation code invented for it,
+since DESIGN's list is exhaustive and this path has no real-world instance yet.
+
+**Lattice tolerance:** DESIGN says "value/base not integer within 0.02 rel tolerance" —
+implemented literally as `abs(k - round(k)) <= 0.02` where `k = value/base` (i.e. 0.02 of
+a roll), not a percentage of the value. Confirmed this reading correctly flags all three
+real E2 cases from the DESIGN Findings table (`crit_dmg_ 4.4`→true 4.8, `crit_dmg_
+9.2`→true 9.6, `def 44.0`→true `def_ 14.4`) and the E5 zero-value case (`pen 0.0`, k=0 is
+explicitly rejected via a `nearest < 1` guard rather than falling out of the tolerance
+check by coincidence).
+
+**Main-value comparison:** flats compare `round(observed) == round(expected)`; percents
+compare `abs(observed - expected) <= 0.05` (both display at 1dp, so a tighter epsilon
+would false-flag valid rounding).
+
+**Test table (`tests/test_disc_rules.py`, +50 tests, written before the implementation
+per TDD):**
+- 12 hand-constructed "clean" discs spanning all 3 rarities at level 0, one level inside
+  the first upgrade cadence (level 3 and level 4, same bucket since `cadence=3`), and max
+  level — each asserted to produce zero violations. Building these surfaced two of my own
+  arithmetic mistakes before they became false-negative gaps: (a) initially assumed a
+  mid-cadence disc could keep its original line count and just upgrade one line, but the
+  roll-budget rule (`each event adds a new line while count<4`) means a level-3/S-rank
+  disc must show 4 lines, not 3 — the `sub_count` check catches exactly this class of
+  mistake, which is the point of the check; (b) initially used the *main-stat* base table
+  values for B-rank substats instead of the *substat* base table (they differ, e.g. B
+  `atk_` main base is 2.5 but substat base is 1) — caught immediately by the lattice
+  check rejecting a non-integer `k`. Both are recorded here since they're exactly the
+  kind of error class this validator exists to catch, now ambient in the test fixtures
+  themselves.
+- Every real error case from DESIGN Findings E2/E4/E5 (digit misreads, dup substat,
+  substat-equals-main, zero-value unreadable line), plus one deliberately constructed
+  case each for `rarity_range`, `slot_range`, `level_range` (both bounds), `main_key_slot`,
+  `main_value_mismatch` (flat and percent), `sub_rolls_exceed_max` (both the generic cap
+  and the B-rank-specific tighter cap), `roll_budget` (including a case proving it's
+  correctly *skipped* when a line is off-lattice), `sub_count` (both directions), and an
+  unknown-substat-key robustness case.
+- A structural test (`test_module_imports_no_ocr_or_capture_layers`) reads the module's
+  own source and asserts no OCR/PIL/tesseract/pynput/disc_scanner strings appear —
+  guards the "pure module" architectural constraint at the test level, not just by
+  convention.
+
+**Coverage:** `pytest --cov=youkai_ocr.disc_rules --cov-branch` → 99% (146 stmts, 50
+branches); the only miss is line 25, the `sys.frozen`/PyInstaller path in
+`_find_data_dir()` — pre-existing from T1, untestable without a frozen build, and not
+part of `validate_disc`'s branch surface. `validate_disc` and `_validate_substats`
+themselves are fully covered.
+
+**Verification:** `pytest tests/test_disc_rules.py` → 60 passed (50 new + 10 from T1).
+`ruff check src/youkai_ocr/disc_rules.py tests/test_disc_rules.py` → clean. Full suite:
+`python -m pytest -q` → **599 passed** (0:06:03), no regressions (549 prior + 50 new).
+Repo-wide `ruff check .` → still 60 pre-existing violations, unchanged baseline.
+
+Next: T7 — `disc_rules.py`: conservative repair (`repair_disc`), per DESIGN Repair
+policy (roll-suffix → unique lattice neighbor → roll-budget forcing → flag-only).
