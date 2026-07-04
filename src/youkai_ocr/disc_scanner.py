@@ -26,6 +26,7 @@ from .normalizer import (
     parse_level,
     parse_numeric,
     parse_panel_slot,
+    parse_roll_suffix,
     parse_slot,
 )
 from .recognize import TextRecognizer, make_recognizer
@@ -285,6 +286,12 @@ def _extract_disc(
         if not name_text and v1 is None and v2 is None:
             break   # genuinely empty row — end of the substat list
         stat_key, stat_conf = normalize_substat(name_text) if name_text else ("", 0.0)
+        # Roll-count evidence (T4): the "+N" _UPGRADE_RE strips before fuzzy-
+        # matching the name is deterministic proof of the line's k-value —
+        # captured here, alongside conf, for disc_rules.repair_disc (T6/T7/T9).
+        roll_suffix = parse_roll_suffix(name_text) if name_text else None
+        if roll_suffix is not None:
+            conf[f"substat_{i + 1}_roll_suffix"] = float(roll_suffix)
         if dim_pass:
             stat_conf = min(stat_conf, 65.0)   # surfaced in issues for review
 
@@ -565,15 +572,20 @@ def _equip_detect_rarity(
     return 4, _EQUIP_RARITY_PROBE_YS[0]
 
 
-def _equip_parse_stat_block(block_text: str) -> tuple[Optional[str], list[tuple[str, str]]]:
+def _equip_parse_stat_block(
+    block_text: str,
+) -> tuple[Optional[tuple[str, str]], list[tuple[str, str, Optional[int]]]]:
     """Parse a PSM-6 block read of the equip-slot disc info panel.
 
-    Returns (main_stat_raw, [(sub_name_raw, sub_val_raw), ...]).
-    main_stat_raw and each sub_name_raw include the roll-count suffix if present
-    (e.g. "CRIT Rate +3"); normalize_substat handles the stripping internally.
+    Returns (main_stat_raw, [(sub_name_raw, sub_val_raw, roll_suffix), ...]).
+    sub_name_raw includes the roll-count suffix text if present (e.g.
+    "CRIT Rate +3"); normalize_substat handles the stripping internally.
+    roll_suffix is the parsed N from that suffix (T4 evidence), or None if
+    absent/unreadable. Main stats don't carry a roll suffix (only substats
+    upgrade), so main_stat_raw stays a plain (name, val) pair.
     """
-    main_raw: Optional[str] = None
-    subs_raw: list[tuple[str, str]] = []
+    main_raw: Optional[tuple[str, str]] = None
+    subs_raw: list[tuple[str, str, Optional[int]]] = []
     in_subs = False
 
     for raw_line in block_text.split("\n"):
@@ -605,7 +617,7 @@ def _equip_parse_stat_block(block_text: str) -> tuple[Optional[str], list[tuple[
             if main_raw is None:
                 main_raw = (name_text, val_text)
         else:
-            subs_raw.append((name_text, val_text))
+            subs_raw.append((name_text, val_text, parse_roll_suffix(name_text)))
 
     return main_raw, subs_raw
 
@@ -678,8 +690,10 @@ def scan_equipped_disc_frame(
 
     # Substats
     substats: list[ZodSubstat] = []
-    for i, (name_text, val_text) in enumerate(subs_raw[:4]):
+    for i, (name_text, val_text, roll_suffix) in enumerate(subs_raw[:4]):
         stat_key, stat_conf = normalize_substat(name_text)
+        if roll_suffix is not None:
+            conf[f"substat_{i + 1}_roll_suffix"] = float(roll_suffix)
         pct_seen = "%" in val_text
         val = parse_numeric(val_text)
         if val is None:

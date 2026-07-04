@@ -13,6 +13,7 @@ from youkai_ocr.normalizer import (
     normalize_substat,
     parse_level,
     parse_numeric,
+    parse_roll_suffix,
     parse_slot,
     validate_disc_level,
     validate_disc_rarity,
@@ -198,6 +199,20 @@ def test_normalize_substat_upgrade_stripped():
     key, conf = normalize_substat("CRIT Rate% +3")
     assert key == "crit_"
     assert conf >= 80.0
+
+
+# ── parse_roll_suffix ──────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("text,expected", [
+    ("DEF +2", 2),
+    ("CRIT Rate", None),
+    ("Anomaly Proficiency +1", 1),
+    ("CRIT Rate% +3", 3),
+    ("", None),
+    ("DEF +l", 1),   # OCR noise: 'l' misread for the digit '1'
+])
+def test_parse_roll_suffix(text, expected):
+    assert parse_roll_suffix(text) == expected
 
 
 # ── normalize_main_stat ───────────────────────────────────────────────────────
