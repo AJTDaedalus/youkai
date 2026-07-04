@@ -62,6 +62,52 @@ def test_normalize_disc_set_no_match():
     assert 0.0 <= conf <= 100.0
 
 
+# ── T2: live set-list refresh (2026-07-04) ────────────────────────────────────
+
+def test_normalize_disc_set_wuthering_salon():
+    key, conf = normalize_disc_set("Wuthering Salon [2]")
+    assert key == "WutheringSalon"
+    assert conf >= 95.0
+
+
+def test_normalize_disc_set_the_sky_ablaze():
+    key, conf = normalize_disc_set("The Sky Ablaze [5]")
+    assert key == "TheSkyAblaze"
+    assert conf >= 95.0
+
+
+_OLD_26_DISC_SET_KEYS = {
+    "WoodpeckerElectro", "PufferElectro", "ShockstarDisco", "FreedomBlues",
+    "HormonePunk", "SoulRock", "SwingJazz", "ChaosJazz", "ProtoPunk",
+    "InfernoMetal", "ChaoticMetal", "ThunderMetal", "PolarMetal", "FangedMetal",
+    "BranchBladeSong", "AstralVoice", "ShadowHarmony", "PhaethonsMelody",
+    "YunkuiTales", "KingOfTheSummit", "DawnsBloom", "MoonlightLullaby",
+    "WhiteWaterBallad", "ShiningAria", "BunnyInWonderland", "NotesFromTheChained",
+}
+
+
+def test_disc_sets_old_26_keys_unchanged():
+    from youkai_ocr import normalizer
+
+    normalizer._load()
+    assert _OLD_26_DISC_SET_KEYS <= set(normalizer._disc_sets.values())
+
+
+def test_disc_sets_excludes_removed_beta_stubs():
+    # T2: these titles share the wiki's Category:Drive Discs but carry
+    # Category:Removed + Category:Drive Disc Missing ID — beta stubs, never
+    # released. They must not appear as ZOD keys (see LOG T2).
+    from youkai_ocr import normalizer
+
+    normalizer._load()
+    excluded_display_names = {
+        "Assassin's Ballad", "Doom Grindcore", "Ecstatic Punk", "Mammoth Electro",
+        "Monsoon Funk", "Noisy Pop", "Twisted Grindcore", "Unicorn Electro",
+        "Vagabond Folk",
+    }
+    assert excluded_display_names.isdisjoint(normalizer._disc_sets.keys())
+
+
 # ── normalize_substat ─────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("text,expected_key", [
