@@ -34,6 +34,19 @@ def test_parse_slot(text, expected):
     assert parse_slot(text) == expected
 
 
+@pytest.mark.parametrize("text,garbled_result,strict_result", [
+    # disc_2070 (T12): OCR misread "[1]" as "[ 4" — the garble-tolerant
+    # fallback confidently returns the wrong digit, so the strict tier must
+    # return None and let the panel slot-widget read (G5) outrank it.
+    ("Fanged Metal [ 4", 4, None),
+    ("Dawn's Bloom < [ 6 ] 4", 6, None),
+    ("Bunny in Wonderland [1]", 1, 1),   # clean bracket: both tiers agree
+])
+def test_parse_slot_strict_rejects_garbled_bracket(text, garbled_result, strict_result):
+    assert parse_slot(text) == garbled_result
+    assert parse_slot(text, allow_garbled=False) == strict_result
+
+
 # ── normalize_disc_set ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("text,expected_key", [
@@ -210,6 +223,13 @@ def test_normalize_substat_upgrade_stripped():
     ("CRIT Rate% +3", 3),
     ("", None),
     ("DEF +l", 1),   # OCR noise: 'l' misread for the digit '1'
+    # T12/Cluster-1: wide values ("14.4%") straddle the name/value bbox
+    # boundary, bleeding their leading digit(s) into the name crop. The
+    # suffix must still parse when trailing bleed follows it.
+    ("DEF +2 1", 2),      # disc_0001/0091 et al. — the literal 38-disc read
+    ("DEF +2 14", 2),
+    ("HP +2 336", 2),
+    ("DEF +21", None),    # merged bleed: ambiguous, refuse rather than guess
 ])
 def test_parse_roll_suffix(text, expected):
     assert parse_roll_suffix(text) == expected
@@ -235,6 +255,24 @@ def test_normalize_main_stat(text, slot, expected_key):
     key, conf = normalize_main_stat(text, slot)
     assert key == expected_key, f"got {key!r} for slot={slot} text={text!r}"
     assert conf >= 80.0
+
+
+@pytest.mark.parametrize("text", ["", "   "])
+@pytest.mark.parametrize("slot", [1, 4, 5, 6])
+def test_normalize_main_stat_empty_query_returns_no_match(text, slot):
+    """T12/Cluster-3: rapidfuzz scores every candidate 0 for an empty query and
+    returns the first one arbitrarily — an OCR total-failure must yield the
+    explicit ("", 0.0) no-match signal, never a confident-looking key
+    (disc_0576/0618: empty main-name read silently became "hp_")."""
+    assert normalize_main_stat(text, slot) == ("", 0.0)
+
+
+@pytest.mark.parametrize("text", ["", "   ", "+2"])
+def test_normalize_substat_empty_query_returns_no_match(text):
+    """Same unguarded-empty-query gap as normalize_main_stat ("+2" strips to
+    empty via _UPGRADE_RE). normalize_agent/engine/disc_set are already safe
+    behind their score floors."""
+    assert normalize_substat(text) == ("", 0.0)
 
 
 # ── parse_level ───────────────────────────────────────────────────────────────
