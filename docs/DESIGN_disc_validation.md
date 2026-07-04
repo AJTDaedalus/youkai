@@ -234,17 +234,27 @@ plausibility range; `pct_seen` breaks ties, main-stat-collision (E4) disqualifie
    ships as `severity="error"` in `disc_rules.py`.
 4. ~~Set-name score floor value~~ **Resolved**: 60, from the E1 sweep (foreign ≤46,
    legit partial ≥68). Re-verify in T3 against golden data after the new sets land.
-5. ~~"Wind DMG Bonus" main stat~~ **Resolved (T8): legitimate, not a bug.** Two
-   archive discs (576, 618, both `Wuthering Salon` slot 5) show a main stat
-   "Wind DMG Bonus" that formula-matches the standard element-DMG-bonus curve
-   exactly (base 7.5/S, same growth as the other 5 elements) but had no entry
-   in `stats.json:main_stats_by_slot["5"]` — the normalizer was silently
-   mis-mapping it to `hp_` (which is *also* how those two discs' `sub_equals_main`
-   false positives arose). Confirmed by user: Wind is a real 6th element,
-   behaves like all other DMG% mains. Added `"Wind DMG Bonus": "wind_dmg_"` to
-   `stats.json` and a matching `wind_dmg_` row to `disc_values.json:main_stat_base`
-   (same values as the other 5 elements). Both discs are now clean, in-scope
-   golden fixtures rather than excluded edge cases.
+5. ~~"Wind DMG Bonus" main stat~~ **Partially resolved (T8, data only —
+   reopened by T10's manual review, 2026-07-04).** Two archive discs (576,
+   618, both `Wuthering Salon` slot 5) show a main stat "Wind DMG Bonus" that
+   formula-matches the standard element-DMG-bonus curve exactly (base 7.5/S,
+   same growth as the other 5 elements) but had no entry in
+   `stats.json:main_stats_by_slot["5"]`. T8 added `"Wind DMG Bonus":
+   "wind_dmg_"` to `stats.json` and a matching `wind_dmg_` row to
+   `disc_values.json:main_stat_base` — **this data fix is correct and still
+   in place.** However, T10's full-archive `revalidate` run showed both
+   discs *still* fail (`sub_equals_main`, main_stat_key `hp_`). Root-caused:
+   `recognizer.read_line()` on the `main_name.png` crop returns an **empty
+   string** for both discs (crop itself is visually clean/legible — "Wind DMG
+   Bonus" — so this is an OCR reliability failure, not a bad crop), and
+   `normalizer.normalize_main_stat("", slot)` has no guard for an empty
+   query: `rapidfuzz.process.extractOne("", candidates)` scores every
+   candidate 0 and returns the first one arbitrarily, so an OCR
+   total-failure silently produces `("hp_", 0.0)` instead of the intended
+   `("", 0.0)` "no match" signal. The data table was never the blocker; this
+   separate, still-open bug is. See LOG's "T10 addendum" entry for full
+   detail (Cluster 3) and the disc_2070 case (slot misread, a third and
+   distinct cause of `sub_equals_main` in the same violation-code bucket).
 6. **New, out-of-scope-for-T8 finding — flat/percent key-flip (E3) is the
    dominant real-world defect, not a minor variant of E2.** Across all fixture
    curation for T8, essentially every `sub_not_on_lattice`/`sub_equals_main`/

@@ -949,3 +949,172 @@ with the established ~57-60 baseline.
 Next: T11 — docs + wrap-up (DESIGN status update, README/RUNBOOK note for
 `revalidate`, final full pytest + ruff check, PR `feat/disc-validation` →
 `dev` with the June 22 repair statistics from this entry).
+
+---
+
+## T10 addendum — manual review of the 58 unrepairable discs (Worker, 2026-07-04)
+
+User asked for a hand review of the 58 flagged discs rather than accepting
+the report at face value. Cross-referenced `docs/_t10_run/report.json`
+against the real archived `panel.png`/`main_name.png`/`title.png` crops and
+re-ran `scan_single_frame`/`normalize_main_stat`/OCR directly to find root
+cause per disc, not just per violation code. Findings, by cluster:
+
+**Cluster 1 — 38 discs: `def`/`def_` flat↔percent key-flip, unresolved for a
+specific reason (not "genuinely ambiguous").** Visually confirmed against
+panels (e.g. disc_0001, disc_0091: both show `DEF +2  14.4%`, a percent line
+at 3 rolls) that the true stat is always `def_` at k∈{2,3}, exported as flat
+`def` = `44.0` or `4.4` (digit-dropped/corrupted). Re-ran `scan_single_frame`
+directly and inspected `conf`: **`pct_seen` is captured correctly for these
+lines (`True`) but `roll_suffix` is specifically missing** for the `def`/
+`def_` substat index on every one of these discs (verified on disc_0001
+substat_4 and disc_0091 substat_1 — different row positions, same missing
+key), while sibling substats on the same panel capture `roll_suffix` fine.
+Without `roll_suffix`, `repair_disc` rule 1 can't apply, and worked out by
+hand that rule 2's digit-fuzzy search over `{(def, k=3, 45), (def_, k=1,
+4.8), (def_, k=3, 14.4)}` all sit within edit-distance-1 of the observed
+`"44"` — a genuine 3-way tie that `pct_seen` alone can't break (it narrows to
+2, not 1) — so `repair_disc` is correctly refusing to guess *given the
+evidence it has*. The actual bug is one level up: **whatever parses the
+`+N` roll-suffix superscript is failing specifically on the `def`/`def_`
+line** (not a positional/last-row bug — confirmed it fails at different
+substat indices across discs). This is the single highest-value fix
+available: resolving it would auto-repair the large majority of these 38
+discs via rule 1, matching DESIGN's own framing of E3 as "the dominant real
+defect." **4 of the 38 also carry a `dup_substat` violation** (disc_0501,
+0519, 0523, 0572) — same root cause producing two `def`-keyed rows on one
+disc instead of one `def_` row, not a separate bug.
+
+**Cluster 2 — 14 discs: a substat (`pen`/`anomProf`, occasionally `def`) read
+as literal `0.0`.** Confirmed via `disc_scanner.py:375/777` (`val = 0.0` sentinel,
+paired with `stat_conf = min(stat_conf, 30.0)`) that this is an intentional
+"OCR could not parse any digits" marker, not a corrupted real value —
+`disc_rules._plausible_misread` explicitly rejects `observed <= 0` by design
+("a zero-value line is an unreadable row (E5) ... must never be treated as a
+repair candidate"). This is **exactly** the documented, tested case from
+T9's `test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged`
+(disc_0696, which is itself in this cluster). Working as designed — the
+true value is genuinely unrecoverable from this data; would need an in-game
+re-scan, not a smarter repair rule. Not a bug.
+
+**Cluster 3 — `sub_equals_main`, 3 discs, 2 distinct new bugs (not a repeat
+of the "Wind DMG Bonus" case DESIGN Open Question 5 claimed was resolved):**
+
+- disc_0576, disc_0618 (both Wuthering Salon slot 5): visually confirmed the
+  `main_name.png` crop is a perfectly legible "Wind DMG Bonus" — but
+  `recognizer.read_line(...)` on that exact crop returns `''` (empty
+  string), for **both** discs. `normalize_main_stat("", 5)` then returns
+  `("hp_", 0.0)` instead of `("", 0.0)` — `rapidfuzz.process.extractOne`
+  given an empty query scores every candidate 0 and returns the first one
+  arbitrarily, and `normalizer.py:164-178` has no guard for this, so an
+  **OCR total-failure silently produces a confident-looking key at
+  confidence 0.0** rather than an explicit "unknown main stat." OQ5's
+  stats.json/disc_values.json data fix (`"Wind DMG Bonus": "wind_dmg_"`) is
+  still correctly in place and *would* work — it's just never reached
+  because the OCR read never gets that far. This is a distinct, still-open
+  bug from what OQ5 believed was closed.
+- disc_2070 (Fanged Metal): visually confirmed `title.png` clearly reads
+  `Fanged Metal [ 1` — slot **1** — but the extracted disc has
+  `slotKey: '4'`. Slot 1's only legal main is flat `hp` (`stats.json`
+  `main_stats_by_slot["1"] = {"HP": "hp"}`); slot 4's list only has percent
+  variants (`{"HP": "hp_", ...}`). With the wrong slot, a correctly-OCR'd
+  `"HP"` main-name text is forced through the wrong candidate table and
+  comes out `hp_` instead of `hp` — this is a **slot-number misread**
+  cascading into a main-stat error, not a main-stat normalization bug at
+  all. The `stats.json` data is correct for both slots; nothing to fix there.
+
+**Cluster 4 — 1 disc (disc_0600): known dropped-row case**, already
+documented in DESIGN Open Question 8 (panel shows 4 substat rows, archived
+`discs.json` only has 2) — confirmed again here, not re-investigated
+further; genuinely unrecoverable without a re-scan, `repair_disc` correctly
+has nothing to repair (no value present, not a misread value).
+
+**2 `critical_fail` entries (disc_1242, disc_1243, both "Dawn's Bloom [6]"):
+title-crop OCR misread**, not a set-normalization problem. Visually
+confirmed `title.png` clearly reads `Dawn's Bloom [6]`; the pipeline read it
+as `'v Gi s Bloom - 6'` (below the 60-point set-name floor from the E1
+sweep), correctly refusing to guess a set key from a low-confidence read
+rather than snapping to something wrong. Root cause of the misread itself
+(crop alignment/threshold on this specific instance) not dug into further
+— out of scope for a review pass, flagged for whoever picks up OCR
+reliability work next.
+
+**Net assessment (58 total = 56 `unrepairable` + 2 `critical_fail`):**
+38 (Cluster 1) + 14 (Cluster 2) + 3 (Cluster 3) + 1 (Cluster 4) = 56, plus
+2 critical_fail = 58 — fully accounted for. Of these, only **15 are truly
+unrecoverable** from this archive (14 in Cluster 2 + 1 in Cluster 4 — no
+signal left anywhere to recover the true value; would need an in-game
+re-scan). The other **43** (38 in Cluster 1 + 3 in Cluster 3 + 2
+critical_fail) are OCR/parsing bugs with a specific, identifiable root
+cause: a missing roll-suffix capture for `def`/`def_` lines specifically
+(Cluster 1, the highest-value fix — 38 discs), an unguarded empty-OCR
+fallback in `normalize_main_stat` that silently substitutes an arbitrary
+candidate instead of returning `("", 0.0)` (2 of Cluster 3's 3 discs), a
+slot-number misread cascading into a wrong main-stat table (the 3rd Cluster
+3 disc), and an unexamined title-crop OCR failure (the 2 critical_fail
+discs). None of these were fixed in this pass (review only, per the ask) —
+recommend a follow-up task (T11 candidate, or a new T12) to: (1) find why
+roll-suffix parsing misses the `def`/`def_` line specifically, (2) add a
+floor/guard in `normalize_main_stat` so an empty OCR read returns
+`("", 0.0)` instead of an arbitrary candidate, and (3) investigate the
+slot-number OCR reliability that produced disc_2070's `'4'` instead of
+`'1'`. DESIGN's Open Question 5 should be amended to reflect that the
+*data* fix landed correctly but a *separate* OCR-empty-read bug remains
+open.
+
+## ESCALATION — three new bugs found by manual review, need Planner triage
+
+**What was attempted:** a full hand review of all 58 discs the T10
+`revalidate` run flagged as needing manual attention (requested by the user
+directly, not a TASKS-scheduled step). Cross-referenced the report against
+real archived panel/crop images and re-ran the OCR/normalization functions
+directly per-disc rather than trusting the aggregate report. Findings are
+above ("T10 addendum") and in `DESIGN_disc_validation.md` Open Question 5.
+
+**What's unclear / needs an architectural call, not just an implementation
+fix:** three distinct, root-caused bugs surfaced that the DESIGN doc doesn't
+cover, because DESIGN's repair/validation architecture assumes evidence
+(`roll_suffix`, `pct_seen`, OCR text) is *either present and correct or
+absent* — it doesn't have a model for "OCR silently returns wrong/empty
+data that looks like valid evidence":
+
+1. **`def`/`def_` roll-suffix capture gap (38 discs, the highest-value fix
+   available).** `pct_seen` is captured correctly but `roll_suffix` is
+   missing specifically for the `def`/`def_` substat line, at varying row
+   positions across discs — not a positional bug. Haven't traced this down
+   to the actual regex/capture code (`disc_scanner.py`'s roll-suffix
+   parsing) to find *why* this one line fails; that's real debugging work,
+   not a quick patch. Question for Planner: is this worth a dedicated task
+   with its own test fixtures (a new T-number), and should the fix target
+   the capture regex directly, or would a more robust approach (e.g.
+   re-deriving `roll_suffix` from the substat's own OCR'd raw text in
+   `disc_rules.py` instead of relying on `disc_scanner.py`'s separate parse)
+   be more in line with where DESIGN already puts "pure, testable" logic?
+
+2. **`normalize_main_stat("", slot)` returns `("hp_", 0.0)` instead of
+   `("", 0.0)` on OCR total-failure** (`normalizer.py:164-178` — no guard
+   for an empty query before `rapidfuzz.process.extractOne`). Question for
+   Planner: is the right fix a guard in `normalize_main_stat` alone, or does
+   `normalize_substat`/`normalize_agent` have the same unguarded-empty-string
+   gap (same `process.extractOne` pattern) and need the same fix in
+   lockstep? This is a "does the bug class generalize" architectural
+   question, not something to patch blind in one function.
+
+3. **Slot-number misread (disc_2070: title crop clearly `[1]`, extracted
+   `slotKey='4'`).** Haven't looked at the slot-parsing code at all yet —
+   single data point, don't know if this is rare noise or a systematic
+   weakness worth its own investigation task.
+
+**The specific question for Planner:** should these three go into a new
+`T12` (or `T11.5`) task added to `TASKS_disc_validation.md` *before* T11's
+planned wrap-up/PR? To be clear about the actual risk: `validate_disc`
+already correctly rejects all 41 of these discs (38 in Cluster 1 + 3 in
+Cluster 3) rather than silently exporting wrong data — T10's gate is doing
+its job. The real cost is that these 41 discs will sit in the "needs manual
+review" pile indefinitely unless someone fixes the underlying OCR bugs, and
+confirming any fix requires a second full-archive `revalidate` re-run
+(another ~67 minutes of real OCR). Planner should decide: new task(s) and
+their sequencing relative to T11, and whether T11's PR should go out now
+(documenting the 58 as known follow-up work) or wait for these fixes first.
+
+**Switch to Opus (Planner) to resolve this escalation before continuing.**
