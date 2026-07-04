@@ -40,6 +40,13 @@ def read_engine_count(
     if not (0 < cur <= mx <= 2000):
         print(f"  [count] implausible engine count {cur}/{mx} from {text!r}; ignoring")
         return None
+    # Reject if cur is suspiciously close to mx (>90%): the current count is
+    # almost never near the storage cap, so this catches OCR misreads where
+    # "222 / 666" gets read as "660 / 666" (2→6 digit confusion).
+    if mx > 0 and cur / mx > 0.90:
+        print(f"  [count] engine count {cur}/{mx} is suspiciously near the cap "
+              f"(>{90}%); ignoring to avoid overscan")
+        return None
     return cur
 
 # ── Field bboxes in 1920×1080 reference coords (engine_inventory.detail_panel) ─
