@@ -15,7 +15,7 @@ from PIL import Image
 
 from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.disc_scanner import _crop, export_discs
-from youkai_ocr.grid import DEFAULT_GRID, GridParams
+from youkai_ocr.grid import DEFAULT_GRID
 from youkai_ocr.zod import ZodDisc, ZodSubstat
 
 
@@ -125,15 +125,12 @@ def test_export_creates_parent_dirs():
 # ── Storage count reader ──────────────────────────────────────────────────────
 
 def test_read_disc_count_from_real_header():
-    from pathlib import Path
-    from PIL import Image
     from youkai_ocr.capture import calibrate
     from youkai_ocr.recognize import make_recognizer
     from youkai_ocr.disc_scanner import read_disc_count
 
     fixture = Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
     if not fixture.exists():
-        import pytest
         pytest.skip("fixture missing")
     im = Image.open(fixture)
     count = read_disc_count(im, calibrate(im), make_recognizer("tesseract"))
@@ -190,7 +187,6 @@ def test_scan_discs_parallel_preserves_order(monkeypatch):
 
 def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
     """on_item is called exactly once per disc with monotonically increasing scanned."""
-    import time as _time
     from threading import Event
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
@@ -260,3 +256,86 @@ def test_scan_discs_on_item_omitted_no_error(monkeypatch):
 
     discs, _ = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
     assert len(discs) == 3
+
+
+# ── Critical-failure reasons (T3: unknown-set floor) ──────────────────────────
+
+class _FakeRecognizer:
+    """Returns a fixed title on every read; other fields don't matter for these
+    tests since the critical-fail guard short-circuits before they're used."""
+
+    def __init__(self, title: str):
+        self._title = title
+
+    def read_text(self, img, profile):
+        return self._title
+
+    def read_line(self, img, profile):
+        return ""
+
+    def read_digits(self, img, profile):
+        return ""
+
+    def read_slot(self, img, profile):
+        return ""
+
+    def read_cinema(self, img):
+        return ""
+
+
+def _identity_calib() -> CalibrationResult:
+    return CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
+
+
+def test_extract_disc_unknown_set_critical_fail():
+    """A title that fuzzy-matches no known set (score < floor) must critical-fail
+    with 'unknown_set', not silently snap to the nearest table key (E1)."""
+    from youkai_ocr.disc_scanner import _extract_disc
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    disc, conf = _extract_disc(
+        frame, _identity_calib(), 0, 0, _FakeRecognizer("Future Set Name [1]"), None, 0
+    )
+    assert disc is None
+    assert conf["_fail_reason"].startswith("unknown_set:"), conf["_fail_reason"]
+
+
+def test_extract_disc_no_slot_critical_fail_distinguished_from_unknown_set():
+    """A title with no parseable slot must fail as 'no_slot', not 'unknown_set' —
+    the two failure modes stay distinguishable in the reason string."""
+    from youkai_ocr.disc_scanner import _extract_disc
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    disc, conf = _extract_disc(
+        frame, _identity_calib(), 0, 0, _FakeRecognizer("Astral Voice"), None, 0
+    )
+    assert disc is None
+    assert conf["_fail_reason"].startswith("no_slot:"), conf["_fail_reason"]
+
+
+def test_extract_disc_partial_title_still_resolves_not_critical_fail():
+    """A legit-but-partial title (real archived 2-line-title OCR, scores 68-73)
+    must still resolve and NOT critical-fail, even though it's below the old
+    80-ish 'looks solid' bar — this is exactly the case the 60 floor is
+    calibrated to admit."""
+    from youkai_ocr.disc_scanner import _extract_disc
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    disc, conf = _extract_disc(
+        frame, _identity_calib(), 0, 0, _FakeRecognizer("B Z Wonderland [1] »®"), None, 0
+    )
+    assert disc is not None
+    assert disc.set_key == "BunnyInWonderland"
+    assert "_fail_reason" not in conf
+
+
+def test_scan_equipped_disc_frame_unknown_set_critical_fail():
+    from youkai_ocr.disc_scanner import scan_equipped_disc_frame
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    disc, conf = scan_equipped_disc_frame(
+        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=1,
+        engine=_FakeRecognizer("Future Set Name [1]"),
+    )
+    assert disc is None
+    assert conf["_fail_reason"].startswith("unknown_set:"), conf["_fail_reason"]

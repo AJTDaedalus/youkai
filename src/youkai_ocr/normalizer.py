@@ -73,14 +73,28 @@ _NUMERIC_STRIP = re.compile(r"[^\d.,]")
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+_SET_NAME_SCORE_MIN = 60  # WRatio floor: below this the match is too uncertain
+
+
 def normalize_disc_set(text: str) -> tuple[str, float]:
-    """Fuzzy-map display text (may include '[N]' slot suffix) → (ZOD key, 0-100)."""
+    """Fuzzy-map display text (may include '[N]' slot suffix) → (ZOD key, 0-100).
+
+    Returns ("", score) when the best match scores below _SET_NAME_SCORE_MIN so
+    the caller's critical-fail gate emits unknown_set instead of silently snapping
+    an unmapped set name to the nearest table entry — the "Wuthering Salon read as
+    SwingJazz" failure mode (E1). Mirrors normalize_agent/normalize_engine. Floor
+    calibrated from the June 22 title re-OCR sweep: foreign (truly unknown) set
+    names top out at 46; legit-but-partial titles (2-line "Bunny in Wonderland"
+    OCR'd as just "Wonderland") bottom out at 68.
+    """
     _load()
     clean = _SLOT_RE.sub("", text).strip()
     result = process.extractOne(clean, list(_disc_sets.keys()), scorer=fuzz.WRatio)
     if result is None:
         return ("", 0.0)
     display, score, _ = result
+    if float(score) < _SET_NAME_SCORE_MIN:
+        return ("", float(score))
     return (_disc_sets[display], float(score))
 
 
