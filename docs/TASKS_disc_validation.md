@@ -78,7 +78,7 @@ matches some set at ≥80 once this lands.
 
 ---
 
-## T4 — Extractor: capture roll-count suffix (+N) as evidence [ ]
+## T4 — Extractor: capture roll-count suffix (+N) as evidence [x]
 
 **Files:** `src/youkai_ocr/normalizer.py`, `src/youkai_ocr/disc_scanner.py`,
 `tests/test_normalizer.py`.

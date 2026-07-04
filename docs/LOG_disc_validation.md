@@ -214,3 +214,55 @@ because the dead `import time` in `disc_scanner.py` was fixed as a byproduct of 
 the remaining 60 are unrelated files, still out of scope).
 
 Next: T4 — extractor: capture roll-count suffix (+N) as evidence.
+
+## T4 — Extractor: capture roll-count suffix (+N) as evidence (Worker, 2026-07-04)
+
+**Done.** Added `normalizer.parse_roll_suffix(text) -> Optional[int]`, the counterpart
+to `_UPGRADE_RE` (which strips the `+N` suffix before fuzzy-matching the stat name and
+discards the digit). New regex `_ROLL_SUFFIX_RE = r"\+\s*([\dlI|]+)\s*$"` matches the
+suffix and tolerates single-character OCR noise (`l`/`I`/`|` → `1`, a cheap/common
+Tesseract confusion for the digit "1") via `str.translate`.
+
+**Capture points (both named in the DESIGN Integration points list):**
+- `_extract_disc`'s substat loop (`disc_scanner.py`): computes `roll_suffix =
+  parse_roll_suffix(name_text)` right after `stat_key`/`stat_conf`, before `_UPGRADE_RE`'s
+  effect (inside `normalize_substat`) has any chance to matter downstream. Stored into
+  the existing `conf` dict under `f"substat_{i+1}_roll_suffix"` (float), only when not
+  None — kept the diff small per the task's explicit instruction not to build out the
+  full `Evidence` dataclass yet (T6 owns that). `conf` already carries a non-float field
+  (`_fail_reason`, a string) so this loose typing isn't a new precedent.
+- `_equip_parse_stat_block`: changed `subs_raw` from `list[tuple[str, str]]` to
+  `list[tuple[str, str, Optional[int]]]` — each entry now carries its parsed roll suffix
+  alongside the existing (name, value) raw-text pair. `main_raw` stays a 2-tuple (main
+  stats never carry a roll suffix — only substats upgrade). `scan_equipped_disc_frame`'s
+  substat loop unpacks the 3-tuple and stores non-None values into `conf` the same way
+  as the inventory path, so both paths expose evidence identically. Confirmed via `grep`
+  that `_equip_parse_stat_block` had no other call sites/tests to break.
+
+**Files changed:**
+- `src/youkai_ocr/normalizer.py`: `_ROLL_SUFFIX_RE` + `parse_roll_suffix()`.
+- `src/youkai_ocr/disc_scanner.py`: import `parse_roll_suffix`; `_extract_disc` substat
+  loop captures evidence into `conf`; `_equip_parse_stat_block` signature/return changed
+  to 3-tuples; `scan_equipped_disc_frame` consumes the 3-tuple and mirrors the evidence
+  capture.
+- `tests/test_normalizer.py`: `test_parse_roll_suffix` (parametrized: `"DEF +2"`→2,
+  `"CRIT Rate"`→None, `"Anomaly Proficiency +1"`→1, `"CRIT Rate% +3"`→3, `""`→None,
+  `"DEF +l"`→1 for the OCR-noise case).
+- `tests/test_disc_scanner.py`: new `_ScriptedRecognizer` (extends the `_FakeRecognizer`
+  pattern from T3 with a per-call `read_line` script, needed because a single fixed
+  string can't distinguish the level/main-stat/substat-name/substat-value reads that
+  `_extract_disc` makes in sequence) + `test_extract_disc_captures_roll_suffix_evidence`
+  (a `"DEF +2"` line on substat slot 1, empty slot 2 to end the list — asserts
+  `conf["substat_1_roll_suffix"] == 2.0` and that slot 2 has no such key) +
+  `test_equip_parse_stat_block_captures_roll_suffix` (direct unit test of the block
+  parser: `"DEF +2 44"` → `("DEF +2", "44", 2)`, `"CRIT Rate 4.8%"` → `("CRIT Rate",
+  "4.8%", None)`).
+
+**Verification:** `pytest tests/test_normalizer.py tests/test_disc_scanner.py` → 134
+passed (8 new). Full suite: `python -m pytest -q` → **546 passed** (0:05:50), no
+regressions. `ruff check` on all touched files → clean. Repo-wide `ruff check .` → still
+60 pre-existing violations (unchanged from T3 baseline — nothing in this task's files
+was pre-violating).
+
+Next: T5 — extractor: read the main-stat value (`_MAIN_VAL_REL` bbox is defined but
+never read).

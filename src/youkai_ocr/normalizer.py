@@ -126,6 +126,28 @@ def parse_panel_slot(*texts: str) -> Optional[int]:
     return None
 
 
+_ROLL_SUFFIX_RE = re.compile(r"\+\s*([\dlI|]+)\s*$")
+
+
+def parse_roll_suffix(text: str) -> Optional[int]:
+    """Extract the '+N' roll-upgrade count from substat text, or None if absent.
+
+    `normalize_substat` strips this suffix (`_UPGRADE_RE`) before fuzzy-matching
+    the stat name and discards the digit; this is the counterpart that keeps it,
+    since `base × (N + 1)` is the deterministic evidence the repair policy needs
+    (DESIGN Repair policy rule 1). Tolerates single-character OCR noise (l/I/|
+    misread for the digit "1") since that's a cheap, common Tesseract confusion.
+    """
+    m = _ROLL_SUFFIX_RE.search(text)
+    if not m:
+        return None
+    digits = m.group(1).translate(str.maketrans("lI|", "111"))
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
 def normalize_substat(text: str) -> tuple[str, float]:
     """Map substat OCR text (may have '+N' upgrade suffix) → (ZOD key, 0-100)."""
     _load()

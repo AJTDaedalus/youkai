@@ -339,3 +339,77 @@ def test_scan_equipped_disc_frame_unknown_set_critical_fail():
     )
     assert disc is None
     assert conf["_fail_reason"].startswith("unknown_set:"), conf["_fail_reason"]
+
+
+# ── Roll-count suffix evidence (T4) ────────────────────────────────────────────
+
+class _ScriptedRecognizer:
+    """Fixed title/lock text; scripted read_line() returns consumed in call
+    order. Extends the _FakeRecognizer pattern (T3) with per-call text so a
+    substat line's name/value reads can be distinguished from level/main-stat
+    reads, which a single fixed string can't do."""
+
+    def __init__(self, title: str, lines: list[str]):
+        self._title = title
+        self._lines = list(lines)
+        self._idx = 0
+
+    def read_text(self, img, profile):
+        return self._title
+
+    def read_line(self, img, profile):
+        if self._idx < len(self._lines):
+            v = self._lines[self._idx]
+            self._idx += 1
+            return v
+        return ""
+
+    def read_digits(self, img, profile):
+        return ""
+
+    def read_slot(self, img, profile):
+        return ""
+
+    def read_cinema(self, img):
+        return ""
+
+
+def test_extract_disc_captures_roll_suffix_evidence():
+    """A '+N' roll-count suffix on a substat line must surface as evidence
+    (conf[f"substat_{i}_roll_suffix"]) instead of being silently discarded the
+    way normalize_substat's internal _UPGRADE_RE stripping does — this is the
+    deterministic signal disc_rules.repair_disc (T6/T7) will need."""
+    from youkai_ocr.disc_scanner import _extract_disc
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    lines = [
+        "Lv.4",     # level
+        "",         # main stat name (unused here)
+        "DEF +2",   # substat 1 name — bright pass, resolves immediately
+        "44", "44", # substat 1 value — bright + 2x reads agree
+        "", "", "", # substat 2 name — bright, dim, upscale: all empty
+        "", "",     # substat 2 value — bright + 2x: both empty -> ends the list
+    ]
+    recognizer = _ScriptedRecognizer("Astral Voice [1]", lines)
+    disc, conf = _extract_disc(frame, _identity_calib(), 0, 0, recognizer, None, 0)
+
+    assert disc is not None
+    assert disc.substats[0].key == "def"
+    assert conf["substat_1_roll_suffix"] == 2.0
+    assert "substat_2_roll_suffix" not in conf
+
+
+def test_equip_parse_stat_block_captures_roll_suffix():
+    from youkai_ocr.disc_scanner import _equip_parse_stat_block
+
+    block_text = (
+        "Main Stat\n"
+        "ATK% 12.0%\n"
+        "Sub Stats\n"
+        "DEF +2 44\n"
+        "CRIT Rate 4.8%\n"
+        "Set Effect\n"
+    )
+    main_raw, subs_raw = _equip_parse_stat_block(block_text)
+    assert subs_raw[0] == ("DEF +2", "44", 2)
+    assert subs_raw[1] == ("CRIT Rate", "4.8%", None)
