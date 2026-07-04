@@ -387,7 +387,9 @@ def test_extract_disc_captures_roll_suffix_evidence():
         "",         # main stat name (unused here)
         "", "",     # main stat value — native + 2x reads (unused here)
         "DEF +2",   # substat 1 name — bright pass, resolves immediately
-        "44", "44", # substat 1 value — bright + 2x reads agree
+        "30", "30", # substat 1 value — on-lattice (def base 15 x k=2), so T9's
+                    # repair_disc wiring leaves it untouched: this test is about
+                    # roll-suffix evidence capture, not repair behavior.
         "", "", "", # substat 2 name — bright, dim, upscale: all empty
         "", "",     # substat 2 value — bright + 2x: both empty -> ends the list
     ]
@@ -396,6 +398,7 @@ def test_extract_disc_captures_roll_suffix_evidence():
 
     assert disc is not None
     assert disc.substats[0].key == "def"
+    assert disc.substats[0].value == 30.0
     assert conf["substat_1_roll_suffix"] == 2.0
     assert "substat_2_roll_suffix" not in conf
 
@@ -557,3 +560,242 @@ def test_extract_disc_reads_main_stat_value_from_real_panels(panel_file, expecte
 
     assert disc is not None, conf.get("_fail_reason")
     assert conf["main_stat_value"] == expected_value
+
+
+# ── T9: validator+repair wiring end-to-end (real OCR, golden repair cases) ────
+#
+# These replay the T8 discs_repair_cases panels through the *real* extraction
+# functions (scan_single_frame -> _extract_disc, scan_equipped_disc_frame) —
+# not a test-side Evidence reconstruction like test_golden_replay.py's T8
+# helper — to prove _repair_and_fold_violations is actually wired into the
+# production call path, not just exercised in isolation.
+
+_GOLDEN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
+_GOLDEN_LABELS = _GOLDEN_FIXTURES / "labels.json"
+_GOLDEN_PANEL_ORIGIN = (1421, 100)
+
+
+def _golden_panel_to_frame(panel_path: Path) -> Image.Image:
+    panel = Image.open(panel_path).convert("RGB")
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    frame.paste(panel, _GOLDEN_PANEL_ORIGIN)
+    return frame
+
+
+def _load_repair_case(disc_id: str) -> dict:
+    if not _GOLDEN_LABELS.exists():
+        pytest.skip("golden fixture labels.json missing")
+    labels = json.loads(_GOLDEN_LABELS.read_text())
+    by_id = {item["id"]: item for item in labels["discs_repair_cases"]}
+    if disc_id not in by_id:
+        pytest.skip(f"{disc_id} not in discs_repair_cases")
+    return by_id[disc_id]
+
+
+@pytest.mark.parametrize(
+    "disc_id, repaired_field, before, after, rule",
+    [
+        # E2 digit-drop, resolved by roll-suffix agreement (rule 1/roll_budget
+        # forcing — see disc_rules LOG T7 for why this lands on rule 3, not 1).
+        ("disc_0011", "substat[1]",
+         {"key": "crit_dmg_", "value": 4.4}, {"key": "crit_dmg_", "value": 14.4}, "roll_budget"),
+        # E3 flat/percent key-flip masquerading as sub_equals_main.
+        ("disc_0293", "substat[3]",
+         {"key": "def", "value": 44.0}, {"key": "def_", "value": 14.4}, "roll_budget"),
+    ],
+)
+def test_scan_single_frame_repairs_disc_through_real_call_path(disc_id, repaired_field, before, after, rule):
+    """_extract_disc must build Evidence from its own conf capture and call
+    disc_rules.repair_disc for real — the corrected disc and a `repairs`
+    record must come out of scan_single_frame exactly as they would from the
+    live scan_discs() path."""
+    from youkai_ocr.disc_scanner import scan_single_frame
+
+    item = _load_repair_case(disc_id)
+    panel_path = _GOLDEN_FIXTURES / "discs" / f"{disc_id}.png"
+    if not panel_path.exists():
+        pytest.skip(f"panel missing: {panel_path}")
+
+    frame = _golden_panel_to_frame(panel_path)
+    disc, conf = scan_single_frame(frame, _identity_calib())
+
+    assert disc is not None, conf.get("_fail_reason")
+    expect = item["expect"]
+    assert disc.main_stat_key == expect["main_stat_key"]
+    got_subs = [{"key": s.key, "value": s.value} for s in disc.substats]
+    assert got_subs == expect["substats"], f"{disc_id}: {got_subs} != {expect['substats']}"
+
+    repairs = conf.get("_repairs") or []
+    matching = [r for r in repairs if r["field"] == repaired_field]
+    assert matching, f"{disc_id}: expected a repair record for {repaired_field}, got {repairs}"
+    assert matching[0]["before"] == before
+    assert matching[0]["after"] == after
+    assert matching[0]["rule"] == rule
+
+
+def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():
+    """disc_0696: crit_dmg_ 48.0->4.8 is a repairable decimal-loss misread, but
+    pen 0.0 has no roll-suffix/lattice discriminator — DESIGN's repair policy
+    forbids inventing a value for an unreadable zero row. Both must come out
+    of the real call path correctly: one repaired, one left at value 0 but
+    flagged low-confidence (never silently exported as a real 0-roll pen)."""
+    from youkai_ocr.disc_scanner import scan_single_frame
+
+    item = _load_repair_case("disc_0696")
+    panel_path = _GOLDEN_FIXTURES / "discs" / "disc_0696.png"
+    if not panel_path.exists():
+        pytest.skip(f"panel missing: {panel_path}")
+
+    frame = _golden_panel_to_frame(panel_path)
+    disc, conf = scan_single_frame(frame, _identity_calib())
+
+    assert disc is not None, conf.get("_fail_reason")
+    expect = item["expect"]
+
+    repaired = [r for r in conf.get("_repairs", []) if r["field"] == "substat[2]"]
+    assert repaired and repaired[0]["after"] == {"key": "crit_dmg_", "value": 4.8}
+
+    pen_sub = disc.substats[1]
+    assert pen_sub.key == "pen"
+    assert pen_sub.value == 0.0   # left untouched — never a silent guess
+    assert pen_sub.value != next(s["value"] for s in expect["substats"] if s["key"] == "pen")
+    assert conf["substat_2"] < 70.0   # but flagged, not silently wrong
+
+
+def test_scan_single_frame_dropped_rows_no_repair_but_residual_violation():
+    """disc_0600: two substat rows are genuinely absent from the panel, not
+    misread — repair_disc has no value to repair (there's no row to snap onto
+    the lattice), only validate_disc's sub_count/roll_budget violations fire.
+    Must surface as a residual low-confidence flag, never silently accepted
+    as a valid 2-substat disc."""
+    from youkai_ocr.disc_scanner import scan_single_frame
+
+    _load_repair_case("disc_0600")
+    panel_path = _GOLDEN_FIXTURES / "discs" / "disc_0600.png"
+    if not panel_path.exists():
+        pytest.skip(f"panel missing: {panel_path}")
+
+    frame = _golden_panel_to_frame(panel_path)
+    disc, conf = scan_single_frame(frame, _identity_calib())
+
+    assert disc is not None, conf.get("_fail_reason")
+    assert len(disc.substats) == 2   # rows genuinely missing, nothing to repair
+    assert not conf.get("_repairs")
+    assert conf["substats"] < 70.0   # aggregate sub_count/roll_budget violation
+
+
+def test_scan_equipped_disc_frame_repairs_through_real_call_path():
+    """Same wiring proof as test_scan_single_frame_repairs_disc_through_real_call_path,
+    for the equip-slot select-view path (DESIGN Integration point 2). No golden
+    equip-view panel exercises a repair case, so this uses a scripted block
+    read — the canonical DESIGN repair example (def 44.0 + roll-suffix +2 +
+    pct_seen -> def_ 14.4, joint flat/percent resolution) — same as T7's
+    disc_rules-level test, but proven through the real extraction call path."""
+    from youkai_ocr.disc_scanner import scan_equipped_disc_frame
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    block_text = (
+        "Main Stat\n"
+        "ATK 316\n"
+        "Sub Stats\n"
+        "DEF +2 44%\n"
+        "Set Effect\n"
+    )
+    recognizer = _EquipStubRecognizer("Astral Voice [2]", block_text)
+    disc, conf = scan_equipped_disc_frame(
+        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=2,
+        engine=recognizer,
+    )
+
+    assert disc is not None
+    assert disc.substats[0].key == "def_"
+    assert disc.substats[0].value == 14.4
+
+    repairs = conf.get("_repairs") or []
+    assert repairs == [{
+        "field": "substat[0]",
+        "before": {"key": "def", "value": 44.0},
+        "after": {"key": "def_", "value": 14.4},
+        "rule": "roll_suffix",
+    }]
+
+
+# ── T9: scan_discs issue aggregation (repairs surfaced in the issues list) ────
+
+def test_scan_discs_issue_carries_repairs_when_no_other_low_fields(monkeypatch):
+    """A disc that's fully auto-repaired (no residual low-confidence field)
+    must still get an issue entry recording the repair — repairs are review-
+    worthy even when nothing else about the disc looks untrustworthy."""
+    from threading import Event
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            yield 0, 0, "frame0"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def to_dict(self): return {"setKey": "AstralVoice"}
+
+    repair_record = [{"field": "substat[0]", "before": {"key": "def", "value": 44.0},
+                       "after": {"key": "def_", "value": 14.4}, "rule": "roll_suffix"}]
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        return Stub(), {"set": 99.0, "_repairs": repair_record}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 1)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+
+    assert len(discs) == 1
+    assert len(issues) == 1
+    assert issues[0]["status"] == "repaired"
+    assert issues[0]["repairs"] == repair_record
+    assert "fields" not in issues[0]
+
+
+def test_scan_discs_issue_carries_both_low_fields_and_repairs(monkeypatch):
+    """A disc with both a residual low-confidence field and an applied repair
+    must surface both in the same issue entry — status stays low_confidence
+    (the stronger signal) but the repairs list is not dropped."""
+    from threading import Event
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            yield 0, 0, "frame0"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def to_dict(self): return {"setKey": "AstralVoice"}
+
+    repair_record = [{"field": "substat[0]", "before": {"key": "def", "value": 44.0},
+                       "after": {"key": "def_", "value": 14.4}, "rule": "roll_suffix"}]
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        return Stub(), {"set": 99.0, "substat_2": 30.0, "_repairs": repair_record}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 1)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+
+    assert len(issues) == 1
+    assert issues[0]["status"] == "low_confidence"
+    assert issues[0]["fields"] == {"substat_2": 30.0}
+    assert issues[0]["repairs"] == repair_record

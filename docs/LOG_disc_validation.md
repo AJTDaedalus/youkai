@@ -682,3 +682,144 @@ Planner to fold into T9's task description if desired before that task starts.
 Next: T9 — wire validator+repair into scan and export paths (now with
 `Evidence` construction pattern already proven in `test_golden_replay.py` to
 copy from), folding residual violations into `conf`/issues.
+
+---
+
+## T9 — Wire validator+repair into scan and export paths (Worker, 2026-07-04)
+
+**Done.** `_extract_disc` and `scan_equipped_disc_frame` now build `Evidence`,
+call `disc_rules.repair_disc`, apply the repaired disc, and fold the result
+back into `conf`/issues — repair is no longer something only tests exercise
+in isolation.
+
+**Evidence assembly factored into `disc_rules.py`, not `disc_scanner.py`.**
+The handoff framed the choice as "helper in disc_scanner.py vs. inline in
+both extraction functions"; went one step further: `disc_rules.evidence_from_conf(conf,
+num_substats)` lives in `disc_rules.py` itself, since it only touches a plain
+`conf` dict (no OCR/capture imports), matching that module's existing
+"pure functions" architecture constraint. `disc_scanner.py` and
+`tests/test_golden_replay.py` both import it now — the T8 test's local
+`_build_evidence` (an exact duplicate, per that log entry) is gone, so
+`test_disc_golden_replay_post_repair` now proves the same assembly code the
+production path uses, not a parallel reconstruction. (That test's own
+`repair_disc` call becomes a second, idempotent pass on top of T9's now-wired
+repair — harmless per T7's idempotence guarantee, verified by the run below.)
+
+**Violation → conf-key mapping (`disc_scanner._conf_key_for_violation_field`).**
+`disc_rules.Violation.field` names things after the `ZodDisc` schema
+(`main_stat_key`, `slot_key`, `substat[i]`, …); `conf`'s confidence-key
+namespace uses the OCR pipeline's own names (`main_stat`, `slot`,
+`substat_{i+1}`, …) — T4/T5/T8 evidence keys already live in the same dict
+under yet another convention. Added an explicit map (`rarity`→`rarity`,
+`level`→`level`, `slot_key`→`slot`, `main_stat_key`/`main_stat_value`→
+`main_stat`, `substat[i]`→`substat_{i+1}` via regex) plus a fallback that lets
+aggregate violations (`roll_budget`/`sub_count`/`dup_substat`, field=
+`"substats"`) create a *new* `conf["substats"]` key rather than being dropped.
+A residual violation pushes its mapped key to `min(current, 30)` — chosen
+over an unconditional overwrite so a field already below 30 for an unrelated
+reason doesn't get reported as *more* confident.
+
+**`conf["_repairs"]` — a non-confidence key living inside the confidence
+dict.** `scan_discs`'s existing issue-assembly loop does
+`{k: v for k, v in conf.items() if v < _LOW_CONF_THRESHOLD}`, which silently
+assumes every value is a float/bool; a `list` value would raise `TypeError`
+on comparison. Followed the existing `_fail_reason` convention (an
+underscore-prefixed key, explicitly `.pop()`ped before the blind comparison)
+rather than inventing a schema-typed conf object — smallest diff that keeps
+the loop working. `scan_discs` now emits an issue whenever `low` **or**
+`repairs` is truthy (previously: `low` only) — otherwise a fully-repaired
+disc with no residual low-confidence field would carry a `repairs` record
+that never reached `issues.json`. New `status: "repaired"` distinguishes
+"nothing wrong, but corrected" from `"low_confidence"` (something still
+wrong); a disc with both keeps `"low_confidence"` (the stronger signal) and
+still carries `repairs`.
+
+**`_write_review_report` (cli.py) gained an "AUTO-REPAIRED DISC FIELDS"
+section** (before/after/rule per repair, one line per repair — a disc with
+2 repairs gets 2 lines) plus a `repaired_discs` count in the summary line, so
+the human-readable review.txt actually shows repairs, not just issues.json.
+
+**Found and fixed one regression while wiring this in:** T4's
+`test_extract_disc_captures_roll_suffix_evidence` used a synthetic DEF value
+(`44` at level 4, `+2` suffix) chosen only to prove roll-suffix *capture*, not
+lattice-validity — it happens to be off-lattice for both `def`(base 15) and
+`def_`(base 4.8) at that level/rarity, so once repair is wired in,
+`repair_disc` correctly (per its own rules) resolves it to `def_ 4.8` via the
+rule-2 fallback (the suffix-implied `k=3` exceeds `max_allowed=2` at level 4,
+so rule 1 doesn't even apply — this exact "suffix out of range → falls
+through to rule 2" path is itself one of T7's required test cases, so this
+isn't a repair_disc bug). Changed the test's substat value to `30` (on-lattice
+for `def` at `k=2`) so repair is a no-op and the test goes back to checking
+only what it was meant to: roll-suffix evidence capture, decoupled from
+repair correctness.
+
+**New tests (`tests/test_disc_scanner.py`, +7):**
+- `test_scan_single_frame_repairs_disc_through_real_call_path` (parametrized,
+  disc_0011 crit_dmg_ digit-drop, disc_0293 def/def_ key-flip) — real
+  tesseract OCR over golden `discs_repair_cases` panels through
+  `scan_single_frame` (the real call path, not a test-side `Evidence`
+  reconstruction), asserting the fully-repaired disc matches ground truth
+  *and* `conf["_repairs"]` carries the exact before/after/rule record.
+- `test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged`
+  (disc_0696): proves a disc with *both* a repairable field (crit_dmg_
+  decimal-loss) and an unrepairable one (`pen 0.0`, no discriminating
+  evidence) comes out with the repairable field fixed and the unrepairable
+  one left at its raw value but flagged `conf < 70` — never silently wrong.
+- `test_scan_single_frame_dropped_rows_no_repair_but_residual_violation`
+  (disc_0600): rows genuinely absent from the panel (not misread) get zero
+  repairs (nothing to repair) but a residual `conf["substats"] < 70`
+  aggregate-violation flag.
+- `test_scan_equipped_disc_frame_repairs_through_real_call_path`: no golden
+  equip-view fixture exercises a repair case, so this replays the canonical
+  DESIGN example (`def 44.0` + roll-suffix `+2` + `pct_seen` → `def_ 14.4`)
+  through a scripted block-read recognizer — same numbers as T7's
+  `disc_rules`-level test, but proven through `scan_equipped_disc_frame`
+  itself, per DESIGN Integration point 2.
+- `test_scan_discs_issue_carries_repairs_when_no_other_low_fields` /
+  `test_scan_discs_issue_carries_both_low_fields_and_repairs`: monkeypatch
+  `_extract_disc` (matching this file's existing `scan_discs` test style) to
+  return a conf dict with `_repairs` set, proving the aggregation logic in
+  `scan_discs` itself (status selection, `fields` vs `repairs` presence) —
+  independent of real OCR.
+
+**New test (`tests/test_cli_scan_all.py`, +1):**
+`test_scan_all_issues_json_carries_disc_repairs` — mocks
+`youkai_ocr.disc_scanner.scan_discs` to return a disc-phase issue with a
+`repairs` list (what real `scan_discs` now emits) and asserts it survives
+unchanged into the on-disk `issues.json`, and that `review.txt` gets the new
+"AUTO-REPAIRED DISC FIELDS" section with the before/after/rule line.
+
+**Explicitly out of scope, left in place:** `agent_scanner.py`'s call to
+`scan_equipped_disc_frame` (line ~1728) discards the returned `conf` entirely
+(`disc, _ = scan_equipped_disc_frame(...)`) — so equipped-disc *substat
+values* are corrected by this task's wiring (the returned `disc` object is
+repaired), but repair/violation *metadata* for equipped discs never reaches
+`issues`/`all_issues` today. This predates T9 and isn't in T9's file list
+(`disc_scanner.py`, `cli.py`, `test_disc_scanner.py`, `test_cli_scan_all.py`);
+flagging it here for whoever picks up equipped-disc issue reporting next.
+
+**Files touched:** `src/youkai_ocr/disc_rules.py` (`evidence_from_conf`),
+`src/youkai_ocr/disc_scanner.py` (`_repair_and_fold_violations`,
+`_conf_key_for_violation_field`, wired into `_extract_disc` +
+`scan_equipped_disc_frame` + `scan_discs`'s issue loop), `src/youkai_ocr/cli.py`
+(`_write_review_report`'s new section), `tests/test_disc_scanner.py` (+7,
+1 fixed), `tests/test_cli_scan_all.py` (+1), `tests/test_golden_replay.py`
+(de-duplicated `_build_evidence` → import from `disc_rules`).
+
+**Verification:** `pytest tests/test_disc_scanner.py` → 30 passed (23 prior +
+7 new). `pytest tests/test_cli_scan_all.py` → 53 passed (52 prior + 1 new).
+`pytest tests/test_disc_rules.py tests/test_golden_replay.py` → unaffected,
+still green. `ruff check` on every file with new logic (`disc_rules.py`,
+`disc_scanner.py`, `test_disc_scanner.py`, `test_golden_replay.py`) → clean.
+`ruff check src/youkai_ocr/cli.py tests/test_cli_scan_all.py` → 31
+pre-existing errors (confirmed identical via `git stash`/re-check before this
+task's diff — F821 string-annotation forward-refs the linter can't resolve,
+a few pre-existing unused imports/vars), untouched by this task's lines, left
+as-is per the established baseline-noise precedent from T7/T8. Full suite:
+`python -m pytest -q` → **635 passed** (0:08:17), no regressions (627 prior +
+8 new). Repo-wide `ruff check .` → 59 errors, consistent with the established
+~57-60 pre-existing baseline.
+
+Next: T10 — `revalidate` CLI subcommand to fix the June 22 export offline
+(archive-only replay, no game/pynput; corrected export + repair report,
+delivered as `_revalidated` suffix per T10's Do §2).

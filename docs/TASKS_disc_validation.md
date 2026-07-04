@@ -174,7 +174,7 @@ no repair path can fire on ambiguous input (asserted).
 
 ---
 
-## T9 — Wire validator+repair into scan and export paths [ ]
+## T9 — Wire validator+repair into scan and export paths [x]
 
 **Files:** `src/youkai_ocr/disc_scanner.py`, `src/youkai_ocr/cli.py`,
 `tests/test_disc_scanner.py`, `tests/test_cli_scan_all.py`.

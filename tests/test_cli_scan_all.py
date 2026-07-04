@@ -337,6 +337,45 @@ def test_scan_all_issues_written_to_run_dir(tmp_path):
     assert not export_issues.exists(), "issues.json must not be written beside the export file"
 
 
+def test_scan_all_issues_json_carries_disc_repairs(tmp_path):
+    """T9: a disc-phase issue entry with a `repairs` list (as scan_discs now
+    emits once disc_rules.repair_disc is wired into _extract_disc) must reach
+    the on-disk issues.json unchanged — not just live in the in-memory list."""
+    args = _make_args(tmp_path)
+    calib = _identity_calib()
+    disc = _sample_disc()
+    repair_record = [{
+        "field": "substat[0]", "before": {"key": "def", "value": 44.0},
+        "after": {"key": "def_", "value": 14.4}, "rule": "roll_suffix",
+    }]
+    disc_issue = {
+        "cell": 0, "disc": disc.to_dict(), "status": "repaired",
+        "repairs": repair_record,
+    }
+
+    with patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())), \
+         patch("youkai_ocr.disc_scanner.scan_discs", return_value=([disc], [disc_issue])), \
+         patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([], [])), \
+         patch("youkai_ocr.agent_scanner.scan_agents", return_value=([], [], [], [])), \
+         patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()), \
+         patch("youkai_ocr.cli._countdown"), \
+         patch("youkai_ocr.cli._check_disc_screen"), \
+         patch("youkai_ocr.cli._check_engine_screen"), \
+         patch("youkai_ocr.cli._check_agent_screen"), \
+         patch("builtins.input", return_value=""):
+        _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    issues = json.loads((run_dir / "issues.json").read_text())
+    assert len(issues) == 1
+    assert issues[0]["status"] == "repaired"
+    assert issues[0]["repairs"] == repair_record
+
+    review_text = (run_dir / "review.txt").read_text()
+    assert "AUTO-REPAIRED DISC FIELDS" in review_text
+    assert "substat[0]: {'key': 'def', 'value': 44.0} -> {'key': 'def_', 'value': 14.4}" in review_text
+
+
 def test_scan_all_consecutive_runs_get_distinct_dirs(tmp_path):
     """Two consecutive runs (same --archive-dir) produce distinct subdirs."""
     args = _make_args(tmp_path)
