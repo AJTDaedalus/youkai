@@ -248,6 +248,26 @@ def _extract_disc(
     main_key, main_conf = normalize_main_stat(main_name_text, slot or 0)
     conf["main_stat"] = main_conf
 
+    # Main-stat value (T5 evidence): displayed on every panel, exactly
+    # determined by (rarity, main_key, level) — disc_rules.validate_disc (T6)
+    # uses it as a cross-check on level/rarity/main-key. Same dual-scale vote
+    # as substat values (decimal point loss / digit confusion at either scale).
+    main_val_crop = _crop(frame, calib, _abs_bbox(_MAIN_VAL_REL, panel_origin))
+    main_val_big = main_val_crop.resize(
+        (main_val_crop.width * 2, main_val_crop.height * 2), Image.LANCZOS
+    )
+    mv1 = recognizer.read_line(main_val_crop, "white_text_on_dark").strip()
+    mv2 = recognizer.read_line(main_val_big, "white_text_on_dark").strip()
+    main_v1, main_v2 = parse_numeric(mv1), parse_numeric(mv2)
+    if main_v1 is not None and main_v1 == main_v2:
+        main_value = main_v1
+    elif main_v1 is None and main_v2 is None:
+        main_value = None
+    else:
+        main_value = main_v2 if main_v2 is not None else main_v1
+    if main_value is not None:
+        conf["main_stat_value"] = main_value
+
     # ── Substats ──────────────────────────────────────────────────────────
     # Row contract (golden-replay/F2): a real substat row always has a numeric
     # value; the row after the last substat is the dim "Set Effect" header.
@@ -339,6 +359,7 @@ def _extract_disc(
         rarity_crop.save(dd / "rarity.png")
         level_crop.save(dd / "level.png")
         main_name_crop.save(dd / "main_name.png")
+        main_val_crop.save(dd / "main_val.png")
 
     # ── Critical failure guard ─────────────────────────────────────────────
     # normalize_disc_set already floors unmapped/uncertain titles to an empty
@@ -684,6 +705,9 @@ def scan_equipped_disc_frame(
         pct_seen = "%" in main_val_text
         if pct_seen and main_key in _FLAT_TO_PERCENT:
             main_key = _FLAT_TO_PERCENT[main_key]
+        main_value = parse_numeric(main_val_text)
+        if main_value is not None:
+            conf["main_stat_value"] = main_value
     else:
         main_key, main_conf = "", 0.0
     conf["main_stat"] = main_conf

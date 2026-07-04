@@ -385,6 +385,7 @@ def test_extract_disc_captures_roll_suffix_evidence():
     lines = [
         "Lv.4",     # level
         "",         # main stat name (unused here)
+        "", "",     # main stat value — native + 2x reads (unused here)
         "DEF +2",   # substat 1 name — bright pass, resolves immediately
         "44", "44", # substat 1 value — bright + 2x reads agree
         "", "", "", # substat 2 name — bright, dim, upscale: all empty
@@ -411,5 +412,101 @@ def test_equip_parse_stat_block_captures_roll_suffix():
         "Set Effect\n"
     )
     main_raw, subs_raw = _equip_parse_stat_block(block_text)
+    assert main_raw == ("ATK%", "12.0%")
     assert subs_raw[0] == ("DEF +2", "44", 2)
     assert subs_raw[1] == ("CRIT Rate", "4.8%", None)
+
+
+# ── Main-stat value evidence (T5) ───────────────────────────────────────────
+
+class _EquipStubRecognizer:
+    """Distinguishes the title read_text() call from the stat-block read_text()
+    call by order — scan_equipped_disc_frame issues exactly one of each."""
+
+    def __init__(self, title: str, block_text: str):
+        self._title = title
+        self._block_text = block_text
+        self._text_calls = 0
+
+    def read_text(self, img, profile):
+        self._text_calls += 1
+        return self._title if self._text_calls == 1 else self._block_text
+
+    def read_line(self, img, profile):
+        return "Lv.15"
+
+    def read_digits(self, img, profile):
+        return ""
+
+    def read_slot(self, img, profile):
+        return ""
+
+    def read_cinema(self, img):
+        return ""
+
+
+def test_scan_equipped_disc_frame_captures_main_stat_value():
+    """The equip path's block parse previously discarded the main-stat value
+    text (only used it for pct_seen) — it must now surface as evidence the
+    same way the inventory path does (conf['main_stat_value'])."""
+    from youkai_ocr.disc_scanner import scan_equipped_disc_frame
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    block_text = (
+        "Main Stat\n"
+        "ATK 316\n"
+        "Sub Stats\n"
+        "DEF +2 44\n"
+        "Set Effect\n"
+    )
+    recognizer = _EquipStubRecognizer("Astral Voice [2]", block_text)
+    disc, conf = scan_equipped_disc_frame(
+        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=2,
+        engine=recognizer,
+    )
+    assert disc is not None
+    assert conf["main_stat_value"] == 316.0
+
+
+# ── Real-OCR verification anchors (T5 acceptance criterion) ────────────────
+#
+# disc_0001 / disc_0631 panel crops from the June 22 archive, cited in
+# DESIGN_disc_validation.md's Expected-value tables as the hand-verified
+# anchors: S-rank ATK main, lvl15 -> floor(79 * 1.8) = 142... lvl4 -> 316
+# (DESIGN's own numbers, confirmed against discs.json ground truth in that
+# archive: disc_0001 is level 15 / atk -> 316; disc_0631 is level 4 / atk ->
+# 142). Real tesseract OCR (no stubbing) against the actual game-panel crop
+# is the only way to prove the new _MAIN_VAL_REL read works end to end.
+
+_MAIN_VALUE_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "main_value_check"
+_MAIN_VALUE_PANEL_ORIGIN = (1421, 100)
+
+
+def _panel_file_to_frame(panel_path: Path) -> Image.Image:
+    panel = Image.open(panel_path).convert("RGB")
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    frame.paste(panel, _MAIN_VALUE_PANEL_ORIGIN)
+    return frame
+
+
+@pytest.mark.parametrize(
+    "panel_file, expected_value",
+    [
+        ("disc_0001_panel.png", 316.0),
+        ("disc_0631_panel.png", 142.0),
+    ],
+)
+def test_extract_disc_reads_main_stat_value_from_real_panels(panel_file, expected_value):
+    """Real tesseract OCR over the two DESIGN-cited verification-anchor panels
+    must recover the exact main-stat value — proves the new _MAIN_VAL_REL read
+    works, not just that the plumbing accepts a stubbed number."""
+    from youkai_ocr.disc_scanner import scan_single_frame
+
+    panel_path = _MAIN_VALUE_FIXTURES / panel_file
+    if not panel_path.exists():
+        pytest.skip(f"fixture not present: {panel_path}")
+    frame = _panel_file_to_frame(panel_path)
+    disc, conf = scan_single_frame(frame, _identity_calib(), panel_origin=_MAIN_VALUE_PANEL_ORIGIN)
+
+    assert disc is not None, conf.get("_fail_reason")
+    assert conf["main_stat_value"] == expected_value
