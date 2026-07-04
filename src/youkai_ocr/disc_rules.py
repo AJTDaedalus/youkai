@@ -9,15 +9,19 @@ from __future__ import annotations
 import json
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 
-from youkai_ocr.zod import ZodDisc
+from youkai_ocr.zod import ZodDisc, ZodSubstat
 
 # Relative tolerance on value/base = k before a substat is considered
 # off-lattice (DESIGN "Expected-value tables" > "Substats").
 _LATTICE_REL_TOL = 0.02
+
+# hp/atk/def each have a flat and a percent substat variant that OCR can
+# flip (E3). crit_/crit_dmg_/anomProf/pen have no flat<->percent counterpart.
+_FLAT_PERCENT_PAIRS = {"hp": "hp_", "hp_": "hp", "atk": "atk_", "atk_": "atk", "def": "def_", "def_": "def"}
 
 
 def _find_data_dir() -> Path:
@@ -264,3 +268,223 @@ def validate_disc(disc: ZodDisc, evidence: Evidence | None = None) -> list[Viola
         violations.extend(_validate_substats(disc, rules))
 
     return violations
+
+
+@dataclass(frozen=True)
+class Repair:
+    field: str
+    before: object
+    after: object
+    rule: str
+
+
+@dataclass(frozen=True)
+class RepairResult:
+    disc: ZodDisc
+    repairs: list[Repair]
+    violations: list[Violation]
+
+
+def _flat_percent_pair(key: str) -> Optional[str]:
+    return _FLAT_PERCENT_PAIRS.get(key)
+
+
+def _round_substat_value(value: float, key: str) -> float:
+    """Match in-game display rounding: 1dp for percent lines, integer for flat."""
+    return round(value, 1) if key.endswith("_") else float(round(value))
+
+
+def _observed_digits(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.1f}".replace(".", "")
+
+
+def _expected_digits(value: float, key: str) -> str:
+    if key.endswith("_"):
+        return f"{value:.1f}".replace(".", "")
+    return str(int(round(value)))
+
+
+def _edit_distance_le1(a: str, b: str) -> bool:
+    """True if `a` and `b` differ by at most one substitution/insertion/deletion."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
+        return False
+    la, lb = len(a), len(b)
+    dp = [[0] * (lb + 1) for _ in range(la + 1)]
+    for i in range(la + 1):
+        dp[i][0] = i
+    for j in range(lb + 1):
+        dp[0][j] = j
+    for i in range(1, la + 1):
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            dp[i][j] = min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
+    return dp[la][lb] <= 1
+
+
+def _plausible_misread(observed: float, expected: float, key: str) -> bool:
+    """Is `observed` a digit-edit-distance-1 corruption of `expected` (rendered as `key`)?
+
+    Rejects observed<=0 outright: a zero-value line is an unreadable row (E5),
+    not a corrupted real value, and must never be treated as a repair candidate.
+    """
+    if observed <= 0:
+        return False
+    return _edit_distance_le1(_observed_digits(observed), _expected_digits(expected, key))
+
+
+def _resolve_candidates(
+    candidates: list[tuple[str, int, float]], pct_seen: Optional[bool], observed: float
+) -> Optional[tuple[str, int, float]]:
+    """Pick the single plausible (key, k, expected) candidate, or None if ambiguous.
+
+    Joint flat/percent + lattice resolution (E3): when both the flat and
+    percent variant of a key are plausible, `pct_seen` breaks the tie. With no
+    discriminator, an ambiguous candidate set is left unresolved — never a
+    silent guess (DESIGN "Repair policy").
+    """
+    plausible = [c for c in candidates if _plausible_misread(observed, c[2], c[0])]
+    if len(plausible) == 1:
+        return plausible[0]
+    if len(plausible) < 1:
+        return None
+    if pct_seen is True:
+        percent_only = [c for c in plausible if c[0].endswith("_")]
+        if len(percent_only) == 1:
+            return percent_only[0]
+    elif pct_seen is False:
+        flat_only = [c for c in plausible if not c[0].endswith("_")]
+        if len(flat_only) == 1:
+            return flat_only[0]
+    return None
+
+
+def _try_roll_budget_forcing(
+    candidates: list[tuple[str, int, float]], other_ks: list[int], u: int, n0_range: tuple[int, int]
+) -> Optional[tuple[str, int, float]]:
+    """If exactly one candidate's k makes the roll budget balance, force it."""
+    lo, hi = n0_range
+    valid = [c for c in candidates if lo <= sum(other_ks) + c[1] - u <= hi]
+    if len(valid) == 1:
+        return valid[0]
+    return None
+
+
+def repair_disc(disc: ZodDisc, evidence: Evidence | None = None) -> RepairResult:
+    """Conservatively snap substat misreads onto the lattice.
+
+    Precedence (DESIGN "Repair policy"): roll-suffix agreement, then unique
+    lattice neighbor, then roll-budget forcing, then leave untouched (the
+    residual `sub_not_on_lattice`/etc. violation stands). Never invents a
+    value without one of these discriminators.
+    """
+    dv = load_disc_values()
+    rules = dv.rarities.get(disc.rarity)
+    if rules is None:
+        return RepairResult(disc=disc, repairs=[], violations=validate_disc(disc, evidence))
+
+    u = disc.level // rules.upgrade_cadence
+    max_allowed = min(1 + u, rules.max_rolls_per_line)
+
+    resolved: dict[int, int] = {}  # substat index -> k, for lines already on-lattice
+    pending: list[int] = []
+    for i, sub in enumerate(disc.substats):
+        base = dv.substat_base.get(sub.key, {}).get(disc.rarity)
+        k = _substat_lattice_k(sub.value, base) if base is not None else None
+        if k is not None and k <= max_allowed:
+            resolved[i] = k
+        else:
+            pending.append(i)
+
+    new_substats: list[ZodSubstat] = list(disc.substats)
+    repairs: list[Repair] = []
+    rule2_candidates_by_index: dict[int, list[tuple[str, int, float]]] = {}
+
+    for i in pending:
+        sub = disc.substats[i]
+        if sub.value <= 0:
+            continue  # unreadable row (E5) — flag-only, never a repair candidate
+
+        candidate_keys = [
+            key for key in [sub.key, _flat_percent_pair(sub.key)]
+            if key is not None and key != disc.main_stat_key
+        ]
+
+        ev_sub = evidence.substats[i] if evidence and i < len(evidence.substats) else None
+        roll_suffix = ev_sub.roll_suffix if ev_sub else None
+        pct_seen = ev_sub.pct_seen if ev_sub else None
+
+        chosen: Optional[tuple[str, int, float]] = None
+        rule_name = ""
+
+        # Rule 1: roll-suffix agreement.
+        if roll_suffix is not None:
+            k_suffix = roll_suffix + 1
+            rule1_candidates = []
+            for key in candidate_keys:
+                base = dv.substat_base.get(key, {}).get(disc.rarity)
+                if base is None or not (1 <= k_suffix <= max_allowed):
+                    continue
+                rule1_candidates.append((key, k_suffix, _round_substat_value(base * k_suffix, key)))
+            chosen = _resolve_candidates(rule1_candidates, pct_seen, sub.value)
+            if chosen is not None:
+                rule_name = "roll_suffix"
+
+        # Rule 2: unique lattice neighbor.
+        rule2_candidates: list[tuple[str, int, float]] = []
+        if chosen is None:
+            for key in candidate_keys:
+                base = dv.substat_base.get(key, {}).get(disc.rarity)
+                if base is None:
+                    continue
+                for k in range(1, max_allowed + 1):
+                    rule2_candidates.append((key, k, _round_substat_value(base * k, key)))
+            chosen = _resolve_candidates(rule2_candidates, pct_seen, sub.value)
+            if chosen is not None:
+                rule_name = "lattice_neighbor"
+            else:
+                rule2_candidates_by_index[i] = [
+                    c for c in rule2_candidates if _plausible_misread(sub.value, c[2], c[0])
+                ]
+
+        if chosen is not None:
+            key, k, expected = chosen
+            repairs.append(
+                Repair(
+                    field=f"substat[{i}]",
+                    before={"key": sub.key, "value": sub.value},
+                    after={"key": key, "value": expected},
+                    rule=rule_name,
+                )
+            )
+            new_substats[i] = ZodSubstat(key=key, value=expected)
+            resolved[i] = k
+
+    # Rule 3: roll-budget forcing — only when exactly one line remains unresolved
+    # (a multi-line simultaneous ambiguity is out of scope; it falls through to flag-only).
+    unresolved = [
+        i for i in pending
+        if disc.substats[i].value > 0 and i not in resolved and rule2_candidates_by_index.get(i)
+    ]
+    if len(unresolved) == 1:
+        i = unresolved[0]
+        other_ks = [k for j, k in resolved.items() if j != i]
+        forced = _try_roll_budget_forcing(rule2_candidates_by_index[i], other_ks, u, rules.n0_range)
+        if forced is not None:
+            key, k, expected = forced
+            sub = disc.substats[i]
+            repairs.append(
+                Repair(
+                    field=f"substat[{i}]",
+                    before={"key": sub.key, "value": sub.value},
+                    after={"key": key, "value": expected},
+                    rule="roll_budget",
+                )
+            )
+            new_substats[i] = ZodSubstat(key=key, value=expected)
+
+    repaired_disc = replace(disc, substats=new_substats)
+    return RepairResult(disc=repaired_disc, repairs=repairs, violations=validate_disc(repaired_disc, evidence))

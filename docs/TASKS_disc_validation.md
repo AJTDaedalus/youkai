@@ -135,7 +135,7 @@ lvl 0/3/4/15 of each rarity).
 
 ---
 
-## T7 — `disc_rules.py`: conservative repair (TDD) [ ]
+## T7 — `disc_rules.py`: conservative repair (TDD) [x]
 
 **Files:** `src/youkai_ocr/disc_rules.py`; `tests/test_disc_rules.py`.
 

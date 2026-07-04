@@ -417,3 +417,95 @@ Repo-wide `ruff check .` → still 60 pre-existing violations, unchanged baselin
 
 Next: T7 — `disc_rules.py`: conservative repair (`repair_disc`), per DESIGN Repair
 policy (roll-suffix → unique lattice neighbor → roll-budget forcing → flag-only).
+
+---
+
+## T7 — `disc_rules.py`: conservative repair (TDD) (Worker, 2026-07-04)
+
+**Done.** Implemented `repair_disc`, `Repair`, `RepairResult` in
+`src/youkai_ocr/disc_rules.py`, extending the module T1/T6 built. Precedence
+chain exactly matches DESIGN "Repair policy": roll-suffix agreement → unique
+lattice neighbor → roll-budget forcing → flag-only (never a silent guess).
+
+**Key design choice — unifying "digit-edit distance":** rather than special-
+casing "single-digit substitution" vs "decimal-point-loss" vs "dropped leading
+1" as three separate checks (as DESIGN's prose enumerates them), one Levenshtein
+distance ≤1 over the *digit-only* string representation covers all three
+uniformly: `crit_dmg_ 4.4`→`4.8` is digits `"44"`→`"48"` (substitution);
+`def 44.0`→`def_ 14.4` is digits `"44"`→`"144"` (insertion of the dropped
+leading "1"). Observed digits are formatted per the observed value's own
+apparent precision (integer if `value.is_integer()`, else 1dp) — NOT per the
+candidate key's type — so a flat-looking `44.0` and a percent-looking `4.8`
+candidate are compared on equal footing; this is what lets the joint
+flat/percent (E3) resolution work without a separate code path.
+
+**Joint flat/percent (E3) resolution:** `_flat_percent_pair` maps
+`hp/hp_/atk/atk_/def/def_` to their counterpart (the only keys with both a
+flat and percent substat variant — `crit_`, `crit_dmg_`, `anomProf`, `pen`
+have none). Candidate keys for a pending line are `{sub.key, pair(sub.key)}`
+minus `disc.main_stat_key` (E4 exclusion baked into candidate generation, not
+bolted on after). `_resolve_candidates` filters to digit-plausible candidates
+first, then uses `pct_seen` (True → percent-only, False → flat-only, None →
+no discriminator) to break a remaining tie; if the filtered set still isn't
+exactly 1, it refuses rather than guessing.
+
+**Non-obvious result while building the `def 44.0` no-suffix test:** the
+DESIGN prose describes this as "two neighbors" (`def×3=45`, `def_×3=14.4`),
+but the *actual* rule-2 search (all `k` in range, both keys) turns up a third
+plausible candidate — `def_×1=4.8` (digits `"48"` vs observed `"44"` is also
+edit-distance 1). All three land in `_resolve_candidates`'s ambiguous path
+regardless (`pct_seen` is unset in that test), so the required "never
+silently pick" behavior holds — but it's worth flagging that "two neighbors"
+undercounts what the search space actually contains; the conservative refusal
+doesn't depend on getting that count exactly right, which is the point.
+
+**Roll-budget forcing (rule 3):** implemented for the single-remaining-
+unresolved-line case only (DESIGN's examples and T7's required tests are all
+single-line). A genuine multi-line simultaneous ambiguity falls through to
+flag-only rather than attempting a combinatorial solve — noted as a scope
+limit, not a bug; no test in T7's required list needs it. Verified the
+forcing path actually discriminates with a constructed case: `anomProf` has
+no flat/percent pair, so its ambiguity is purely which `k` (44.0 is
+edit-distance-1 from both `k=5→45` and `k=6→54`); with the other three lines
+summing `k=4` at `u=5`, only `k=5` keeps `Σk−u` inside the S `n0_range=(3,4)`
+— confirms the DESIGN corollary is being applied correctly, not just that
+"some" k gets picked.
+
+**Confirmed the `def 44.0` + roll-suffix + `pct_seen` case behaves as
+specified in both directions:** `pct_seen=True` → `def_ 14.4` (both key and
+value change from the roll-suffix-implied `k=3`), `pct_seen=False` → `def 45`
+(flat kept, value corrected 44.0→45.0). Both go through rule 1 since the
+roll-suffix directly supplies `k`, not rule 3.
+
+**Test table (`tests/test_disc_rules.py`, +25 tests over T6's 60):** all 6
+required cases from DESIGN/T7-spec (`crit_dmg_ 4.4`→4.8, `9.2`→9.6, `def 44.0`
++suffix+pct_seen→`def_ 14.4`, `def 44.0` no-suffix→unresolved, `pen 0.0`→
+flag-only, idempotence over the full T6 `_CLEAN_CASES` clean-disc fixture
+set) plus coverage-driven additions: unique-lattice-neighbor without suffix
+evidence (`crit_dmg_` has no pair, so it self-resolves), `pct_seen=False`
+tie-break, unknown substat key (graceful no-op, no crash), no-plausible-
+candidate-anywhere (value left untouched), roll-suffix implying an
+out-of-range `k` (falls through to rule 2), unresolvable rarity (repair_disc
+returns the original disc unchanged plus residual violations), and a
+frozen-dataclass shape check on `RepairResult`.
+
+**Coverage:** `pytest tests/test_disc_rules.py --cov=youkai_ocr.disc_rules
+--cov-branch` → 97% (279 stmts, 116 branches); misses are line 29
+(pre-existing PyInstaller path, same as T6), two early-exit branches inside
+the Levenshtein helper (exact-match and length-diff>1 shortcuts — logically
+trivial, not exercised by any required case), and the `observed<=0` guard in
+`_plausible_misread` when called with an already-known-zero value (`repair_
+disc` filters `value<=0` before ever calling it, so this defensive branch is
+unreachable through the public entry point). T7's acceptance criteria (unlike
+T6's) doesn't mandate a coverage number; 97% with only defensive/pre-existing
+misses was judged sufficient rather than adding tests against the private
+helpers directly.
+
+**Verification:** `pytest tests/test_disc_rules.py` → 85 passed (25 new + 60
+from T1/T6). `ruff check src/youkai_ocr/disc_rules.py tests/test_disc_rules.py`
+→ clean. Full suite: `python -m pytest -q` → **624 passed** (0:06:02), no
+regressions (599 prior + 25 new). Repo-wide `ruff check .` → still 60
+pre-existing violations, unchanged baseline.
+
+Next: T8 — golden fixtures from the June 22 archive (hand-labeled panels,
+resolve DESIGN OQ3 sub-equals-main severity, extend golden-replay gate).

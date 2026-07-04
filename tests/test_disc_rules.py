@@ -14,9 +14,12 @@ import pytest
 
 from youkai_ocr.disc_rules import (
     Evidence,
+    RepairResult,
+    SubstatEvidence,
     Violation,
     expected_main_value,
     load_disc_values,
+    repair_disc,
     substat_base,
     validate_disc,
 )
@@ -357,3 +360,158 @@ def test_violation_is_frozen_dataclass_with_expected_fields():
     assert v.severity == "error"
     with pytest.raises(Exception):
         v.field = "z"  # type: ignore[misc]
+
+
+# ── repair_disc: conservative repair (T7) ────────────────────────────────────
+
+
+def _evidence(*, main_value_raw=None, roll_suffix=None, pct_seen=None, n=1) -> Evidence:
+    subs = tuple(
+        SubstatEvidence(roll_suffix=roll_suffix, pct_seen=pct_seen) if i == 0 else None
+        for i in range(n)
+    )
+    return Evidence(main_value_raw=main_value_raw, substats=subs)
+
+
+def test_repair_crit_dmg_4_4_roll_suffix_agreement():
+    """E2: `+0` roll suffix agrees with 4.8 (single digit misread 8->4) -> rule 1."""
+    disc = _disc(4, slot="4", level=0, main_key="hp_", subs=[("crit_dmg_", 4.4)])
+    result = repair_disc(disc, _evidence(roll_suffix=0))
+    assert len(result.repairs) == 1
+    assert result.repairs[0].rule == "roll_suffix"
+    assert result.disc.substats[0].key == "crit_dmg_"
+    assert result.disc.substats[0].value == 4.8
+
+
+def test_repair_crit_dmg_9_2_roll_suffix_agreement():
+    """E2: `+1` roll suffix agrees with 9.6 (two-roll, 6->2 misread) -> rule 1."""
+    disc = _disc(4, slot="4", level=6, main_key="hp_", subs=[("crit_dmg_", 9.2)])
+    result = repair_disc(disc, _evidence(roll_suffix=1))
+    assert len(result.repairs) == 1
+    assert result.repairs[0].rule == "roll_suffix"
+    assert result.disc.substats[0].key == "crit_dmg_"
+    assert result.disc.substats[0].value == 9.6
+
+
+def test_repair_def_44_roll_suffix_and_pct_seen_flips_key():
+    """E2+E3: `+2` roll suffix gives k=3 for both def(45) and def_(14.4); `pct_seen`
+    breaks the flat/percent tie -> repaired to def_ 14.4, key AND value both change."""
+    disc = _disc(4, slot="4", level=9, main_key="hp_", subs=[("def", 44.0)])
+    result = repair_disc(disc, _evidence(roll_suffix=2, pct_seen=True))
+    assert len(result.repairs) == 1
+    assert result.repairs[0].rule == "roll_suffix"
+    assert result.disc.substats[0].key == "def_"
+    assert result.disc.substats[0].value == 14.4
+
+
+def test_repair_def_44_no_suffix_evidence_is_ambiguous_never_guesses():
+    """E2/E3 without a discriminator: def(k=3)=45 and def_(k=3)=14.4 are both
+    plausible lattice neighbors with identical k, so roll-budget forcing can't
+    disambiguate either -> must never silently pick one."""
+    disc = _disc(4, slot="4", level=9, main_key="hp_", subs=[("def", 44.0)])
+    result = repair_disc(disc, evidence=None)
+    assert result.repairs == []
+    assert result.disc.substats[0].key == "def"
+    assert result.disc.substats[0].value == 44.0
+    assert any(v.code == "sub_not_on_lattice" for v in result.violations)
+
+
+def test_repair_pen_zero_is_flag_only_never_invented():
+    """E5: an unreadable row exported as 0.0 must never be repaired to a guessed value."""
+    disc = _disc(4, slot="4", level=0, main_key="hp_", subs=[("pen", 0.0)])
+    result = repair_disc(disc, evidence=None)
+    assert result.repairs == []
+    assert result.disc.substats[0].key == "pen"
+    assert result.disc.substats[0].value == 0.0
+    assert any(v.code == "sub_not_on_lattice" and v.observed == 0.0 for v in result.violations)
+
+
+@pytest.mark.parametrize(("rarity", "level", "subs"), _CLEAN_CASES)
+def test_repair_disc_is_idempotent_on_clean_discs(rarity, level, subs):
+    disc = _disc(rarity, slot="4", level=level, main_key="anomProf", subs=subs)
+    evidence = Evidence(main_value_raw=expected_main_value(rarity, "anomProf", level))
+    result = repair_disc(disc, evidence)
+    assert result.repairs == []
+    assert [(s.key, s.value) for s in result.disc.substats] == subs
+    assert result.violations == []
+
+
+def test_repair_crit_dmg_via_unique_lattice_neighbor_without_suffix_evidence():
+    """crit_dmg_ has no flat/percent counterpart, so even without roll-suffix
+    evidence a single-digit misread has exactly one legal neighbor -> rule 2."""
+    disc = _disc(4, slot="4", level=0, main_key="hp_", subs=[("crit_dmg_", 4.4)])
+    result = repair_disc(disc, evidence=None)
+    assert len(result.repairs) == 1
+    assert result.repairs[0].rule == "lattice_neighbor"
+    assert result.disc.substats[0].value == 4.8
+
+
+def test_repair_pct_seen_false_prefers_flat_candidate():
+    """Same ambiguous def/def_ pair as the pct_seen=True case, but pct_seen=False
+    should force the flat candidate instead."""
+    disc = _disc(4, slot="4", level=9, main_key="hp_", subs=[("def", 44.0)])
+    result = repair_disc(disc, _evidence(roll_suffix=2, pct_seen=False))
+    assert len(result.repairs) == 1
+    assert result.disc.substats[0].key == "def"
+    assert result.disc.substats[0].value == 45.0
+
+
+def test_repair_unknown_substat_key_skipped_gracefully():
+    """A substat key absent from substat_base (no lattice to repair against)
+    must not crash and must be left untouched."""
+    disc = _disc(4, slot="4", level=0, main_key="hp_", subs=[("not_a_real_key", 123.0)])
+    result = repair_disc(disc, evidence=None)
+    assert result.repairs == []
+    assert result.disc.substats[0].key == "not_a_real_key"
+    assert result.disc.substats[0].value == 123.0
+
+
+def test_repair_no_plausible_candidate_leaves_value_untouched():
+    """A value with no digit-edit-distance-1 neighbor anywhere on the lattice
+    must be left alone rather than snapped to the nearest (implausible) k."""
+    disc = _disc(4, slot="4", level=0, main_key="hp_", subs=[("crit_dmg_", 500.0)])
+    result = repair_disc(disc, evidence=None)
+    assert result.repairs == []
+    assert result.disc.substats[0].value == 500.0
+
+
+def test_repair_roll_budget_forcing_resolves_unique_assignment():
+    """anomProf has no flat/percent pair, so its ambiguity is purely which `k`
+    (44 is edit-distance-1 from both k=5->45 and k=6->54); only k=5 keeps the
+    roll budget (other lines sum k=4, u=5) in the S n0_range (3,4)."""
+    disc = _disc(
+        4, slot="4", level=15, main_key="crit_dmg_",
+        subs=[("hp_", 3.0), ("atk_", 3.0), ("def_", 9.6), ("anomProf", 44.0)],
+    )
+    result = repair_disc(disc, evidence=None)
+    assert len(result.repairs) == 1
+    assert result.repairs[0].rule == "roll_budget"
+    assert result.disc.substats[3].key == "anomProf"
+    assert result.disc.substats[3].value == 45.0
+
+
+def test_repair_unknown_rarity_returns_untouched_with_violations():
+    """No rarity rules to repair against -> leave disc untouched, still validate."""
+    disc = _disc(5, slot="4", level=0, main_key="hp_", subs=[])
+    result = repair_disc(disc, evidence=None)
+    assert result.repairs == []
+    assert result.disc is disc
+    assert any(v.code == "rarity_range" for v in result.violations)
+
+
+def test_repair_roll_suffix_out_of_range_falls_through_to_lattice_neighbor():
+    """A roll-suffix implying a k beyond the rarity's cap can't be used for rule 1,
+    but the value still resolves via rule 2 (crit_dmg_ has no pair, unique k=1)."""
+    disc = _disc(4, slot="4", level=0, main_key="hp_", subs=[("crit_dmg_", 4.4)])
+    result = repair_disc(disc, _evidence(roll_suffix=10))
+    assert len(result.repairs) == 1
+    assert result.repairs[0].rule == "lattice_neighbor"
+    assert result.disc.substats[0].value == 4.8
+
+
+def test_repair_result_is_frozen_dataclass_with_expected_shape():
+    disc = _disc(4, slot="4", level=0, main_key="anomProf", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)])
+    result = repair_disc(disc, evidence=None)
+    assert isinstance(result, RepairResult)
+    assert result.repairs == []
+    assert result.violations == []
