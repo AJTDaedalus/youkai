@@ -58,7 +58,7 @@ matches some set at ≥80 once this lands.
 
 ---
 
-## T3 — Normalizer: unknown-set score floor [ ]
+## T3 — Normalizer: unknown-set score floor [x]
 
 **Files:** `src/youkai_ocr/normalizer.py`, `src/youkai_ocr/disc_scanner.py`,
 `tests/test_normalizer.py`, `tests/test_disc_scanner.py`.

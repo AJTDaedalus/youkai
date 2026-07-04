@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import queue
 import re
-import time
 from pathlib import Path
 from threading import Lock, Thread
 from typing import Callable, Optional
@@ -133,8 +132,6 @@ def _value_plausible(stat_key: str, val: float) -> bool:
 
 # Minimum confidence for accepting a field match (below → emit to issues).
 _LOW_CONF_THRESHOLD = 70.0
-# Below this set confidence the whole disc is considered a critical failure.
-_CRITICAL_SET_THRESHOLD = 30.0
 
 CaptureFunc = Callable[[], Image.Image]
 
@@ -337,10 +334,13 @@ def _extract_disc(
         main_name_crop.save(dd / "main_name.png")
 
     # ── Critical failure guard ─────────────────────────────────────────────
-    if not slot or set_conf < _CRITICAL_SET_THRESHOLD:
+    # normalize_disc_set already floors unmapped/uncertain titles to an empty
+    # key (T3); an empty set_key here means the title scored below the floor,
+    # not a slot-parse failure, so the two get distinct reasons.
+    if not slot or not set_key:
         conf["_fail_reason"] = (
             f"no_slot:title={title_text!r}" if not slot
-            else f"low_set_conf:{set_conf:.0f}:title={title_text!r}"
+            else f"unknown_set:{set_conf:.0f}:title={title_text!r}"
         )
         return (None, conf)
 
@@ -707,8 +707,8 @@ def scan_equipped_disc_frame(
         title_crop.save(archive_dir / f"equip_disc_s{slot_key}_title.png")
         block_crop.save(archive_dir / f"equip_disc_s{slot_key}_block.png")
 
-    if set_conf < _CRITICAL_SET_THRESHOLD:
-        conf["_fail_reason"] = f"low_set_conf:{set_conf:.0f}:title={title_text!r}"
+    if not set_key:
+        conf["_fail_reason"] = f"unknown_set:{set_conf:.0f}:title={title_text!r}"
         return (None, conf)
 
     disc = ZodDisc(

@@ -1,6 +1,8 @@
 """Tests for B4 normalizer."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from youkai_ocr.normalizer import (
@@ -106,6 +108,71 @@ def test_disc_sets_excludes_removed_beta_stubs():
         "Vagabond Folk",
     }
     assert excluded_display_names.isdisjoint(normalizer._disc_sets.keys())
+
+
+# ── normalize_disc_set unknown-set floor (T3) ─────────────────────────────────
+
+@pytest.mark.parametrize("garbage", [
+    "Future Set Name [1]",
+    "Nonexistent Set 9000",
+    "",
+])
+def test_normalize_disc_set_floor_rejects_unknown(garbage):
+    """Below-floor matches return ('', <floor) so the caller emits unknown_set
+    instead of snapping a foreign/unmapped title to the nearest set — the
+    Wuthering-Salon-read-as-SwingJazz failure mode (E1), fixed by T2's table
+    refresh + this floor as a backstop for the *next* unmapped patch."""
+    from youkai_ocr.normalizer import _SET_NAME_SCORE_MIN
+    key, score = normalize_disc_set(garbage)
+    assert key == "", f"expected empty key for {garbage!r}, got {key!r} (score={score})"
+    assert score < _SET_NAME_SCORE_MIN
+
+
+def test_normalize_disc_set_partial_wonderland_still_resolves():
+    # Real archived OCR (docs/diag_title_reocr_20260704.json, disc with a
+    # 2-line title where only "Wonderland" survived): scores 68-73, comfortably
+    # above the 60 floor, and must still resolve rather than critical-fail.
+    key, score = normalize_disc_set("B Z Wonderland [1] »®")
+    assert key == "BunnyInWonderland", f"got {key!r} (score={score})"
+    assert score >= 60.0
+
+
+def test_normalize_disc_set_shockstar_dropped_char_still_resolves():
+    # Real archived OCR with a dropped trailing char: scores ~78, above floor.
+    key, score = normalize_disc_set("Shockstar Disc G] 6 ©")
+    assert key == "ShockstarDisco", f"got {key!r} (score={score})"
+    assert score >= 60.0
+
+
+def test_normalize_disc_set_floor_below_all_legit_sweep_scores():
+    """Re-verify the 60 floor against the full June-22 sweep now that T2 has
+    landed: every legit title (all but the 6 pre-existing blank-OCR crops)
+    must clear the floor. See LOG T3 for the observed minimum (68.42, the
+    Wonderland partial title)."""
+    import json
+    from youkai_ocr.normalizer import _SET_NAME_SCORE_MIN
+
+    diag_path = Path(__file__).resolve().parents[1] / "docs" / "diag_title_reocr_20260704.json"
+    if not diag_path.exists():
+        pytest.skip("diagnostic sweep file missing")
+    rows = json.loads(diag_path.read_text())
+
+    resolved_scores = []
+    unresolved = []
+    for row in rows:
+        key, score = normalize_disc_set(row["ocr"])
+        if key:
+            resolved_scores.append(score)
+        else:
+            unresolved.append(row)
+
+    # Only the 6 pre-existing blank-OCR crops (empty ocr text) should fail to
+    # resolve; every legit title must clear the floor.
+    assert all(r["ocr"] == "" for r in unresolved), (
+        f"unexpected below-floor legit titles: {unresolved[:5]}"
+    )
+    assert len(unresolved) == 6
+    assert min(resolved_scores) >= _SET_NAME_SCORE_MIN
 
 
 # ── normalize_substat ─────────────────────────────────────────────────────────

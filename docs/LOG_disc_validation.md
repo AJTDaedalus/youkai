@@ -151,3 +151,66 @@ violations in unrelated files, out of scope for this task — `disc_sets.json` i
 Python so not lint-checked).
 
 Next: T3 — normalizer unknown-set score floor (`_SET_NAME_SCORE_MIN = 60`).
+
+## T3 — Normalizer: unknown-set score floor (Worker, 2026-07-04)
+
+**Done.** Added `_SET_NAME_SCORE_MIN = 60` to `normalizer.normalize_disc_set`, mirroring
+`normalize_agent`/`normalize_engine`: below floor → `("", score)` instead of a snap to the
+nearest table key.
+
+**Critical-fail gate (`disc_scanner.py`):** the guard used to be
+`if not slot or set_conf < _CRITICAL_SET_THRESHOLD (30.0)`. Since the floor now lives
+inside `normalize_disc_set` itself, an unmapped/uncertain title already comes back with an
+*empty* `set_key` — checking `set_conf < 30` separately was dead code once the floor (60)
+is stricter than the old threshold (any score below 60 already yields `set_key == ""`,
+so `set_conf < 30` could never fire on a *present* key). Replaced both critical-fail
+checks (`_extract_disc` and `scan_equipped_disc_frame`) with `not set_key`, removed the
+now-unreachable `_CRITICAL_SET_THRESHOLD` constant, and renamed the reason string from
+`low_set_conf` to `unknown_set` to match the DESIGN's naming. `_extract_disc` keeps
+`no_slot` as a distinct reason for the (still separate) no-slot-parsed failure mode.
+
+**Floor re-verification against real data (per T3's "record observed minimum" step):**
+reused `docs/diag_title_reocr_20260704.json`'s raw `ocr` text (2090 rows) through the
+*current* (T2-updated, 28-set) `normalize_disc_set` — this is a stricter check than T2's
+verification, since it also applies the new 60 floor:
+- 2084/2090 resolve to a non-empty key; **minimum resolved score is 68.42** (a
+  `BunnyInWonderland` 2-line-title partial read — exactly the case the floor is
+  calibrated to admit, matching the DESIGN's cited 68–73 range).
+- The only 6 that come back empty are the pre-existing blank-OCR crops (`ocr == ""`,
+  unrelated to the set table, already known from T2). Zero legit titles fall below the
+  floor. This is captured as a regression test
+  (`test_normalize_disc_set_floor_below_all_legit_sweep_scores`) so a future patch that
+  needs a *different* floor value gets a clear failure pointing at this file.
+
+**Files changed:**
+- `src/youkai_ocr/normalizer.py`: `_SET_NAME_SCORE_MIN = 60` + floor logic in
+  `normalize_disc_set`, with a docstring citing the calibration (foreign ≤46, legit
+  partial ≥68) matching `normalize_engine`'s style.
+- `src/youkai_ocr/disc_scanner.py`: both critical-fail gates now check `not set_key`;
+  removed dead `_CRITICAL_SET_THRESHOLD`; reason strings `no_slot` / `unknown_set`.
+  Also fixed a pre-existing lint violation in this file (unused top-level `import time`)
+  since the file was already open for this task, per CLAUDE.md convention.
+- `tests/test_normalizer.py`: `test_normalize_disc_set_floor_rejects_unknown`
+  (parametrized: fake unknown title, garbage, empty string — all return `("", <60)`);
+  `test_normalize_disc_set_partial_wonderland_still_resolves`;
+  `test_normalize_disc_set_shockstar_dropped_char_still_resolves`;
+  `test_normalize_disc_set_floor_below_all_legit_sweep_scores` (full-sweep regression,
+  skips if the diagnostic file is missing).
+- `tests/test_disc_scanner.py`: `_FakeRecognizer` (minimal `TextRecognizer` stub —
+  needed all five protocol methods including `read_cinema` for the `runtime_checkable`
+  isinstance check in `scan_equipped_disc_frame` to accept it) +
+  `test_extract_disc_unknown_set_critical_fail`,
+  `test_extract_disc_no_slot_critical_fail_distinguished_from_unknown_set`,
+  `test_extract_disc_partial_title_still_resolves_not_critical_fail`,
+  `test_scan_equipped_disc_frame_unknown_set_critical_fail`. Also fixed 4 pre-existing
+  lint violations in this file while it was open (unused `pytest`/`GridParams`/`time`
+  imports — 3 were shadowed-by-local-import redundancies, not behavior changes).
+
+**Verification:** `pytest tests/test_normalizer.py tests/test_disc_scanner.py` → 126
+passed (10 new). `pytest tests/test_golden_replay.py` → 6 passed, no regressions. Full
+suite: `python -m pytest -q` → **538 passed** (0:05:51). `ruff check` on all touched files
+→ clean. Repo-wide `ruff check .` → 60 pre-existing violations (down from 61 — one fewer
+because the dead `import time` in `disc_scanner.py` was fixed as a byproduct of this task;
+the remaining 60 are unrelated files, still out of scope).
+
+Next: T4 — extractor: capture roll-count suffix (+N) as evidence.
