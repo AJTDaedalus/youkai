@@ -894,6 +894,132 @@ def _cmd_scan(args: argparse.Namespace) -> None:
         print(f"\nExported to: {output}")
 
 
+# ── T10: offline archive revalidation ────────────────────────────────────────
+
+# Same 439×770 panel-crop-onto-1920×1080-canvas trick as
+# tests/test_golden_replay.py:_panel_to_frame and
+# tests/test_disc_scanner.py:_panel_file_to_frame — archived `disc_NNNN/panel.png`
+# crops are reference-scale, so an identity CalibrationResult applies unchanged.
+_REVALIDATE_PANEL_ORIGIN = (1421, 100)
+
+
+def _revalidate_panel_to_frame(panel_path):
+    from PIL import Image
+    panel = Image.open(panel_path).convert("RGB")
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    frame.paste(panel, _REVALIDATE_PANEL_ORIGIN)
+    return frame
+
+
+def _cmd_revalidate(args: argparse.Namespace) -> None:
+    """T10: replay an archived scan offline through the current validator/repair
+    tables and write a corrected export + repair report — no game, no pynput.
+
+    Preserves location/lock by merging from the archive's discs.json on
+    matching index (a static panel.png has no thumbnail strip to read lock from).
+    """
+    from youkai_ocr.capture import CalibrationResult
+    from youkai_ocr.disc_rules import validate_disc
+    from youkai_ocr.disc_scanner import export_discs, scan_single_frame
+    from youkai_ocr.zod import ZodDisc
+
+    archive_dir = Path(args.archive)
+    raw_discs = json.loads((archive_dir / "discs.json").read_text(encoding="utf-8"))
+    if args.limit is not None:
+        raw_discs = raw_discs[: args.limit]
+
+    calib = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
+
+    discs: list[ZodDisc] = []
+    disc_reports: list[dict] = []
+    clean = repaired = unrepairable = 0
+
+    t0 = time.perf_counter()
+    for i, raw in enumerate(raw_discs):
+        panel_path = archive_dir / f"disc_{i:04d}" / "panel.png"
+        if not panel_path.exists():
+            discs.append(ZodDisc.from_dict(raw))
+            disc_reports.append({"index": i, "status": "missing_panel", "repairs": [], "violations": []})
+            unrepairable += 1
+            continue
+
+        frame = _revalidate_panel_to_frame(panel_path)
+        try:
+            disc, conf = scan_single_frame(frame, calib, engine=args.engine)
+        except Exception as exc:  # noqa: BLE001 — one bad panel must not abort a 2090-disc sweep
+            discs.append(ZodDisc.from_dict(raw))
+            disc_reports.append({
+                "index": i, "status": "critical_fail",
+                "reason": f"{type(exc).__name__}: {exc}", "repairs": [], "violations": [],
+            })
+            unrepairable += 1
+            continue
+
+        if disc is None:
+            discs.append(ZodDisc.from_dict(raw))
+            disc_reports.append({
+                "index": i, "status": "critical_fail",
+                "reason": conf.get("_fail_reason", "?"), "repairs": [], "violations": [],
+            })
+            unrepairable += 1
+            continue
+
+        disc.location = raw["location"]
+        disc.lock = raw["lock"]
+
+        # Re-run explicitly on the merged disc for the report's gate — location/
+        # lock aren't validated fields so this can't change the outcome, but it
+        # keeps the report's pass/fail decision decoupled from scan_single_frame's
+        # internal (pre-merge) validate_disc call rather than assumed identical.
+        final_violations = validate_disc(disc)
+        repairs = conf.get("_repairs", [])
+
+        discs.append(disc)
+        disc_reports.append({
+            "index": i,
+            "status": "unrepairable" if final_violations else ("repaired" if repairs else "clean"),
+            "repairs": repairs,
+            "violations": [
+                {"field": v.field, "code": v.code, "observed": v.observed,
+                 "expected": v.expected, "severity": v.severity}
+                for v in final_violations
+            ],
+        })
+        if final_violations:
+            unrepairable += 1
+        elif repairs:
+            repaired += 1
+        else:
+            clean += 1
+
+        if (i + 1) % 200 == 0:
+            print(f"  ...{i + 1}/{len(raw_discs)} discs processed", flush=True)
+
+    elapsed = time.perf_counter() - t0
+
+    output = Path(args.out)
+    export_discs(discs, output)
+
+    summary = {
+        "total": len(disc_reports), "clean": clean, "repaired": repaired,
+        "unrepairable": unrepairable, "elapsed_s": round(elapsed, 1),
+    }
+    print(f"\nRevalidated {summary['total']} disc(s) in {elapsed:.1f}s.")
+    print(f"  clean: {clean}  repaired: {repaired}  unrepairable: {unrepairable}")
+    print(f"Corrected export written to: {output}")
+
+    if args.report:
+        report_path = Path(args.report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps({"summary": summary, "discs": disc_reports}, indent=2), encoding="utf-8",
+        )
+        print(f"Report written to: {report_path}")
+
+    if unrepairable:
+        print(f"\n{unrepairable} disc(s) need manual review — see report for details.")
+
+
 def _write_review_report(issues: list[dict], path: "Path") -> None:
     """F3: Write a human-readable review.txt for manual verification of low-confidence items."""
     from io import StringIO
@@ -1613,6 +1739,23 @@ def main() -> None:
     scan = subparsers.add_parser("scan", help="Scan the Drive Disc inventory and export JSON.")
     _add_scan_args(scan, "export/discs.json", "disc")
 
+    # -- revalidate -----------------------------------------------------------------
+    revalidate = subparsers.add_parser(
+        "revalidate",
+        help="Replay an archived disc scan offline through the current validator/repair "
+             "tables and write a corrected export (archive-only, no game/pynput).",
+    )
+    revalidate.add_argument("--archive", required=True, metavar="DIR",
+                            help="Archive run dir containing discs.json and disc_NNNN/panel.png crops.")
+    revalidate.add_argument("--out", required=True, metavar="PATH",
+                            help="Corrected export JSON output path.")
+    revalidate.add_argument("--report", default=None, metavar="PATH",
+                            help="Optional path to write the per-disc violations/repairs report JSON.")
+    revalidate.add_argument("--engine", default="tesseract", choices=["tesseract"],
+                            help="OCR engine (default: tesseract).")
+    revalidate.add_argument("--limit", type=int, default=None, metavar="N",
+                            help="Only process the first N discs (for faster dev iteration).")
+
     # -- scan-all -----------------------------------------------------------------
     scan_all = subparsers.add_parser(
         "scan-all",
@@ -1661,6 +1804,8 @@ def main() -> None:
             _cmd_calibrate(args)
         elif args.command == "scan":
             _cmd_scan(args)
+        elif args.command == "revalidate":
+            _cmd_revalidate(args)
         elif args.command == "scan-engines":
             _cmd_scan_engines(args)
         elif args.command == "scan-agents":
