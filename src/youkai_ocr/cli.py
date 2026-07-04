@@ -968,6 +968,18 @@ def _write_review_report(issues: list[dict], path: "Path") -> None:
         )
     _section("LOW-CONFIDENCE DISC FIELDS — verify set/stat in-game", disc_rows)
 
+    # ── Auto-repaired disc fields (T9: disc_rules.repair_disc) ───────────────
+    repaired_discs = [i for i in issues if "disc" in i and i.get("repairs")]
+    repair_rows = []
+    for issue in repaired_discs:
+        disc = issue["disc"]
+        for r in issue["repairs"]:
+            repair_rows.append(
+                f"  [cell #{issue.get('cell', '?'):>4}] set={disc.get('setKey', '?')!r}  "
+                f"{r['field']}: {r['before']} -> {r['after']}  (rule={r['rule']})"
+            )
+    _section("AUTO-REPAIRED DISC FIELDS — verify in-game", repair_rows)
+
     # ── Orphan equipment ─────────────────────────────────────────────────────
     orphans = [i for i in issues if i.get("status") == "orphan"]
     orp_rows = [f"  {i}" for i in orphans]
@@ -977,7 +989,8 @@ def _write_review_report(issues: list[dict], path: "Path") -> None:
         f"youkai-ocr review report\n"
         f"  critical: {len(critical)}  unknown_agents: {len(unknown_agents)}  "
         f"low_agents: {len(low_agents)}  low_engines: {len(low_engines)}  "
-        f"low_discs: {len(low_discs)}  orphans: {len(orphans)}\n"
+        f"low_discs: {len(low_discs)}  repaired_discs: {len(repaired_discs)}  "
+        f"orphans: {len(orphans)}\n"
     )
     content = summary_line + buf.getvalue()
     if not buf.getvalue().strip():

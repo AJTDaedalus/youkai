@@ -17,6 +17,7 @@ from PIL import Image
 from rapidfuzz import fuzz
 
 from .capture import CalibrationResult
+from .disc_rules import evidence_from_conf, repair_disc
 from .grid import DEFAULT_GRID, GridNavigator, GridParams, make_kill_listener
 from .matchers import detect_lock_from_text, detect_rarity
 from .normalizer import (
@@ -135,6 +136,48 @@ def _value_plausible(stat_key: str, val: float) -> bool:
 _LOW_CONF_THRESHOLD = 70.0
 
 CaptureFunc = Callable[[], Image.Image]
+
+# disc_rules.Violation.field → the conf dict's confidence-key namespace (T9):
+# validate_disc names fields after the ZodDisc schema (main_stat_key, slot_key,
+# substat[i], …); conf's confidence keys use the OCR pipeline's own names
+# (main_stat, slot, substat_{i+1}, …). Map one to the other so a violation can
+# push the right field's confidence down.
+_VIOLATION_FIELD_TO_CONF_KEY = {
+    "rarity": "rarity",
+    "level": "level",
+    "slot_key": "slot",
+    "main_stat_key": "main_stat",
+    "main_stat_value": "main_stat",
+}
+_SUBSTAT_VIOLATION_FIELD_RE = re.compile(r"^substat\[(\d+)\]$")
+
+
+def _conf_key_for_violation_field(field: str) -> str:
+    m = _SUBSTAT_VIOLATION_FIELD_RE.match(field)
+    if m:
+        return f"substat_{int(m.group(1)) + 1}"
+    return _VIOLATION_FIELD_TO_CONF_KEY.get(field, field)
+
+
+def _repair_and_fold_violations(disc: ZodDisc, conf: dict) -> ZodDisc:
+    """Repair `disc` via disc_rules, folding the result back into conf/issues.
+
+    A residual violation pushes that field's confidence to <=30 — a violated
+    field must never surface as trustworthy (DESIGN Integration point 1).
+    An applied repair is recorded in conf["_repairs"] (popped by the issues
+    emitter, never compared as a confidence float).
+    """
+    evidence = evidence_from_conf(conf, len(disc.substats))
+    result = repair_disc(disc, evidence)
+    if result.repairs:
+        conf["_repairs"] = [
+            {"field": r.field, "before": r.before, "after": r.after, "rule": r.rule}
+            for r in result.repairs
+        ]
+    for v in result.violations:
+        key = _conf_key_for_violation_field(v.field)
+        conf[key] = min(conf.get(key, 100.0), 30.0)
+    return result.disc
 
 
 # ── Crop helpers ──────────────────────────────────────────────────────────────
@@ -384,6 +427,7 @@ def _extract_disc(
         lock=lock,
         substats=substats,
     )
+    disc = _repair_and_fold_violations(disc, conf)
     return (disc, conf)
 
 
@@ -504,14 +548,19 @@ def scan_discs(
                 entry["reason"] = conf.pop("_fail_reason")
             issues.append(entry)
         else:
+            repairs = conf.pop("_repairs", None)
             low = {k: v for k, v in conf.items() if v < _LOW_CONF_THRESHOLD}
-            if low:
-                issues.append({
+            if low or repairs:
+                entry = {
                     "cell": cell_idx,
                     "disc": disc.to_dict(),
-                    "status": "low_confidence",
-                    "fields": low,
-                })
+                    "status": "low_confidence" if low else "repaired",
+                }
+                if low:
+                    entry["fields"] = low
+                if repairs:
+                    entry["repairs"] = repairs
+                issues.append(entry)
             discs.append(disc)
 
     return discs, issues
@@ -763,6 +812,7 @@ def scan_equipped_disc_frame(
         lock=False,
         substats=substats,
     )
+    disc = _repair_and_fold_violations(disc, conf)
     return (disc, conf)
 
 

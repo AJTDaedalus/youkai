@@ -22,7 +22,7 @@ from youkai_ocr.capture import CalibrationResult, calibrate, check_color_hygiene
 from youkai_ocr.disc_scanner import scan_single_frame as scan_single_frame_disc
 from youkai_ocr.wengine_scanner import scan_single_frame_engine
 from youkai_ocr.agent_scanner import scan_single_frame_agent
-from youkai_ocr.disc_rules import Evidence, SubstatEvidence, repair_disc
+from youkai_ocr.disc_rules import evidence_from_conf, repair_disc
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
 LABELS = FIXTURES / "labels.json"
@@ -170,30 +170,6 @@ def test_disc_golden_replay(labels):
 
 # ── Disc repair-case replay (T8) ───────────────────────────────────────────────
 
-def _build_evidence(conf: dict, num_substats: int) -> Evidence:
-    """Reconstruct disc_rules.Evidence from the conf dict's evidence keys
-    (T4 roll_suffix, T5 main_stat_value, T8 pct_seen) — the same raw
-    observations disc_scanner.py already captures during extraction, not yet
-    threaded into a live Evidence object at the call site (that wiring is T9's
-    job). Building it here is exactly the "enough wiring to prove the gate"
-    T8 calls for, without integrating repair_disc into the scan path itself.
-    """
-    substats = tuple(
-        SubstatEvidence(
-            roll_suffix=(
-                int(conf[f"substat_{i + 1}_roll_suffix"])
-                if f"substat_{i + 1}_roll_suffix" in conf else None
-            ),
-            pct_seen=conf.get(f"substat_{i + 1}_pct_seen"),
-        )
-        for i in range(num_substats)
-    )
-    return Evidence(
-        main_value_raw=conf.get("main_stat_value"),
-        substats=substats,
-    )
-
-
 def test_disc_golden_replay_post_repair(labels):
     """§10 post-repair gate (T8), over the *full* curated golden disc set
     (labels["discs"] + labels["discs_repair_cases"]) — DESIGN's Testing
@@ -227,7 +203,7 @@ def test_disc_golden_replay_post_repair(labels):
             failures.append(f"{disc_id}: extraction returned None (conf={conf})")
             continue
 
-        evidence = _build_evidence(conf, len(disc.substats))
+        evidence = evidence_from_conf(conf, len(disc.substats))
         result = repair_disc(disc, evidence)
         repaired = result.disc
         violated_fields = {v.field for v in result.violations}

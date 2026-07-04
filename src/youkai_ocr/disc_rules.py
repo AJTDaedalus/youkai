@@ -144,6 +144,30 @@ class Evidence:
     substats: tuple[Optional[SubstatEvidence], ...] = field(default_factory=tuple)
 
 
+def evidence_from_conf(conf: dict, num_substats: int) -> Evidence:
+    """Assemble Evidence from the conf dict's raw-observation keys.
+
+    disc_scanner.py's conf dict carries confidence scores alongside the raw
+    OCR observations repair_disc needs (T4 roll_suffix, T5 main_stat_value,
+    T8 pct_seen) under the same keys — this reconstructs the Evidence object
+    from them, so extraction and tests share one assembly path.
+    """
+    substats = tuple(
+        SubstatEvidence(
+            roll_suffix=(
+                int(conf[f"substat_{i + 1}_roll_suffix"])
+                if f"substat_{i + 1}_roll_suffix" in conf else None
+            ),
+            pct_seen=conf.get(f"substat_{i + 1}_pct_seen"),
+        )
+        for i in range(num_substats)
+    )
+    return Evidence(
+        main_value_raw=conf.get("main_stat_value"),
+        substats=substats,
+    )
+
+
 @dataclass(frozen=True)
 class Violation:
     field: str
