@@ -219,7 +219,6 @@ _CORE_NODE_BBOXES: list[tuple[int, int, int, int]] = [
 
 # ── Traversal ─────────────────────────────────────────────────────────────────
 
-AGENT_MAX              = 60      # hard cap on agents visited in one scan
 _PHASH_SIZE            = 16      # hash grid dimension (16×16 = 256 bits)
 _PHASH_CROP_HALF       = 64      # ±px around a portrait center for the hash crop (grid path / tests)
 
@@ -895,8 +894,14 @@ def _extract_base_stats(
     conf["level"] = 90.0 if 1 <= level <= 60 else 30.0
 
     cap = _read_level_cap(base_frame, calib)
-    ascension = _ASCENSION_FROM_CAP.get(cap, 0)
-    conf["ascension"] = 90.0 if cap != 0 else 30.0
+    if cap != 0:
+        ascension = _ASCENSION_FROM_CAP.get(cap, 0)
+        conf["ascension"] = 90.0
+    else:
+        # OCR of the dim "/NN" cap text failed; fall back to counting filled
+        # promotion dots below the agent name (visual, survives font changes).
+        ascension = _count_ascension_dots(base_frame, calib)
+        conf["ascension"] = 60.0 if ascension > 0 else 30.0
 
     return key, level, ascension, conf
 
@@ -1308,7 +1313,7 @@ class AgentNavigator:
     def _ring_close_key(self, frame: Image.Image) -> str:
         """Return the ring-close key for this frame: the normalised agent name (H23).
 
-        Returns "" when no recognizer is available (ring-close falls back to AGENT_MAX).
+        Returns "" when no recognizer is available (ring-close disabled; kill event is the only stop).
         Overridable in tests — the strip sim has no OCR, so it returns str(self.idx).
         """
         if self._recognizer is None:
@@ -1535,8 +1540,8 @@ class AgentNavigator:
         SKIPPED after a single Base capture (no Skills/Equipment), not a stop — owned agents
         need not be contiguous.  We stop when the strip identity returns to the start (the
         ring has closed → every agent visited once), or on a true advance no-op (a
-        degenerate single-agent / non-looping strip), on the kill event, or at AGENT_MAX
-        visited.  This is independent of sort order and of which way the chevrons actually
+        degenerate single-agent / non-looping strip), or on the kill event.
+        This is independent of sort order and of which way the chevrons actually
         move (the user saw the pass run "in reverse" — now benign: a ring traversed
         backward still returns to its start).
 
@@ -1557,12 +1562,12 @@ class AgentNavigator:
         # for the same settled base_stats frame (offline calibration confirmed identical
         # (key, score) on both visits for every same-agent pair).  We set start_name
         # from the first non-empty normalised key we see; ring closes when any subsequent
-        # non-empty key matches it.  AGENT_MAX is the hard backstop.
+        # non-empty key matches it.  The ring always closes; kill event and advance no-op are backstops.
         start_name: str = ""  # first reliable agent name seen (set on first non-empty read)
 
         agent_idx = 0       # owned agents yielded (archive index)
-        visited = 0         # total strip positions visited (bounds runtime)
-        while not self._kill.is_set() and visited < AGENT_MAX:
+        visited = 0         # total strip positions visited (for logging)
+        while not self._kill.is_set():
             visited += 1
             # D37: capture the Base tab FIRST — it carries both the "Lv. N" pill and the
             # ownership ">>" chevron, and is the one tab where ownership can be read.  The
@@ -1617,8 +1622,6 @@ class AgentNavigator:
                 _log.info("agent_scan_done — advance no-op after %d owned (%d visited)",
                           agent_idx, visited)
                 return
-        if visited >= AGENT_MAX:
-            _log.warning("agent_scan_cap — hit AGENT_MAX (%d) after %d owned", AGENT_MAX, agent_idx)
 
 
 # ── Public scanner ────────────────────────────────────────────────────────────
