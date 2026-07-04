@@ -64,3 +64,42 @@ stash-and-drop), and leave `reference/youkai_export.json` untracked/untouched.
 clean except the intentionally-untouched `reference/youkai_export.json`.
 
 Next: T1 — `data/zzz_1.4/disc_values.json`.
+
+## T1 — Data: `data/zzz_1.4/disc_values.json` (Worker, 2026-07-04)
+
+**Done.** Encoded the DESIGN Expected-value tables (main-stat base/growth/max-level,
+substat base, roll-budget rules) into `data/zzz_1.4/disc_values.json`, keyed by
+`ZodDisc.rarity` int (4=S, 3=A, 2=B) to avoid a translation layer. Reconciled every
+main-stat key against `stats.json:main_stats_by_slot` (all 6 slots) and every substat
+key against `stats.json:substats` — set-equality enforced by test, not eyeballed.
+
+**Finding — stats.json's `substat_step_values` block is stale for A-rank hp/atk:**
+that block (unused dead data; `grep` found zero call sites) has A `hp=79, atk=15`,
+sourced from AdeptiScanner 2026-06-02. The DESIGN wiki table says `hp=75, atk=13`.
+Checked the June 22 archive directly: A-rank (`rarity=3`) `hp` substat values observed
+were `{75.0}` (plus a noise `2.0`), `atk` values `{13.0, 26.0}` (26=13×2, a 2-roll
+line) — real game data confirms the wiki/DESIGN numbers, not stats.json's. Every other
+cell (B and S rows, and A's hp_/atk_/def_/pen/crit_/crit_dmg_/anomProf) already agreed
+between the two sources. `disc_values.json`'s `_meta` documents this; `stats.json`
+itself is untouched (out of scope for T1 — its `substat_step_values` block has no
+callers, so the drift wasn't live, but a future task should probably delete or fix it
+rather than leave two contradictory tables sitting in the repo).
+
+B-rank growth carried DESIGN's explicit assumption (1/3 per level) with the
+"unverified on wiki, 1 B-disc in archive" caveat preserved in `_meta`.
+
+**Files:**
+- `data/zzz_1.4/disc_values.json` (new).
+- `src/youkai_ocr/disc_rules.py` (new) — minimal `load_disc_values()` /
+  `RarityRules` / `DiscValues` for T1's data-load scope; `expected_main_value`,
+  `substat_base()` accessor fn, `validate_disc`, `repair_disc` etc. land in T6/T7.
+- `tests/test_disc_rules.py` (new, 10 tests) — key-set equality against `stats.json`
+  (both main-stat-by-slot and substat sets), shape checks (every key has all 3
+  rarities), and the DESIGN-specified spot values (S atk base 79/growth 0.20, S
+  crit_dmg_ sub base 4.8, A max_level 12, B n0_range (1,2)), plus a regression test
+  pinning the A hp/atk 75/13 finding above.
+
+**Verification:** `pytest tests/test_disc_rules.py` → 10 passed; `ruff check` clean;
+full suite `python -m pytest -q` → **524 passed** (0:05:56), no regressions.
+
+Next: T2 — refresh `disc_sets.json` to the live 37-set list.

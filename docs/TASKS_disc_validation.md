@@ -20,7 +20,7 @@ clean apart from the intentionally-untouched `reference/youkai_export.json` ✓.
 
 ---
 
-## T1 — Data: `data/zzz_1.4/disc_values.json` [ ]
+## T1 — Data: `data/zzz_1.4/disc_values.json` [x]
 
 **Files:** new `data/zzz_1.4/disc_values.json`; new `tests/test_disc_rules.py` (data-load part).
 
