@@ -266,3 +266,82 @@ was pre-violating).
 
 Next: T5 — extractor: read the main-stat value (`_MAIN_VAL_REL` bbox is defined but
 never read).
+
+## T5 — Extractor: read the main-stat value (Worker, 2026-07-04)
+
+**Done.** `_MAIN_VAL_REL` was defined but never read; both extraction paths now
+surface the main-stat value as evidence in `conf["main_stat_value"]`, the cross-check
+`disc_rules.validate_disc`/`expected_main_value` (T6) needs against `(rarity, main_key,
+level)`.
+
+**Inventory path (`_extract_disc`):** added the main-value read immediately after the
+existing main-name read, mirroring the substat value pattern (native + 2× upscale via
+`Image.LANCZOS`, `parse_numeric` on both, agreement wins, else prefer whichever scale
+produced a value). No `_value_plausible`-style arbitration here — that table doesn't
+exist yet (it's `disc_rules.py`'s job in T6); this task only proves the raw read is
+correct, not that it's cross-checked. Crop archived as `main_val.png` alongside the
+existing per-disc crops.
+
+**Equip path (`_equip_parse_stat_block`/`scan_equipped_disc_frame`):** `main_raw`
+already carried `(name_text, val_text)` — `val_text` was parsed for `pct_seen` only
+and then dropped. Added `parse_numeric(main_val_text)` → `conf["main_stat_value"]`
+right alongside the existing `pct_seen` handling; no signature change needed since
+`main_raw` already had the text.
+
+**Verification against the acceptance criterion** ("golden panels produce main values
+matching hand-read ground truth: disc_0001 → 316, disc_0631 → 142"): the current
+30-panel curated golden set (`tests/fixtures/golden/discs/`) doesn't include either
+disc — those IDs are anchors from the June 22 archive
+(`/mnt/c/.../youkai-portable/archive/live_20260622_093014`, only reachable from this
+Linux session via the WSL `/mnt/c` bind), not the repo's committed fixtures. Rather than
+wait for T8 (fixture curation) or fabricate a synthetic panel, copied the two real
+`panel.png` crops from that archive into a new `tests/fixtures/main_value_check/`
+directory (deliberately separate from `tests/fixtures/golden/` — T8 owns curating that
+set with full label entries; this is scoped tight to "prove T5's read works," per the
+task handoff). Confirmed the archive's own `discs.json` ground truth first: index 1 is
+rarity 4 (S) / `atk` main / level 15; index 631 is rarity 4 (S) / `atk` main / level 4.
+Both match the DESIGN doc's expected-value formula (`value(level) = base × (1 + growth ×
+level)`, growth=0.20/level for S-rank, base=79): index 1 → 79×(1+0.20×15) = 79×4 = 316;
+index 631 → floor(79×(1+0.20×4)) = floor(79×1.8) = 142 — exactly the DESIGN-cited
+numbers. New parametrized test
+`test_extract_disc_reads_main_stat_value_from_real_panels` in `tests/test_disc_scanner.py`
+runs real tesseract (no stub recognizer) via `scan_single_frame` against both panels and
+asserts the exact expected value — this is the strongest form of proof available (no
+mocking of the OCR layer), and both pass.
+
+Also added `test_scan_equipped_disc_frame_captures_main_stat_value` (stubbed recognizer,
+since no equip-view golden fixtures exist yet) confirming the equip path populates
+`conf["main_stat_value"]`, and a one-line assertion on `main_raw` in the existing
+`test_equip_parse_stat_block_captures_roll_suffix` test to lock in that `_equip_parse_
+stat_block` still returns the value text intact.
+
+**Regression note:** the inventory path's new main-value reads insert two additional
+`recognizer.read_line()` calls between the main-name read and the substat loop.
+`test_extract_disc_captures_roll_suffix_evidence` (T4) uses a `_ScriptedRecognizer` that
+returns scripted text in strict call order — updated its `lines` list with two extra
+placeholder entries (`"", ""`) so the substat reads still land on the right script
+entries.
+
+**Files changed:**
+- `src/youkai_ocr/disc_scanner.py`: main-value dual-scale read + evidence capture in
+  `_extract_disc`; `main_val_crop.save(dd / "main_val.png")` in the archive block;
+  `parse_numeric(main_val_text)` → `conf["main_stat_value"]` in `scan_equipped_disc_frame`.
+- `tests/test_disc_scanner.py`: updated `_ScriptedRecognizer` script in the T4 roll-suffix
+  test (2 new placeholder lines); `main_raw` assertion added to the T4 equip-block test;
+  new `_EquipStubRecognizer` + `test_scan_equipped_disc_frame_captures_main_stat_value`;
+  new `test_extract_disc_reads_main_stat_value_from_real_panels` (parametrized, real
+  tesseract, skips gracefully if the fixture is absent).
+- `tests/fixtures/main_value_check/disc_0001_panel.png`,
+  `tests/fixtures/main_value_check/disc_0631_panel.png`: new fixtures, copied verbatim
+  from the June 22 archive (not derived/regenerated).
+
+**Verification:** `pytest tests/test_disc_scanner.py` → 21 passed (3 new, all previously-
+passing tests still green). `pytest tests/test_golden_replay.py` → 6 passed, no
+regressions. Full suite: `python -m pytest -q` → **549 passed** (0:06:04). `ruff check`
+on all touched files → clean. Repo-wide `ruff check .` → still 60 pre-existing
+violations (unchanged baseline).
+
+Next: T6 — `disc_rules.py`: validator (pure, TDD). Per DESIGN Architecture: `Evidence`,
+`Violation`, `expected_main_value`, `substat_base`, `validate_disc`. This is where
+`conf["main_stat_value"]` (T5) and `conf[f"substat_{i}_roll_suffix"]` (T4) evidence
+finally get consumed — the extractor side of both signals is now done.
