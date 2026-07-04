@@ -155,7 +155,7 @@ no repair path can fire on ambiguous input (asserted).
 
 ---
 
-## T8 — Golden fixtures from the June 22 archive [ ]
+## T8 — Golden fixtures from the June 22 archive [x]
 
 **Files:** `tests/fixtures/golden/` (new panels + labels.json entries), maybe
 `tools/curate_golden.py` helper.

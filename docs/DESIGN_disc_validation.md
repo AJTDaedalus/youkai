@@ -222,8 +222,65 @@ plausibility range; `pct_seen` breaks ties, main-stat-collision (E4) disqualifie
 1. B-rank main-stat growth is unverified on the wiki (1 B-rank disc in inventory —
    validate loosely, flag rather than fail).
 2. Element DMG % substat does not exist (mains only) — confirmed by wiki substat table.
-3. Whether a substat can ever equal the main stat: assumed **no** (7 observed cases all
-   look like OCR errors); fixture curation (Task 8) must confirm from `panel.png` before
-   the check ships as `severity=error`; if a counterexample appears, downgrade to warning.
+3. ~~Whether a substat can ever equal the main stat~~ **Resolved (T8, 2026-07-04): no.**
+   Hand-read all 10 real `sub_equals_main` hits from the June 22 archive panels
+   (293, 364, 497, 501\*, 545, 576\*\*, 618\*\*, 2082, 2085, 2087 — \*flagged as
+   `dup_substat` not `sub_equals_main` but same root cause; \*\*see item 5 below,
+   a related-but-distinct main-key bug). Every single one is a flat/percent
+   key-flip misread (E3: `def_`/`hp_`/`atk_` exported as its flat counterpart
+   `def`/`hp`/`atk`, sometimes with additional digit corruption, e.g. `def_ 14.4%`
+   → `def 44.0` or `def 4.4`) that happens to collide with `main_stat_key`. Zero
+   genuine collisions found across S-rank and A-rank. `sub_equals_main` now
+   ships as `severity="error"` in `disc_rules.py`.
 4. ~~Set-name score floor value~~ **Resolved**: 60, from the E1 sweep (foreign ≤46,
    legit partial ≥68). Re-verify in T3 against golden data after the new sets land.
+5. ~~"Wind DMG Bonus" main stat~~ **Resolved (T8): legitimate, not a bug.** Two
+   archive discs (576, 618, both `Wuthering Salon` slot 5) show a main stat
+   "Wind DMG Bonus" that formula-matches the standard element-DMG-bonus curve
+   exactly (base 7.5/S, same growth as the other 5 elements) but had no entry
+   in `stats.json:main_stats_by_slot["5"]` — the normalizer was silently
+   mis-mapping it to `hp_` (which is *also* how those two discs' `sub_equals_main`
+   false positives arose). Confirmed by user: Wind is a real 6th element,
+   behaves like all other DMG% mains. Added `"Wind DMG Bonus": "wind_dmg_"` to
+   `stats.json` and a matching `wind_dmg_` row to `disc_values.json:main_stat_base`
+   (same values as the other 5 elements). Both discs are now clean, in-scope
+   golden fixtures rather than excluded edge cases.
+6. **New, out-of-scope-for-T8 finding — flat/percent key-flip (E3) is the
+   dominant real-world defect, not a minor variant of E2.** Across all fixture
+   curation for T8, essentially every `sub_not_on_lattice`/`sub_equals_main`/
+   `dup_substat` case inspected (14+ instances across S and A rank) turned out
+   to be the same root cause: the percent variant of `hp`/`atk`/`def` exported
+   under its flat key. Digit corruption (dropped leading "1", etc.) frequently
+   but not always co-occurs — several A-rank instances (2082, 2085, 2087) and
+   one S-rank instance (545) show a *pure* key-flip with the numeral read
+   correctly. `repair_disc`'s existing rule 1 (roll-suffix agreement) already
+   resolves this correctly when live-scan evidence (`pct_seen`, `roll_suffix`)
+   is available; without it (e.g. reprocessing archived `discs.json` with no
+   raw OCR evidence), rule 2's broader search is sometimes genuinely ambiguous
+   and correctly refuses to guess. This raises the priority of T9 (wiring
+   evidence capture into the live scan path) relative to T10 (offline
+   revalidate of already-exported data, which has strictly less evidence to
+   work with). See LOG T8 entry for the full case-by-case evidence.
+7. **New, out-of-scope-for-T8 finding — two DESIGN example values were wrong.**
+   The Findings table's E2 examples for `crit_dmg_` (`4.4`→cited "true 4.8"
+   and `9.2`→cited "true 9.6") were guesses made without consulting the
+   roll-suffix evidence. The actual panels (disc_0011, disc_0021) show `+2`/`+3`
+   suffixes, so the true values are `14.4` and `19.2` respectively (a dropped
+   leading "1", not an 8↔4/6↔2 digit substitution). `repair_disc` rule 1
+   already produces the correct answer when the suffix is present — this is
+   a correction to the DESIGN prose, not a code defect.
+8. **New, out-of-scope-for-T8 finding — some substat rows are dropped from
+   export entirely**, not merely misread. disc_0600's panel shows 4 substat
+   rows; the archived `discs.json` export for that disc has only 2. This is a
+   distinct root cause from key-flip/digit misreads (`roll_budget`/`sub_count`
+   violations can also be `_value_plausible`-defeating row loss, not just
+   under-counting) and is not addressed by `repair_disc` (there is no value to
+   repair — the row is simply absent). Flagged for T9/T10 awareness.
+9. **Archive coverage gap — no B-rank disc above level 0 exists anywhere in
+   the June 22 archive** (only 1 B-rank disc total, level 0). No amount of
+   fixture curation can produce B-mid/B-max golden coverage from this archive;
+   a future scan capturing more B-rank inventory would be needed to close this
+   gap. The single B-rank disc's one substat itself carries a real digit
+   misread (`atk` read as `6`, but level-0 forces `k=1` exactly, so the only
+   legal value is the base `7` — a "6"↔"7" confusion not previously
+   catalogued in the Findings table).

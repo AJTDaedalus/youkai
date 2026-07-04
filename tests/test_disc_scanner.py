@@ -417,6 +417,32 @@ def test_equip_parse_stat_block_captures_roll_suffix():
     assert subs_raw[1] == ("CRIT Rate", "4.8%", None)
 
 
+def test_extract_disc_captures_pct_seen_evidence():
+    """Whether a substat's raw value text carried a '%' glyph is the other
+    half of the flat/percent-key discriminator disc_rules.repair_disc (T7)
+    needs (alongside roll_suffix) — must surface per-line, not be silently
+    dropped after being used only to pick the key inline."""
+    from youkai_ocr.disc_scanner import _extract_disc
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    lines = [
+        "Lv.4",       # level
+        "",           # main stat name (unused here)
+        "7.5%", "7.5%",  # main stat value — native + 2x, percent seen
+        "DEF +2",     # substat 1 name
+        "14.4%", "14.4%",  # substat 1 value — percent seen
+        "", "", "",   # substat 2 name — bright, dim, upscale: all empty
+        "", "",       # substat 2 value — both empty -> ends the list
+    ]
+    recognizer = _ScriptedRecognizer("Astral Voice [1]", lines)
+    disc, conf = _extract_disc(frame, _identity_calib(), 0, 0, recognizer, None, 0)
+
+    assert disc is not None
+    assert conf["main_stat_pct_seen"] is True
+    assert conf["substat_1_pct_seen"] is True
+    assert "substat_2_pct_seen" not in conf
+
+
 # ── Main-stat value evidence (T5) ───────────────────────────────────────────
 
 class _EquipStubRecognizer:
@@ -466,6 +492,27 @@ def test_scan_equipped_disc_frame_captures_main_stat_value():
     )
     assert disc is not None
     assert conf["main_stat_value"] == 316.0
+
+
+def test_scan_equipped_disc_frame_captures_pct_seen():
+    from youkai_ocr.disc_scanner import scan_equipped_disc_frame
+
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    block_text = (
+        "Main Stat\n"
+        "ATK 7.5%\n"
+        "Sub Stats\n"
+        "DEF +2 14.4%\n"
+        "Set Effect\n"
+    )
+    recognizer = _EquipStubRecognizer("Astral Voice [2]", block_text)
+    disc, conf = scan_equipped_disc_frame(
+        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=2,
+        engine=recognizer,
+    )
+    assert disc is not None
+    assert conf["main_stat_pct_seen"] is True
+    assert conf["substat_1_pct_seen"] is True
 
 
 # ── Real-OCR verification anchors (T5 acceptance criterion) ────────────────
