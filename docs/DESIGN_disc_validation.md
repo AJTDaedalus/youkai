@@ -1,7 +1,12 @@
 # DESIGN — Disc OCR Correction & Validity Enforcement (`disc_validation`)
 
-**Status**: Planned (2026-07-04). Investigation complete; tasks in `docs/TASKS_disc_validation.md`.
-**Tier**: Planned by Fable (Brain) at user request; execute with Worker (Sonnet). Escalate per the standard protocol.
+**Status**: Complete (2026-07-04). T0–T13 all shipped on `feat/disc-validation`; see
+`docs/TASKS_disc_validation.md` for per-task status and `docs/LOG_disc_validation.md` for
+the full execution record, including the T10/T12/T13 escalation-and-resolution arc and the
+before/after repair statistics. T11 is wrap-up (this doc + README/RUNBOOK + PR); no open
+tasks remain.
+**Tier**: Planned by Fable (Brain) at user request; executed with Worker (Sonnet), with one
+Planner/Brain escalation (T10→T12 triage, resolved 2026-07-04 — see LOG).
 
 ## Branch policy
 

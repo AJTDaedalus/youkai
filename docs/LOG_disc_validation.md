@@ -1223,3 +1223,49 @@ failure report alongside as `youkai_export_revalidated.report.json`.
 post-filtered by report index; future runs exclude natively.)
 
 Suite: 667 passed. Next: T11 wrap-up/PR.
+
+## T11 — Docs + wrap-up (Worker, 2026-07-04)
+
+Feature complete. Updated `DESIGN_disc_validation.md` Status header (Planned →
+Complete, points at this LOG for the full arc); added a `revalidate` section
+to `docs/RUNBOOK.md` (flags, output files, T13 exclusion behavior) and a
+pointer + one-line summary in `README.md`. No further OQ amendments needed —
+all substantive open questions were already resolved inline by T3/T8/T12
+(see DESIGN §Open questions); the remainder (B-rank growth unverified,
+element-DMG substat non-existence, disc_0600 row-loss, archive B-rank
+coverage gap) are non-blocking findings, not action items.
+
+**Before/after arc, full June 22 archive (2090 discs):**
+
+| Stage | Clean | Repaired | Unrepairable/flagged | Notes |
+|---|---|---|---|---|
+| Baseline (raw `discs.json`, pre-feature) | 1919 | 0 | **171 (8.2%)** | Invariant sweep only; no repair existed yet |
+| T10 (`revalidate`, validator+repair wired, tables refreshed) | 1912 | 120 | 58 | 3 new OCR-reliability bug clusters found during manual review of the 58 |
+| T12 (evidence-reliability fixes: roll-suffix bleed, empty-query snap, slot trust inversion) | 1917 | 158 | **15** | Zero regressions; 43 of the 58 recovered |
+| T13 (export policy change) | — | — | — | No count change (T13 changes *where* failures land, not detection) — the 15 are now cleanly EXCLUDED from the export instead of silently passing through with wrong values |
+
+**Final delivered state:** 1917 clean + 158 repaired = **2075 discs exported**
+to `youkai-portable/youkai-portable/export/youkai_export_revalidated.json`,
+with `youkai_export_revalidated.report.json` alongside covering all 2090
+source discs (repairs, residual violations, and the 15 excluded discs with
+their full pre-repair payload for review). The 15 excluded discs are
+unrecoverable from the archived crops (14 zero-value unreadable substat rows
++ disc_0600's dropped rows) and require an in-game re-scan; the user has
+deferred that re-scan for now — it is out of scope for this feature, which
+guarantees no known-wrong value reaches the export.
+
+**Verification:** `pytest` — 667 passed; `ruff check` — clean on every file
+touched across T0–T13 (pre-existing violations in `agent_scanner.py`,
+`cli.py`, and older tests are out of scope per CLAUDE.md — untouched by
+this feature).
+
+**Follow-ups (not this feature, noted for a future task):**
+1. In-game re-scan of the 15 excluded discs to recover their true values.
+2. Equipped-orphan discs bypass the T13 export gate — `scan_agents`
+   discards `conf` (and therefore `_violations`) when it appends orphaned
+   equipped discs during location reconciliation, so a failed orphan disc
+   could still reach the export. Rare (requires both "orphan" and "failed
+   validation"), not hit in the June 22 archive, but not proven impossible.
+   See T13 commit message (9127c3a) for the exact code path.
+
+PR: `feat/disc-validation` → `dev`, opened after this entry.
