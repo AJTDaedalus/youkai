@@ -88,7 +88,9 @@ regardless of any `--window-title` or environment flags.
 
 ## Output
 
-`export/youkai_export.json` — ZOD-format export with `discs`, `weapons`, and `characters` arrays.
+`export/youkai_export.json` — ZOD-format export with `discs`, `weapons`, and `characters` arrays. A disc that fails invariant validation is excluded from the export (never a known-wrong value) and instead reported in `issues.json`/`review.txt` for manual re-scan.
+
+Have an older archived run with wrong disc values? `youkai-ocr revalidate --archive <dir> --out <export.json>` replays its `disc_NNNN/panel.png` crops through the current validator/repair tables offline (no game, no live scan) and writes a corrected export plus a repair report. See [RUNBOOK §6](docs/RUNBOOK.md#6-offline-correction-of-a-past-export-revalidate).
 
 Each run also writes a timestamped directory under `--archive-dir` containing:
 - `review.txt` — human-readable summary of low-confidence items needing manual verification
