@@ -63,8 +63,11 @@ def test_revalidate_merges_location_lock_from_discs_json(tmp_path):
 
     # scan_single_frame doesn't know about location/lock (panel crops don't
     # show them) — returns the disc with defaults, as the real function does.
+    # validate_disc patched clean: T13 would otherwise exclude the minimal
+    # sample disc (its single substat can't satisfy the real roll budget).
     with patch("youkai_ocr.disc_scanner.scan_single_frame",
-               return_value=(_sample_disc(location="", lock=False), {})):
+               return_value=(_sample_disc(location="", lock=False), {})), \
+         patch("youkai_ocr.disc_rules.validate_disc", return_value=[]):
         _cmd_revalidate(_args(archive, out))
 
     data = json.loads(out.read_text())
@@ -109,7 +112,10 @@ def test_revalidate_counts_repaired_disc_from_conf_repairs(tmp_path, capsys):
     assert data["discs"][0]["status"] == "repaired"
 
 
-def test_revalidate_flags_unrepairable_when_final_validate_disc_finds_violation(tmp_path, capsys):
+def test_revalidate_excludes_unrepairable_disc_from_export(tmp_path, capsys):
+    """T13: a disc with residual violations is EXCLUDED from the export; its
+    values live only in the report (with the excluded_from_export marker) so
+    the user can review and re-scan."""
     raw = [_raw_disc()]
     archive = _make_archive(tmp_path, raw)
     out = tmp_path / "export.json"
@@ -123,41 +129,60 @@ def test_revalidate_flags_unrepairable_when_final_validate_disc_finds_violation(
 
     captured = capsys.readouterr()
     assert "clean: 0  repaired: 0  unrepairable: 1" in captured.out
-    assert "1 disc(s) need manual review" in captured.out
+    assert "1 disc(s) failed validation and were EXCLUDED" in captured.out
 
-    data = json.loads(report.read_text())
-    assert data["discs"][0]["status"] == "unrepairable"
-    assert data["discs"][0]["violations"][0]["code"] == "sub_not_on_lattice"
+    data = json.loads(out.read_text())
+    assert data["discs"] == []   # excluded from export
+
+    rep = json.loads(report.read_text())
+    entry = rep["discs"][0]
+    assert entry["status"] == "unrepairable"
+    assert entry["excluded_from_export"] is True
+    assert entry["violations"][0]["code"] == "sub_not_on_lattice"
+    assert entry["disc"]["setKey"] == "SwingJazz"   # reviewable payload
+    assert rep["summary"]["exported"] == 0
+    assert rep["summary"]["excluded"] == 1
 
 
-def test_revalidate_missing_panel_marks_unrepairable_and_keeps_raw_disc(tmp_path, capsys):
+def test_revalidate_missing_panel_excluded_from_export_but_reported(tmp_path, capsys):
     raw = [_raw_disc(location="Corin", lock=True)]
     archive = _make_archive(tmp_path, raw)
     # Delete the panel to simulate a gap in the archive.
     (archive / "disc_0000" / "panel.png").unlink()
     out = tmp_path / "export.json"
+    report = tmp_path / "report.json"
 
-    _cmd_revalidate(_args(archive, out))
+    _cmd_revalidate(_args(archive, out, report=report))
 
     captured = capsys.readouterr()
     assert "unrepairable: 1" in captured.out
     data = json.loads(out.read_text())
-    assert data["discs"][0]["location"] == "Corin"
-    assert data["discs"][0]["lock"] is True
+    assert data["discs"] == []   # T13: unverifiable disc no longer passed through
+
+    rep = json.loads(report.read_text())
+    assert rep["discs"][0]["status"] == "missing_panel"
+    assert rep["discs"][0]["excluded_from_export"] is True
+    assert rep["discs"][0]["disc"]["location"] == "Corin"
 
 
-def test_revalidate_critical_fail_falls_back_to_raw_disc(tmp_path):
+def test_revalidate_critical_fail_excluded_from_export_but_reported(tmp_path):
     raw = [_raw_disc(location="Anby", lock=False)]
     archive = _make_archive(tmp_path, raw)
     out = tmp_path / "export.json"
+    report = tmp_path / "report.json"
 
     with patch("youkai_ocr.disc_scanner.scan_single_frame",
                return_value=(None, {"_fail_reason": "unknown_set:10:title='???'"})):
-        _cmd_revalidate(_args(archive, out))
+        _cmd_revalidate(_args(archive, out, report=report))
 
     data = json.loads(out.read_text())
-    assert data["discs"][0]["setKey"] == "SwingJazz"  # fell back to the raw archived disc
-    assert data["discs"][0]["location"] == "Anby"
+    assert data["discs"] == []   # T13: raw archived disc no longer passed through
+
+    rep = json.loads(report.read_text())
+    assert rep["discs"][0]["status"] == "critical_fail"
+    assert rep["discs"][0]["excluded_from_export"] is True
+    assert rep["discs"][0]["disc"]["setKey"] == "SwingJazz"
+    assert rep["discs"][0]["disc"]["location"] == "Anby"
 
 
 # ── Report file ───────────────────────────────────────────────────────────────
@@ -179,7 +204,9 @@ def test_revalidate_writes_report_with_summary_and_per_disc_entries(tmp_path):
     assert data["discs"][1]["index"] == 1
 
 
-def test_revalidate_without_report_arg_skips_report_file(tmp_path):
+def test_revalidate_without_report_arg_writes_default_report(tmp_path):
+    """T13: failed discs exist only in the report, so it is always written —
+    defaulting to <out stem>.report.json next to the export."""
     raw = [_raw_disc()]
     archive = _make_archive(tmp_path, raw)
     out = tmp_path / "export.json"
@@ -188,7 +215,10 @@ def test_revalidate_without_report_arg_skips_report_file(tmp_path):
                return_value=(_sample_disc(), {})):
         _cmd_revalidate(_args(archive, out, report=None))
 
-    assert not (tmp_path / "report.json").exists()
+    default_report = tmp_path / "export.report.json"
+    assert default_report.exists()
+    data = json.loads(default_report.read_text())
+    assert data["summary"]["total"] == 1
 
 
 # ── --limit ───────────────────────────────────────────────────────────────────
@@ -199,7 +229,8 @@ def test_revalidate_limit_processes_only_first_n_discs(tmp_path, capsys):
     out = tmp_path / "export.json"
 
     with patch("youkai_ocr.disc_scanner.scan_single_frame",
-               return_value=(_sample_disc(), {})) as mock_scan:
+               return_value=(_sample_disc(), {})) as mock_scan, \
+         patch("youkai_ocr.disc_rules.validate_disc", return_value=[]):
         _cmd_revalidate(_args(archive, out, limit=1))
 
     assert mock_scan.call_count == 1

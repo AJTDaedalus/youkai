@@ -826,6 +826,47 @@ def test_scan_discs_issue_carries_repairs_when_no_other_low_fields(monkeypatch):
     assert "fields" not in issues[0]
 
 
+def test_scan_discs_excludes_failed_validation_disc_from_export(monkeypatch):
+    """T13: a disc with residual error-severity violations after repair holds a
+    known-wrong value — it must be EXCLUDED from the returned disc list (and
+    therefore the export) and surface as a failed_validation issue carrying
+    the disc payload + violations for the user's failure report."""
+    from threading import Event
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            yield 0, 0, "frame0"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def to_dict(self): return {"setKey": "AstralVoice"}
+
+    violations = [{"field": "substat[1]", "code": "sub_not_on_lattice",
+                   "observed": 0.0, "expected": None, "severity": "error"}]
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        return Stub(), {"set": 99.0, "substat_2": 30.0, "_violations": list(violations)}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 1)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+
+    assert discs == []   # excluded from export
+    assert len(issues) == 1
+    assert issues[0]["status"] == "failed_validation"
+    assert issues[0]["violations"] == violations
+    assert issues[0]["disc"] == {"setKey": "AstralVoice"}
+
+
 def test_scan_discs_issue_carries_both_low_fields_and_repairs(monkeypatch):
     """A disc with both a residual low-confidence field and an applied repair
     must surface both in the same issue entry — status stays low_confidence

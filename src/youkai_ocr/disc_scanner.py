@@ -164,8 +164,10 @@ def _repair_and_fold_violations(disc: ZodDisc, conf: dict) -> ZodDisc:
 
     A residual violation pushes that field's confidence to <=30 — a violated
     field must never surface as trustworthy (DESIGN Integration point 1).
-    An applied repair is recorded in conf["_repairs"] (popped by the issues
-    emitter, never compared as a confidence float).
+    An applied repair is recorded in conf["_repairs"], residual violations in
+    conf["_violations"] (both popped by the issues emitter, never compared as
+    confidence floats). "_violations" is what lets export assembly exclude a
+    failed disc instead of shipping its known-wrong values (T13).
     """
     evidence = evidence_from_conf(conf, len(disc.substats))
     result = repair_disc(disc, evidence)
@@ -173,6 +175,12 @@ def _repair_and_fold_violations(disc: ZodDisc, conf: dict) -> ZodDisc:
         conf["_repairs"] = [
             {"field": r.field, "before": r.before, "after": r.after, "rule": r.rule}
             for r in result.repairs
+        ]
+    if result.violations:
+        conf["_violations"] = [
+            {"field": v.field, "code": v.code, "observed": v.observed,
+             "expected": v.expected, "severity": v.severity}
+            for v in result.violations
         ]
     for v in result.violations:
         key = _conf_key_for_violation_field(v.field)
@@ -579,6 +587,22 @@ def scan_discs(
             issues.append(entry)
         else:
             repairs = conf.pop("_repairs", None)
+            violations = conf.pop("_violations", None)
+            if violations and any(v["severity"] == "error" for v in violations):
+                # T13: a disc with residual error violations after repair holds
+                # at least one known-wrong value — exclude it from the export
+                # entirely and surface it in the failure report instead of
+                # shipping data that would poison downstream optimizers.
+                entry = {
+                    "cell": cell_idx,
+                    "disc": disc.to_dict(),
+                    "status": "failed_validation",
+                    "violations": violations,
+                }
+                if repairs:
+                    entry["repairs"] = repairs
+                issues.append(entry)
+                continue
             low = {k: v for k, v in conf.items() if v < _LOW_CONF_THRESHOLD}
             if low or repairs:
                 entry = {

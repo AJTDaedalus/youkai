@@ -852,6 +852,12 @@ def _cmd_scan(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         print(f"\nDisc: {json.dumps(disc.to_dict(), indent=2)}")
+        violations = conf.get("_violations") or []
+        if any(v["severity"] == "error" for v in violations):
+            print("\nFAILED VALIDATION — disc excluded from export (T13):")
+            for v in violations:
+                print(f"  {v['field']}: {v['code']} observed={v['observed']} expected={v['expected']}")
+            sys.exit(1)
         export_discs([disc], output)
         print(f"\nExported to: {output}")
 
@@ -936,10 +942,16 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
 
     t0 = time.perf_counter()
     for i, raw in enumerate(raw_discs):
+        # T13: a disc that can't be read or doesn't validate is EXCLUDED from
+        # the export — a known-wrong value poisons downstream optimizers, and
+        # the pre-T13 critical-fail path even passed the *old uncorrected*
+        # discs.json entry through. Failed discs live only in the report.
         panel_path = archive_dir / f"disc_{i:04d}" / "panel.png"
         if not panel_path.exists():
-            discs.append(ZodDisc.from_dict(raw))
-            disc_reports.append({"index": i, "status": "missing_panel", "repairs": [], "violations": []})
+            disc_reports.append({
+                "index": i, "status": "missing_panel", "excluded_from_export": True,
+                "disc": raw, "repairs": [], "violations": [],
+            })
             unrepairable += 1
             continue
 
@@ -947,19 +959,19 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
         try:
             disc, conf = scan_single_frame(frame, calib, engine=args.engine)
         except Exception as exc:  # noqa: BLE001 — one bad panel must not abort a 2090-disc sweep
-            discs.append(ZodDisc.from_dict(raw))
             disc_reports.append({
-                "index": i, "status": "critical_fail",
-                "reason": f"{type(exc).__name__}: {exc}", "repairs": [], "violations": [],
+                "index": i, "status": "critical_fail", "excluded_from_export": True,
+                "disc": raw, "reason": f"{type(exc).__name__}: {exc}",
+                "repairs": [], "violations": [],
             })
             unrepairable += 1
             continue
 
         if disc is None:
-            discs.append(ZodDisc.from_dict(raw))
             disc_reports.append({
-                "index": i, "status": "critical_fail",
-                "reason": conf.get("_fail_reason", "?"), "repairs": [], "violations": [],
+                "index": i, "status": "critical_fail", "excluded_from_export": True,
+                "disc": raw, "reason": conf.get("_fail_reason", "?"),
+                "repairs": [], "violations": [],
             })
             unrepairable += 1
             continue
@@ -974,8 +986,7 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
         final_violations = validate_disc(disc)
         repairs = conf.get("_repairs", [])
 
-        discs.append(disc)
-        disc_reports.append({
+        report_entry = {
             "index": i,
             "status": "unrepairable" if final_violations else ("repaired" if repairs else "clean"),
             "repairs": repairs,
@@ -984,13 +995,20 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
                  "expected": v.expected, "severity": v.severity}
                 for v in final_violations
             ],
-        })
+        }
         if final_violations:
+            # Excluded: keep the disc's values in the report so the failure is
+            # reviewable, but never in the export.
+            report_entry["excluded_from_export"] = True
+            report_entry["disc"] = disc.to_dict()
             unrepairable += 1
-        elif repairs:
-            repaired += 1
         else:
-            clean += 1
+            discs.append(disc)
+            if repairs:
+                repaired += 1
+            else:
+                clean += 1
+        disc_reports.append(report_entry)
 
         if (i + 1) % 200 == 0:
             print(f"  ...{i + 1}/{len(raw_discs)} discs processed", flush=True)
@@ -1002,22 +1020,27 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
 
     summary = {
         "total": len(disc_reports), "clean": clean, "repaired": repaired,
-        "unrepairable": unrepairable, "elapsed_s": round(elapsed, 1),
+        "unrepairable": unrepairable, "exported": len(discs),
+        "excluded": unrepairable, "elapsed_s": round(elapsed, 1),
     }
     print(f"\nRevalidated {summary['total']} disc(s) in {elapsed:.1f}s.")
     print(f"  clean: {clean}  repaired: {repaired}  unrepairable: {unrepairable}")
-    print(f"Corrected export written to: {output}")
+    print(f"Corrected export written to: {output} ({len(discs)} disc(s))")
 
-    if args.report:
-        report_path = Path(args.report)
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(
-            json.dumps({"summary": summary, "discs": disc_reports}, indent=2), encoding="utf-8",
-        )
-        print(f"Report written to: {report_path}")
+    # T13: failed discs exist ONLY in the report now, so it is always written —
+    # default path sits next to the export when --report isn't given.
+    report_path = Path(args.report) if args.report else output.with_name(output.stem + ".report.json")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps({"summary": summary, "discs": disc_reports}, indent=2), encoding="utf-8",
+    )
+    print(f"Report written to: {report_path}")
 
     if unrepairable:
-        print(f"\n{unrepairable} disc(s) need manual review — see report for details.")
+        print(
+            f"\n{unrepairable} disc(s) failed validation and were EXCLUDED from the "
+            f"export — review them in the report and re-scan in-game to recover."
+        )
 
 
 def _write_review_report(issues: list[dict], path: "Path") -> None:
@@ -1082,6 +1105,23 @@ def _write_review_report(issues: list[dict], path: "Path") -> None:
         )
     _section("LOW-CONFIDENCE ENGINE FIELDS — verify key/rarity in-game", eng_rows)
 
+    # ── Failed discs (T13: excluded from the export entirely) ────────────────
+    failed_discs = [i for i in issues if i.get("status") == "failed_validation"]
+    failed_rows = []
+    for issue in failed_discs:
+        disc = issue.get("disc", {})
+        failed_rows.append(
+            f"  [cell #{issue.get('cell', '?'):>4}] set={disc.get('setKey', '?')!r}  "
+            f"slot={disc.get('slotKey', '?')}  lv={disc.get('level', '?')}"
+        )
+        for v in issue.get("violations", []):
+            failed_rows.append(
+                f"      {v['field']}: {v['code']}  observed={v['observed']}  expected={v['expected']}"
+            )
+    _section(
+        "FAILED DISCS — EXCLUDED from export; re-scan in-game to recover", failed_rows
+    )
+
     # ── Low-confidence discs ─────────────────────────────────────────────────
     low_discs = [i for i in issues if "disc" in i and i.get("status") == "low_confidence"]
     disc_rows = []
@@ -1115,8 +1155,8 @@ def _write_review_report(issues: list[dict], path: "Path") -> None:
         f"youkai-ocr review report\n"
         f"  critical: {len(critical)}  unknown_agents: {len(unknown_agents)}  "
         f"low_agents: {len(low_agents)}  low_engines: {len(low_engines)}  "
-        f"low_discs: {len(low_discs)}  repaired_discs: {len(repaired_discs)}  "
-        f"orphans: {len(orphans)}\n"
+        f"failed_discs: {len(failed_discs)}  low_discs: {len(low_discs)}  "
+        f"repaired_discs: {len(repaired_discs)}  orphans: {len(orphans)}\n"
     )
     content = summary_line + buf.getvalue()
     if not buf.getvalue().strip():
