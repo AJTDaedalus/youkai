@@ -925,7 +925,7 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
     matching index (a static panel.png has no thumbnail strip to read lock from).
     """
     from youkai_ocr.capture import CalibrationResult
-    from youkai_ocr.disc_rules import validate_disc
+    from youkai_ocr.disc_rules import evidence_from_conf, validate_disc
     from youkai_ocr.disc_scanner import export_discs, scan_single_frame
     from youkai_ocr.zod import ZodDisc
 
@@ -979,11 +979,15 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
         disc.location = raw["location"]
         disc.lock = raw["lock"]
 
-        # Re-run explicitly on the merged disc for the report's gate — location/
-        # lock aren't validated fields so this can't change the outcome, but it
-        # keeps the report's pass/fail decision decoupled from scan_single_frame's
-        # internal (pre-merge) validate_disc call rather than assumed identical.
-        final_violations = validate_disc(disc)
+        # Re-run explicitly on the merged disc for the report's gate. location/
+        # lock aren't validated fields, but the evidence (main-stat value, roll
+        # suffixes, pct_seen) captured in conf MUST be passed: the evidence-only
+        # main_value_mismatch check is otherwise silently skipped, letting a
+        # main-key/level/rarity misread leak into the corrected export — the very
+        # T13 guarantee this tool exists to enforce (same evidence the live
+        # scan_discs path and _extract_disc's internal validate use).
+        evidence = evidence_from_conf(conf, len(disc.substats))
+        final_violations = validate_disc(disc, evidence)
         repairs = conf.get("_repairs", [])
 
         report_entry = {

@@ -144,6 +144,44 @@ def test_revalidate_excludes_unrepairable_disc_from_export(tmp_path, capsys):
     assert rep["summary"]["excluded"] == 1
 
 
+def test_revalidate_passes_evidence_so_main_value_mismatch_is_excluded(tmp_path):
+    """Regression: revalidate's export gate must run validate_disc WITH the
+    conf-captured evidence. The main_value_mismatch check is evidence-only, so
+    dropping evidence silently exports a main-key/level/rarity misread — the
+    exact leak T13 exists to prevent. Assert validate_disc receives the
+    reconstructed Evidence (main_value_raw from conf) and that a violation it
+    only raises given that evidence excludes the disc from the export."""
+    raw = [_raw_disc()]
+    archive = _make_archive(tmp_path, raw)
+    out = tmp_path / "export.json"
+
+    # scan_single_frame carries the main-stat value it read as evidence in conf.
+    conf = {"main_stat_value": 999.0}
+
+    seen_evidence = []
+
+    def _validate(disc, evidence=None):
+        seen_evidence.append(evidence)
+        # Mimic the real validator: main_value_mismatch fires ONLY when evidence
+        # is supplied. If the fix regresses (evidence dropped), this returns []
+        # and the disc leaks into the export → the assertions below fail.
+        if evidence is not None and evidence.main_value_raw == 999.0:
+            return [Violation("main_stat_value", "main_value_mismatch", 999.0, 2200.0, "error")]
+        return []
+
+    with patch("youkai_ocr.disc_scanner.scan_single_frame",
+               return_value=(_sample_disc(), conf)), \
+         patch("youkai_ocr.disc_rules.validate_disc", side_effect=_validate):
+        _cmd_revalidate(_args(archive, out))
+
+    # Evidence was reconstructed from conf and threaded into the gate.
+    assert seen_evidence and seen_evidence[-1] is not None
+    assert seen_evidence[-1].main_value_raw == 999.0
+    # And the evidence-only violation actually excluded the disc.
+    data = json.loads(out.read_text())
+    assert data["discs"] == []
+
+
 def test_revalidate_missing_panel_excluded_from_export_but_reported(tmp_path, capsys):
     raw = [_raw_disc(location="Corin", lock=True)]
     archive = _make_archive(tmp_path, raw)
