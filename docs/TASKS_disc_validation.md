@@ -276,7 +276,7 @@ appended by reconciliation bypass the gate (conf discarded in `scan_agents`).
 
 ---
 
-## T11 — Docs + wrap-up [ ]
+## T11 — Docs + wrap-up [x]
 
 **Do:** update `DESIGN_disc_validation.md` status + resolved OQs; final LOG entry with the
 before/after error counts; `README.md`/`RUNBOOK.md` note for `revalidate`; run full
