@@ -180,6 +180,32 @@ Flat/percent key choice is made *jointly* with the lattice snap (E3 fix): candid
 `{(flat_key, k), (pct_key, k)}` and the winner must satisfy both the lattice and the
 plausibility range; `pct_seen` breaks ties, main-stat-collision (E4) disqualifies a candidate.
 
+### Evidence reliability (T12 amendment, 2026-07-04)
+
+The original architecture assumed OCR evidence (`roll_suffix`, `pct_seen`, name
+text) is either *present-and-correct or cleanly absent*. T10's manual review of
+the 58 flagged discs disproved that: OCR can silently return wrong or empty data
+that looks like valid evidence. Three concrete modes, now guarded:
+
+1. **Bbox-boundary bleed**: wide values ("14.4%") straddle the substat
+   name/value crop split, so the name crop reads `"DEF +2 1"` — the trailing
+   bleed digit broke the end-anchored roll-suffix regex (38 discs), and the
+   value crop loses its leading digit (the co-occurring E2 "dropped leading 1").
+   Guard: suffix is a single digit matched at a whitespace boundary; merged
+   runs (`"+21"`) are refused.
+2. **Empty-read snap**: `rapidfuzz.process.extractOne("")` scores every
+   candidate 0 and returns the first arbitrarily — an unguarded empty query
+   silently becomes a confident-looking key. Guard: explicit `("", 0.0)`
+   empty-query returns in `normalize_main_stat`/`normalize_substat` (the other
+   normalizers were already safe behind score floors), plus dim-pass/2×
+   fallback ladders on the title and main-name reads (the bright threshold
+   intermittently blanks legible text; fallback-sourced fields are conf-capped
+   at 65 so they stay review-visible).
+3. **Garbled-source trust inversion**: the garble-tolerant title-bracket
+   fallback could confidently return a misread digit, outranking the panel's
+   dedicated slot widget. Guard: slot trust order is clean-bracket title >
+   panel widget (G5) > garbled title fallback.
+
 ### Integration points
 
 1. `_extract_disc` (`disc_scanner.py`): capture roll suffix before `_UPGRADE_RE` strips it;
@@ -190,7 +216,14 @@ plausibility range; `pct_seen` breaks ties, main-stat-collision (E4) disqualifie
    sweep: foreign names ≤ 46, legit partial titles ≥ 68). Below floor → `("", score)` →
    existing critical-fail path (`unknown_set`), not a snap.
 4. Export: unchanged ZOD schema. Repairs logged in `youkai_export.issues.json` with
-   before/after and rule used.
+   before/after and rule used. **T13 amendment (user decision, 2026-07-04): a disc
+   with residual error-severity violations after repair is EXCLUDED from the export
+   entirely** — it exists only in the failure report (`failed_validation` issues /
+   revalidate report entries with `excluded_from_export: true` and the full disc
+   payload). A known-wrong value must never reach downstream optimizers; the user
+   re-scans flagged discs in-game to recover them. Known gap: equipped-orphan
+   discs appended by location reconciliation bypass this gate (conf discarded in
+   `scan_agents`) — follow-up candidate.
 5. New CLI subcommand `revalidate`: replays an archive dir (`disc_NNNN/panel.png` →
    `scan_single_frame`) offline with the updated tables + validator + repair, and writes a
    corrected export + repair report. This is how the June 22 export gets fixed without
@@ -255,6 +288,14 @@ plausibility range; `pct_seen` breaks ties, main-stat-collision (E4) disqualifie
    separate, still-open bug is. See LOG's "T10 addendum" entry for full
    detail (Cluster 3) and the disc_2070 case (slot misread, a third and
    distinct cause of `sub_equals_main` in the same violation-code bucket).
+   **Fully resolved (T12, 2026-07-04):** empty-query guard added to
+   `normalize_main_stat`/`normalize_substat`, plus a dim-pass/2× fallback
+   ladder on the main-name read (the bright threshold was blanking the
+   legible crop; the dim profile reads "Wind DMG Bonus" cleanly) — both
+   discs now extract correctly with the main key review-capped at conf 65.
+   disc_2070's slot misread fixed by reordering slot trust: clean-bracket
+   title > panel slot widget (G5) > garble-tolerant title fallback. See LOG
+   T12 entry.
 6. **New, out-of-scope-for-T8 finding — flat/percent key-flip (E3) is the
    dominant real-world defect, not a minor variant of E2.** Across all fixture
    curation for T8, essentially every `sub_not_on_lattice`/`sub_equals_main`/

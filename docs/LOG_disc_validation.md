@@ -1118,3 +1118,108 @@ their sequencing relative to T11, and whether T11's PR should go out now
 (documenting the 58 as known follow-up work) or wait for these fixes first.
 
 **Switch to Opus (Planner) to resolve this escalation before continuing.**
+
+**Resolved (2026-07-04, Fable acting on both tiers at user request). Triage
+ruling:** a new **T12** was added to `TASKS_disc_validation.md`, sequenced
+*before* T11 — the wrap-up PR ships with the 43 discs fixed, not documented
+as indefinite review debt. On the specific questions: (1) the roll-suffix
+fix belongs in `normalizer.parse_roll_suffix` (pure, tested), NOT in
+`disc_rules.py` — T7's `test_repair_def_44_roll_suffix_and_pct_seen_flips_key`
+already proved `repair_disc` correct given good evidence, so the defect was
+squarely in evidence capture; re-deriving the suffix in disc_rules would
+duplicate a parse the scanner already does. (2) Yes, the empty-query bug
+generalizes: `normalize_substat` had the same unguarded `extractOne` call
+(agents/engines/sets were safe behind score floors); both got guards.
+(3) The slot misread is not OCR noise to chase — it's a trust-ordering bug
+(garbled-title fallback outranked the panel slot widget); fixed by
+reordering, no OCR work needed. See T12 entry below. Return to Worker at
+T11 after T12/T13.
+
+## T12 — OCR evidence-reliability fixes (Worker/Brain, 2026-07-04)
+
+Root-caused and fixed all 43 recoverable discs from the T10 manual review.
+Commits: dbec92a (normalizer), 9537ce8 (scanner + golden fixtures).
+
+**Root causes found (debugging against the real archive crops):**
+
+1. **Cluster 1 (38 discs) — bbox-boundary value bleed.** The substat name
+   bbox ends at x=339 and wide values ("14.4%") straddle that split: the
+   name crop reads `'DEF +2 1'` (value's leading digit bleeds in) and the
+   value crop reads only `'44%'`/`'4.4%'`. One geometry problem produced BOTH
+   the missing roll-suffix (end-anchored regex rejected the trailing bleed
+   digit) AND the "dropped leading 1" digit corruption (E2) that DESIGN had
+   catalogued as a separate Tesseract confusion. Verified byte-identical
+   `'DEF +2 1'` reads across 8 sampled discs at 4 different row positions.
+   Fix: `parse_roll_suffix` matches a single digit at a whitespace/end
+   boundary; merged bleed (`'+21'`) refuses (None). With the suffix present,
+   repair rule 1 + `pct_seen` resolves the def/def_ 3-way lattice tie.
+   Bonus: golden discs 0011/0293 promoted from fragile rule-3 budget
+   forcing to rule-1 — their suffixes were bleed-victims too.
+2. **Cluster 3a (2 discs) + the 2 critical_fails — bright-pass blanking, and
+   the unguarded empty query.** `read_line` bright pass returns `''` on
+   disc_0576/0618's legible "Wind DMG Bonus" main-name crop, and mangles
+   disc_1242/1243's title to `'v Gi s Bloom - 6'` (55.9 < floor 60) — but
+   the **dim pass reads all four perfectly** ("Wind DMG Bonus";
+   "Dawn's Bloom < [ 6 ] 4" → DawnsBloom @ 90). Fixes: (a) empty-query
+   guards in `normalize_main_stat`/`normalize_substat` (rapidfuzz returns an
+   arbitrary candidate at score 0 for `""`); (b) dim/2× fallback ladder on
+   the main-name read and a dim retry on the title read, mirroring the
+   substat rows' existing pattern; fallback-sourced fields conf-capped at 65
+   (review-visible, never fully trusted).
+3. **Cluster 3b (1 disc) — slot trust inversion.** disc_2070's title `[1]`
+   OCRs as `'[ 4'`; `_SLOT_RE_FALLBACK` (garble-tolerant) confidently
+   returned 4 while the G5 panel slot widget read `'[1]4'` → 1 correctly but
+   never ran (it only fired on total miss). Fix: slot trust order is now
+   clean-bracket title > panel widget > garbled-title fallback, via
+   `parse_slot(..., allow_garbled=False)`.
+
+**Full-archive revalidate re-run (docs/_t12_run/, 3899s):**
+
+| | T10 baseline | T12 |
+|---|---|---|
+| clean | 1912 | 1917 |
+| repaired | 120 | 158 |
+| unrepairable/flagged | **58** | **15** |
+
+Zero regressions (no newly-flagged discs). The 15 survivors are exactly the
+predicted unrecoverable set: 14 Cluster-2 discs (zero-value unreadable rows,
+`sub_not_on_lattice observed=0.0` — indices 149, 246, 696, 800, 1101, 1196,
+1216, 1347, 1419, 1537, 1699, 1712, 2047, 2067) + disc_0600 (dropped rows).
+All need an in-game re-scan; user has deferred that.
+
+Golden fixtures: disc_1242 + disc_2070 added (hand-read from panels);
+disc_0576 was already T8-curated with identical values (independent
+cross-validation of the hand-read). disc_0001 added to the repair
+call-path test asserting rule="roll_suffix".
+
+## T13 — failed discs excluded from export, report-only (Worker, 2026-07-04)
+
+User decision: *"I'd like failed discs to be excluded from export, but users
+to get a failure report to review."* Previously every disc landed in the
+export — unrepairable discs kept their known-wrong values (flagged only in
+side files), and revalidate's critical_fail path passed the OLD uncorrected
+discs.json entry through. Commit 9127c3a:
+
+- `_repair_and_fold_violations` stashes residual violations in
+  `conf["_violations"]`; `scan_discs` excludes any disc with error-severity
+  residuals and emits a `failed_validation` issue (disc payload + violations
+  + repairs) for review.txt/issues.json.
+- `revalidate`: unrepairable/critical_fail/missing_panel discs excluded from
+  the export; report entries gain `excluded_from_export: true` + the disc
+  payload; the report is now ALWAYS written (default `<out stem>.report.json`);
+  summary gains `exported`/`excluded`.
+- `scan --file` exits 1 with printed violations instead of exporting a
+  failed disc. review.txt gains a "FAILED DISCS — EXCLUDED from export"
+  section.
+- **Known gap for follow-up:** equipped-disc orphans appended by location
+  reconciliation bypass the gate (`scan_agents` discards their conf, so
+  `_violations` is lost). Rare edge (orphan AND failed); noted in T13's
+  commit message.
+
+**Delivered:** `youkai-portable/youkai-portable/export/youkai_export_revalidated.json`
+regenerated — 2075 discs (2090 − 15 excluded), T12 fixes applied — with the
+failure report alongside as `youkai_export_revalidated.report.json`.
+(The T12 run predated T13's exclusion code, so the delivered export was
+post-filtered by report index; future runs exclude natively.)
+
+Suite: 667 passed. Next: T11 wrap-up/PR.

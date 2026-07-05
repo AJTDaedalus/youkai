@@ -215,6 +215,67 @@ no repair path can fire on ambiguous input (asserted).
 
 ---
 
+## T12 — OCR evidence-reliability fixes from T10's manual review [x]
+
+**Added 2026-07-04 by escalation triage (see LOG "ESCALATION — three new bugs").
+Sequenced before T11: the wrap-up PR should ship with these 43 discs fixed, not
+documented as indefinite manual-review debt.**
+
+**Files:** `src/youkai_ocr/normalizer.py`, `src/youkai_ocr/disc_scanner.py`,
+`tests/test_normalizer.py`, `tests/test_disc_scanner.py`,
+`tests/fixtures/golden/` (disc_1242, disc_2070 panels + labels).
+
+**Do:**
+1. `parse_roll_suffix`: single-digit `+N` at a whitespace/end boundary instead of
+   end-of-string — wide values ("14.4%") straddle the substat name/value bbox split
+   and bleed their leading digit into the name crop (`"DEF +2 1"`), which the end
+   anchor silently rejected (Cluster 1, 38 discs). Merged bleed (`"+21"`) → None.
+2. `normalize_main_stat` / `normalize_substat`: empty-query guard → `("", 0.0)` —
+   rapidfuzz scores every candidate 0 for `""` and returns the first arbitrarily
+   (Cluster 3a; agents/engines/sets are already safe behind score floors).
+3. `_extract_disc` main-name read: dim-pass + 2× fallback ladder (mirrors substat
+   rows); fallback-sourced keys conf-capped at 65 (disc_0576/0618 "Wind DMG Bonus").
+4. `_extract_disc` slot trust order: clean-bracket title > panel slot widget (G5) >
+   garble-tolerant title fallback (disc_2070 "[1]" misread as "[ 4" → slot 4 →
+   wrong main-stat table). New `parse_slot(..., allow_garbled=False)` tier.
+5. `_extract_disc` title read: dim-pass retry when the bright read scores below the
+   set floor (disc_1242/1243 "Dawn's Bloom" → `'v Gi s Bloom'` critical_fail);
+   adopted dim reads conf-capped at 65.
+6. Re-run `revalidate` over the full June 22 archive; record before/after counts.
+
+**Acceptance:** suite green incl. new golden fixtures; disc_0001/0011/0293 repair
+via rule 1 (roll_suffix) through the real call path; full-archive revalidate shows
+Cluster 1 + Cluster 3 discs leaving the unrepairable/critical_fail buckets (results
+in LOG T12 entry).
+
+---
+
+## T13 — Failed discs excluded from export, report-only [x]
+
+**Added 2026-07-04 by user decision:** *"failed discs excluded from export,
+users get a failure report to review."* Previously failed discs shipped in the
+export with known-wrong values (revalidate's critical_fail path even passed the
+old uncorrected discs.json entry through).
+
+**Files:** `src/youkai_ocr/disc_scanner.py`, `src/youkai_ocr/cli.py`,
+`tests/test_disc_scanner.py`, `tests/test_cli_revalidate.py`.
+
+**Do:**
+1. `_repair_and_fold_violations` stashes residual violations in
+   `conf["_violations"]`; `scan_discs` excludes discs with error-severity
+   residuals and emits `failed_validation` issues (disc + violations + repairs).
+2. `revalidate`: unrepairable/critical_fail/missing_panel excluded from export;
+   report entries carry `excluded_from_export` + disc payload; report always
+   written (default `<out stem>.report.json`); summary gains exported/excluded.
+3. `scan --file`: exit 1 with violations printed instead of exporting.
+4. review.txt: "FAILED DISCS — EXCLUDED from export" section.
+
+**Acceptance:** suite green (667); delivered June 22 export regenerated at 2075
+discs with failure report alongside. **Follow-up noted:** equipped-orphan discs
+appended by reconciliation bypass the gate (conf discarded in `scan_agents`).
+
+---
+
 ## T11 — Docs + wrap-up [ ]
 
 **Do:** update `DESIGN_disc_validation.md` status + resolved OQs; final LOG entry with the
