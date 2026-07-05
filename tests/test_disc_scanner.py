@@ -384,7 +384,7 @@ def test_extract_disc_captures_roll_suffix_evidence():
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
     lines = [
         "Lv.4",     # level
-        "",         # main stat name (unused here)
+        "", "", "",  # main stat name — bright + dim + 2x fallback ladder (T12), all empty
         "", "",     # main stat value — native + 2x reads (unused here)
         "DEF +2",   # substat 1 name — bright pass, resolves immediately
         "30", "30", # substat 1 value — on-lattice (def base 15 x k=2), so T9's
@@ -595,13 +595,21 @@ def _load_repair_case(disc_id: str) -> dict:
 @pytest.mark.parametrize(
     "disc_id, repaired_field, before, after, rule",
     [
-        # E2 digit-drop, resolved by roll-suffix agreement (rule 1/roll_budget
-        # forcing — see disc_rules LOG T7 for why this lands on rule 3, not 1).
+        # E2 digit-drop. Landed on rule 3 (roll_budget) pre-T12 because the
+        # value bleed also ate this line's "+N"; the fixed parse_roll_suffix
+        # recovers it, so rule 1 now resolves it directly.
         ("disc_0011", "substat[1]",
-         {"key": "crit_dmg_", "value": 4.4}, {"key": "crit_dmg_", "value": 14.4}, "roll_budget"),
-        # E3 flat/percent key-flip masquerading as sub_equals_main.
+         {"key": "crit_dmg_", "value": 4.4}, {"key": "crit_dmg_", "value": 14.4}, "roll_suffix"),
+        # E3 flat/percent key-flip masquerading as sub_equals_main — same
+        # pre-T12 rule-3 → rule-1 promotion as disc_0011.
         ("disc_0293", "substat[3]",
-         {"key": "def", "value": 44.0}, {"key": "def_", "value": 14.4}, "roll_budget"),
+         {"key": "def", "value": 44.0}, {"key": "def_", "value": 14.4}, "roll_suffix"),
+        # T12/Cluster-1: the def_ 14.4% value bleeds its leading "1" into the
+        # name crop ("DEF +2 1"); the fixed parse_roll_suffix recovers the +2,
+        # so rule 1 (not budget forcing) resolves the 3-way lattice tie that
+        # left 38 archive discs unrepairable.
+        ("disc_0001", "substat[3]",
+         {"key": "def", "value": 44.0}, {"key": "def_", "value": 14.4}, "roll_suffix"),
     ],
 )
 def test_scan_single_frame_repairs_disc_through_real_call_path(disc_id, repaired_field, before, after, rule):
@@ -631,6 +639,62 @@ def test_scan_single_frame_repairs_disc_through_real_call_path(disc_id, repaired
     assert matching[0]["before"] == before
     assert matching[0]["after"] == after
     assert matching[0]["rule"] == rule
+
+
+def _load_golden_disc(disc_id: str) -> dict:
+    if not _GOLDEN_LABELS.exists():
+        pytest.skip("golden fixture labels.json missing")
+    labels = json.loads(_GOLDEN_LABELS.read_text())
+    by_id = {item["id"]: item for item in labels["discs"]}
+    if disc_id not in by_id:
+        pytest.skip(f"{disc_id} not in discs")
+    return by_id[disc_id]
+
+
+@pytest.mark.parametrize(
+    "disc_id, review_conf_key",
+    [
+        # Cluster-3a: bright pass blanks the legible "Wind DMG Bonus" main-name
+        # crop; the dim-pass fallback recovers it (review-capped at 65).
+        ("disc_0576", "main_stat"),
+        # Cluster-3b: title "[1]" misread as "[ 4" — the panel slot widget must
+        # outrank the garbled-bracket title fallback. Full-confidence read.
+        ("disc_2070", None),
+        # Bright pass mangles the title below the set floor ("v Gi s Bloom");
+        # the dim-pass title retry recovers DawnsBloom (review-capped at 65).
+        ("disc_1242", "set"),
+    ],
+)
+def test_scan_single_frame_t12_ocr_reliability_fixes(disc_id, review_conf_key):
+    """T10's manual review found three OCR failure modes where wrong/empty
+    reads masqueraded as valid evidence. Each panel must now extract exactly
+    its hand-read ground truth through the real call path; fallback-sourced
+    fields stay conf<=65 so they surface in issues for review."""
+    from youkai_ocr.disc_scanner import scan_single_frame
+
+    item = _load_golden_disc(disc_id)
+    panel_path = _GOLDEN_FIXTURES / "discs" / f"{disc_id}.png"
+    if not panel_path.exists():
+        pytest.skip(f"panel missing: {panel_path}")
+
+    frame = _golden_panel_to_frame(panel_path)
+    disc, conf = scan_single_frame(frame, _identity_calib())
+
+    assert disc is not None, conf.get("_fail_reason")
+    expect = item["expect"]
+    assert disc.set_key == expect["set_key"]
+    assert disc.slot_key == expect["slot_key"]
+    assert disc.level == expect["level"]
+    assert disc.main_stat_key == expect["main_stat_key"]
+    got_subs = [{"key": s.key, "value": s.value} for s in disc.substats]
+    exp_subs = [{"key": s["key"], "value": s["value"]} for s in expect["substats"]]
+    assert got_subs == exp_subs, f"{disc_id}: {got_subs} != {exp_subs}"
+
+    if review_conf_key is not None:
+        assert conf[review_conf_key] <= 65.0, (
+            f"{disc_id}: fallback-sourced {review_conf_key} must stay "
+            f"review-flagged, got conf {conf[review_conf_key]}"
+        )
 
 
 def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():

@@ -249,16 +249,31 @@ def _extract_disc(
     title_crop = _crop(frame, calib, _abs_bbox(_TITLE_REL, panel_origin))
     title_text = recognizer.read_text(title_crop, "white_text_on_dark").replace("\n", " ").strip()
 
-    panel_crop = _crop(frame, calib, _abs_bbox((0, 0, _PANEL_W, _PANEL_H), panel_origin))
-    slot = parse_slot(title_text)
-    if slot is None:
-        # Tier-3 fallback: long names clip/wrap the title "[N]"; recover it from
-        # the un-clipped panel (G5 / D-slot-panel-fallback). Runs only on miss.
-        slot = parse_slot_from_panel(panel_crop, recognizer)
-    conf["slot"] = 100.0 if slot else 0.0
-
     set_key, set_conf = normalize_disc_set(title_text)
+    if not set_key:
+        # Dim-pass retry (T12): the bright threshold intermittently blanks a
+        # perfectly legible title ("Dawn's Bloom" read as "v Gi s Bloom") —
+        # same failure the substat rows already recover from. Adopt the dim
+        # read only when it clears the set floor; cap conf at 65 so the disc
+        # still surfaces in issues for review (dim-read precedent).
+        dim_text = recognizer.read_text(title_crop, "white_text_on_dark_dim").replace("\n", " ").strip()
+        dim_key, dim_conf = normalize_disc_set(dim_text)
+        if dim_key:
+            title_text = dim_text
+            set_key, set_conf = dim_key, min(dim_conf, 65.0)
     conf["set"] = set_conf
+
+    # Slot trust order (T12): clean-bracket title read, then the panel's
+    # dedicated slot widget (G5), then the garble-tolerant title fallback.
+    # The old order let a garbled bracket ("[ 4" misread of "[1]", disc_2070)
+    # confidently beat the panel widget's correct "[1]" read.
+    panel_crop = _crop(frame, calib, _abs_bbox((0, 0, _PANEL_W, _PANEL_H), panel_origin))
+    slot = parse_slot(title_text, allow_garbled=False)
+    if slot is None:
+        slot = parse_slot_from_panel(panel_crop, recognizer)
+    if slot is None:
+        slot = parse_slot(title_text)
+    conf["slot"] = 100.0 if slot else 0.0
 
     # ── Rarity ────────────────────────────────────────────────────────────
     rarity_crop = _crop(frame, calib, _abs_bbox(_RARITY_REL, panel_origin))
@@ -287,8 +302,23 @@ def _extract_disc(
     # ── Main stat ─────────────────────────────────────────────────────────
     main_name_crop = _crop(frame, calib, _abs_bbox(_MAIN_NAME_REL, panel_origin))
     main_name_text = recognizer.read_line(main_name_crop, "white_text_on_dark").strip()
+    main_dim_pass = False
+    if not main_name_text:
+        # Dim-pass / 2× retries (T12): the bright pass intermittently blanks a
+        # legible main-stat name ("Wind DMG Bonus", disc_0576/0618) — mirror
+        # the substat rows' fallback ladder. Cap conf at 65 (dim precedent) so
+        # a fallback-sourced key is surfaced in issues, never fully trusted.
+        main_name_text = recognizer.read_line(main_name_crop, "white_text_on_dark_dim").strip()
+        main_dim_pass = True
+    if not main_name_text:
+        main_name_big = main_name_crop.resize(
+            (main_name_crop.width * 2, main_name_crop.height * 2), Image.LANCZOS
+        )
+        main_name_text = recognizer.read_line(main_name_big, "white_text_on_dark").strip()
 
     main_key, main_conf = normalize_main_stat(main_name_text, slot or 0)
+    if main_dim_pass and main_name_text:
+        main_conf = min(main_conf, 65.0)
     conf["main_stat"] = main_conf
 
     # Main-stat value (T5 evidence): displayed on every panel, exactly
