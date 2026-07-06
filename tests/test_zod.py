@@ -20,7 +20,6 @@ from youkai_ocr.zod import (
     to_zod_key,
 )
 
-
 # ---------------------------------------------------------------------------
 # to_zod_key parity (mirrors Rust test vectors)
 # ---------------------------------------------------------------------------
@@ -65,6 +64,7 @@ def test_to_zod_key(display: str, expected: str) -> None:
 # ---------------------------------------------------------------------------
 # Serialisation: field names must be camelCase, matching serde output
 # ---------------------------------------------------------------------------
+
 
 def _make_export() -> ZodExport:
     return ZodExport(
@@ -115,7 +115,16 @@ def test_export_top_level_keys() -> None:
 
 def test_disc_field_names() -> None:
     disc = _make_export().to_dict()["discs"][0]
-    expected_keys = {"setKey", "slotKey", "level", "rarity", "mainStatKey", "location", "lock", "substats"}
+    expected_keys = {
+        "setKey",
+        "slotKey",
+        "level",
+        "rarity",
+        "mainStatKey",
+        "location",
+        "lock",
+        "substats",
+    }
     assert set(disc.keys()) == expected_keys
 
 

@@ -3,11 +3,12 @@
 Drives the grid navigator (D1) over the W-Engine inventory, crops fields from
 each detail panel, runs B2/B3/B4 recognizers, and assembles ZodWEngine objects.
 """
+
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from PIL import Image
 
@@ -20,13 +21,13 @@ from .zod import ZodExport, ZodWEngine
 
 # ── Storage header: "W-Engine Storage [ <count> / <max> ]" ──────────────────
 
-_ENGINE_COUNT_BBOX = (20, 95, 560, 155)   # same header region as disc storage
+_ENGINE_COUNT_BBOX = (20, 95, 560, 155)  # same header region as disc storage
 _ENGINE_COUNT_RE = re.compile(r"\[\s*(\d+)\s*/\s*(\d+)\s*\]")
 
 
 def read_engine_count(
     frame: Image.Image, calib: CalibrationResult, recognizer: TextRecognizer
-) -> Optional[int]:
+) -> int | None:
     """Read current engine count from the storage header, or None if unreadable."""
     crop = frame.crop(calib.scale_bbox(_ENGINE_COUNT_BBOX))
     text = recognizer.read_line(crop, "white_text_on_dark")
@@ -42,11 +43,12 @@ def read_engine_count(
         return None
     return cur
 
+
 # ── Field bboxes in 1920×1080 reference coords (engine_inventory.detail_panel) ─
 
 _NAME_BBOX = (1421, 270, 1760, 368)
 _RARITY_BBOX = (1421, 402, 1452, 436)
-_LEVEL_BBOX = (1451, 402, 1640, 436)   # wide enough to include "/60" suffix
+_LEVEL_BBOX = (1451, 402, 1640, 436)  # wide enough to include "/60" suffix
 _REFINE_BBOX = (1582, 402, 1770, 436)
 
 # Lock strip offsets relative to cell center — identical to disc scanner.
@@ -61,25 +63,33 @@ CaptureFunc = Callable[[], Image.Image]
 
 # ── Crop helpers ──────────────────────────────────────────────────────────────
 
+
 def _crop(frame: Image.Image, calib: CalibrationResult, ref_bbox: tuple) -> Image.Image:
     x0, y0, x1, y1 = ref_bbox
-    return frame.crop((
-        int(x0 * calib.scale_x), int(y0 * calib.scale_y),
-        int(x1 * calib.scale_x), int(y1 * calib.scale_y),
-    ))
+    return frame.crop(
+        (
+            int(x0 * calib.scale_x),
+            int(y0 * calib.scale_y),
+            int(x1 * calib.scale_x),
+            int(y1 * calib.scale_y),
+        )
+    )
 
 
 def _lock_strip(
     frame: Image.Image, calib: CalibrationResult, cell_cx: int, cell_cy: int
 ) -> Image.Image:
     ref = (
-        cell_cx + _LOCK_STRIP_DX[0], cell_cy + _LOCK_STRIP_DY[0],
-        cell_cx + _LOCK_STRIP_DX[1], cell_cy + _LOCK_STRIP_DY[1],
+        cell_cx + _LOCK_STRIP_DX[0],
+        cell_cy + _LOCK_STRIP_DY[0],
+        cell_cx + _LOCK_STRIP_DX[1],
+        cell_cy + _LOCK_STRIP_DY[1],
     )
     return _crop(frame, calib, ref)
 
 
 # ── Single-engine extraction ──────────────────────────────────────────────────
+
 
 def _extract_engine(
     frame: Image.Image,
@@ -87,9 +97,9 @@ def _extract_engine(
     cell_cx: int,
     cell_cy: int,
     recognizer: TextRecognizer,
-    archive_dir: Optional[Path],
+    archive_dir: Path | None,
     engine_idx: int,
-) -> tuple[Optional[ZodWEngine], dict]:
+) -> tuple[ZodWEngine | None, dict]:
     """Extract one ZodWEngine from a captured frame.
 
     Returns (engine, confidence_map). engine is None on critical failure.
@@ -105,10 +115,9 @@ def _extract_engine(
     # ── Rarity ────────────────────────────────────────────────────────────
     rarity_crop = _crop(frame, calib, _RARITY_BBOX)
     try:
-        rarity = detect_rarity(rarity_crop)
+        detect_rarity(rarity_crop)
         conf["rarity"] = 95.0
     except ValueError:
-        rarity = 4
         conf["rarity"] = 0.0
 
     # ── Level + ascension (derived from "Lv. N/MAX") ──────────────────────
@@ -157,13 +166,14 @@ def _extract_engine(
 
 # ── Public scanner ────────────────────────────────────────────────────────────
 
+
 def scan_engines(
     capture_fn: CaptureFunc,
     calib: CalibrationResult,
-    archive_dir: Optional[Path] = None,
+    archive_dir: Path | None = None,
     grid: GridParams = DEFAULT_GRID,
     engine: str = "tesseract",
-    on_item: Optional[callable] = None,
+    on_item: callable | None = None,
 ) -> tuple[list[ZodWEngine], list[dict]]:
     """Scan the W-Engine inventory. Game must already be on that screen.
 
@@ -192,9 +202,7 @@ def scan_engines(
             col = cell_idx % grid.columns
             cx, cy = grid.cell_center(col, visual_row)
 
-            eng, conf = _extract_engine(
-                frame, calib, cx, cy, recognizer, archive_dir, cell_idx
-            )
+            eng, conf = _extract_engine(frame, calib, cx, cy, recognizer, archive_dir, cell_idx)
 
             scanned += 1
             if on_item is not None:
@@ -205,12 +213,14 @@ def scan_engines(
             else:
                 low = {k: v for k, v in conf.items() if v < _LOW_CONF_THRESHOLD}
                 if low:
-                    issues.append({
-                        "cell": cell_idx,
-                        "engine": eng.to_dict(),
-                        "status": "low_confidence",
-                        "fields": low,
-                    })
+                    issues.append(
+                        {
+                            "cell": cell_idx,
+                            "engine": eng.to_dict(),
+                            "status": "low_confidence",
+                            "fields": low,
+                        }
+                    )
                 engines.append(eng)
     finally:
         listener.stop()
@@ -232,14 +242,14 @@ def scan_engines(
 # Stars in this view are white OUTLINE stars (refinement=1 shows no gold fill).
 # Gold fill appears only for refinement>1 and is detected by count_filled_stars.
 
-_EE_X0 = 537    # left edge of detail text (past thumbnail)
-_EE_X1 = 1060   # right edge of detail panel
-_EE_NAME_Y0 = 118   # name always starts here
-_EE_NAME_Y1 = 215   # covers both 1-line and 2-line names
-_EE_SCAN_Y1 = 310   # bottom of combined name+level+star scan region
-_EE_STAR_X0 = 600   # left edge of star row (past specialty icon)
-_EE_STAR_Y0 = 210   # star row start covering 1-line and 2-line cases
-_EE_STAR_Y1 = 305   # star row end
+_EE_X0 = 537  # left edge of detail text (past thumbnail)
+_EE_X1 = 1060  # right edge of detail panel
+_EE_NAME_Y0 = 118  # name always starts here
+_EE_NAME_Y1 = 215  # covers both 1-line and 2-line names
+_EE_SCAN_Y1 = 310  # bottom of combined name+level+star scan region
+_EE_STAR_X0 = 600  # left edge of star row (past specialty icon)
+_EE_STAR_Y0 = 210  # star row start covering 1-line and 2-line cases
+_EE_STAR_Y1 = 305  # star row end
 _EE_LV_RE = re.compile(r"[Ll][vV][.\s]+(\d+)\s*/\s*(\d+)")
 
 
@@ -247,9 +257,9 @@ def scan_equipped_engine_frame(
     frame: Image.Image,
     calib: CalibrationResult,
     agent_key: str = "",
-    archive_dir: Optional[Path] = None,
+    archive_dir: Path | None = None,
     engine: str | TextRecognizer = "tesseract",
-) -> Optional[ZodWEngine]:
+) -> ZodWEngine | None:
     """Extract a ZodWEngine from an equip-slot select-view frame.
 
     Reads the engine detail panel shown in the agent equipment screen after
@@ -261,10 +271,14 @@ def scan_equipped_engine_frame(
 
     def _c(ref_bbox: tuple) -> Image.Image:
         x0, y0, x1, y1 = ref_bbox
-        return frame.crop((
-            int(x0 * calib.scale_x), int(y0 * calib.scale_y),
-            int(x1 * calib.scale_x), int(y1 * calib.scale_y),
-        ))
+        return frame.crop(
+            (
+                int(x0 * calib.scale_x),
+                int(y0 * calib.scale_y),
+                int(x1 * calib.scale_x),
+                int(y1 * calib.scale_y),
+            )
+        )
 
     # ── Name + level block (covers 1-line and 2-line names) ──────────────────
     block_crop = _c((_EE_X0, _EE_NAME_Y0, _EE_X1, _EE_SCAN_Y1))
@@ -307,12 +321,13 @@ def scan_equipped_engine_frame(
 
 # ── Offline single-frame extraction ──────────────────────────────────────────
 
+
 def scan_single_frame_engine(
     frame: Image.Image,
     calib: CalibrationResult,
-    archive_dir: Optional[Path] = None,
+    archive_dir: Path | None = None,
     engine: str = "tesseract",
-) -> tuple[Optional[ZodWEngine], dict]:
+) -> tuple[ZodWEngine | None, dict]:
     """Extract one engine from a static frame — no synthetic input, no navigator.
 
     Used for offline testing / debugging from reference screenshots.
@@ -324,6 +339,7 @@ def scan_single_frame_engine(
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
+
 
 def export_engines(engines: list[ZodWEngine], path: Path) -> None:
     """Write a ZodExport JSON containing the given engines (discs=[], characters=[])."""

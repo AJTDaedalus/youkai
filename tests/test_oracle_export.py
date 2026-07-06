@@ -7,6 +7,7 @@ Agents without golden-fixture images are skipped. Known scanner bugs (Bug-A,
 Bug-B, Bug-B2, Bug-C from oracle_talent.json) are xfailed per-agent so that
 the gate flags regressions without blocking on pre-existing issues.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,8 +16,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.agent_scanner import scan_single_frame_agent
+from youkai_ocr.capture import CalibrationResult
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
 ORACLE_EXPORT = FIXTURES / "oracle_export.json"
@@ -28,8 +29,10 @@ REFERENCE_H = 1080
 
 def _identity_calib() -> CalibrationResult:
     return CalibrationResult(
-        scale_x=1.0, scale_y=1.0,
-        frame_width=REFERENCE_W, frame_height=REFERENCE_H,
+        scale_x=1.0,
+        scale_y=1.0,
+        frame_width=REFERENCE_W,
+        frame_height=REFERENCE_H,
     )
 
 
@@ -105,6 +108,4 @@ def test_oracle_talent(idx_str, key, expected_talent, bug_reason):
         for skill, exp in expected_talent.items()
         if got.get(skill) != exp
     }
-    assert not mismatches, (
-        f"{key}: talent mismatches vs oracle_export.json: {mismatches}"
-    )
+    assert not mismatches, f"{key}: talent mismatches vs oracle_export.json: {mismatches}"

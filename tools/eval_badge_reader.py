@@ -14,32 +14,30 @@ Two evaluations:
 Run:
     python tools/eval_badge_reader.py
 """
+
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 
-import cv2
 import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from youkai_ocr.agent_scanner import _read_skill_badge, _b1_hole_count  # noqa: E402
+from youkai_ocr.agent_scanner import _b1_hole_count, _read_skill_badge  # noqa: E402
 
 GLYPHS_PATH = ROOT / "tests/fixtures/badge_glyphs.json"
 ORACLE_PATH = ROOT / "tests/fixtures/golden/oracle_talent.json"
-ARCHIVE_J9  = ROOT / "archive/live_20260609/live_20260610_065548"
-ARCHIVE_J17 = Path(
-    "/mnt/c/Users/laharre/OneDrive/Documents/youkai/archive/live_20260617_194045"
-)
+ARCHIVE_J9 = ROOT / "archive/live_20260609/live_20260610_065548"
+ARCHIVE_J17 = Path("/mnt/c/Users/laharre/OneDrive/Documents/youkai/archive/live_20260617_194045")
 
 GLYPH_W, GLYPH_H = 24, 36
 
 _SKILL_BBOXES = [
-    ( 930, 750, 1065, 780),
+    (930, 750, 1065, 780),
     (1110, 750, 1245, 780),
     (1295, 750, 1425, 780),
     (1470, 750, 1605, 780),
@@ -49,7 +47,10 @@ SKILL_ORDER = ("basic", "dodge", "assist", "special", "chain")
 
 # Oracle agent folder overrides for June-17 archive
 _J17_FOLDER: dict[str, int] = {
-    "Velina": 41, "Billy": 30, "Seth": 19, "Nekomata": 28,
+    "Velina": 41,
+    "Billy": 30,
+    "Seth": 19,
+    "Nekomata": 28,
 }
 
 
@@ -95,12 +96,9 @@ def _loso_classify(
 
 def run_loso() -> bool:
     data = json.loads(GLYPHS_PATH.read_text())
-    raw: dict[int, list[list[int]]] = {
-        int(k): v for k, v in data["glyphs"].items()
-    }
+    raw: dict[int, list[list[int]]] = {int(k): v for k, v in data["glyphs"].items()}
     all_glyphs: dict[int, list[np.ndarray]] = {
-        d: [np.array(s, dtype=np.float32) / 255.0 for s in samples]
-        for d, samples in raw.items()
+        d: [np.array(s, dtype=np.float32) / 255.0 for s in samples] for d, samples in raw.items()
     }
 
     print("=" * 60)
@@ -115,17 +113,23 @@ def run_loso() -> bool:
     #   digit 0  → only from bright badges (level 10), valid = {0..6}
     #   digits 7-9 → only from dim badges (level 7-9), valid = {1..9}
     #   digits 1-6 → mixed; use dim context {1..9} as the common case
-    _VALID_DIM    = set(range(1, 10))
+    _VALID_DIM = set(range(1, 10))
     _VALID_BRIGHT = set(range(7))
     _DIGIT_VALID: dict[int, set[int]] = {
         0: _VALID_BRIGHT,
-        1: _VALID_DIM, 2: _VALID_DIM, 3: _VALID_DIM,
-        4: _VALID_DIM, 5: _VALID_DIM, 6: _VALID_DIM,
-        7: _VALID_DIM, 8: _VALID_DIM, 9: _VALID_DIM,
+        1: _VALID_DIM,
+        2: _VALID_DIM,
+        3: _VALID_DIM,
+        4: _VALID_DIM,
+        5: _VALID_DIM,
+        6: _VALID_DIM,
+        7: _VALID_DIM,
+        8: _VALID_DIM,
+        9: _VALID_DIM,
     }
 
     total_correct = 0
-    total_tested  = 0
+    total_tested = 0
     per_digit: dict[int, tuple[int, int]] = {}
 
     for d in sorted(all_glyphs):
@@ -135,18 +139,19 @@ def run_loso() -> bool:
             per_digit[d] = (0, 0)
             continue
         valid = {
-            dd for dd in _DIGIT_VALID[d]
+            dd
+            for dd in _DIGIT_VALID[d]
             if dd in all_glyphs and (dd != d or len(all_glyphs[dd]) > 1)
         }
         correct = 0
-        for i, held_out in enumerate(samples):
+        for _, held_out in enumerate(samples):
             pred = _loso_classify(held_out, d, all_glyphs, valid)
             if pred == d:
                 correct += 1
         total_correct += correct
-        total_tested  += len(samples)
+        total_tested += len(samples)
         pct = 100.0 * correct / len(samples)
-        status = "OK" if correct == len(samples) else f"{len(samples)-correct} wrong"
+        status = "OK" if correct == len(samples) else f"{len(samples) - correct} wrong"
         print(f"  digit {d}: {correct}/{len(samples)} ({pct:.0f}%)  [{status}]")
         per_digit[d] = (correct, len(samples))
 
@@ -173,15 +178,15 @@ def run_t3_regression() -> bool:
     T3_CASES: list[tuple[str, str, int, int]] = [
         # Bug A — basic-7 was read as 1
         ("OrphieMagus", "basic", 7, 1),
-        ("Ben",         "basic", 7, 1),
+        ("Ben", "basic", 7, 1),
         # Bug B — 03 dim-pass bucketed as 5
-        ("Jane",        "assist", 3, 5),
-        ("Caesar",      "basic",  3, 5),
-        ("Rina",        "dodge",  3, 5),
+        ("Jane", "assist", 3, 5),
+        ("Caesar", "basic", 3, 5),
+        ("Rina", "dodge", 3, 5),
         # Bug B2 — 06 bright bucketed as 8
-        ("Rina",        "basic",  6, 8),
+        ("Rina", "basic", 6, 8),
         # Bug C — A-rank 15 misread as 10
-        ("Anton",       "basic",  15, 10),
+        ("Anton", "basic", 15, 10),
     ]
 
     print()
@@ -230,7 +235,7 @@ def run_t3_regression() -> bool:
 
 
 def main() -> None:
-    run_loso()          # informational — always returns True
+    run_loso()  # informational — always returns True
     t3_ok = run_t3_regression()
 
     print()

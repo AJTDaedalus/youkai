@@ -8,26 +8,27 @@ Also contains negative-control tests:
   - Night-Light-tinted frame is rejected by check_color_hygiene()
   - Wrong-aspect-ratio frame (1920×900) is rejected by calibrate()
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pytest
 from PIL import Image
 
+from youkai_ocr.agent_scanner import scan_single_frame_agent
 from youkai_ocr.capture import CalibrationResult, calibrate, check_color_hygiene
 from youkai_ocr.disc_scanner import scan_single_frame as scan_single_frame_disc
 from youkai_ocr.wengine_scanner import scan_single_frame_engine
-from youkai_ocr.agent_scanner import scan_single_frame_agent
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
 LABELS = FIXTURES / "labels.json"
 
 # §10 accuracy thresholds
-NAME_GATE = 0.99   # ≥99% of name/key fields must be correct
+NAME_GATE = 0.99  # ≥99% of name/key fields must be correct
 NUMERIC_GATE = 0.98  # ≥98% of numeric fields must be correct
 SILENT_WRONG_CONF = 70  # a wrong value must have confidence below this
 
@@ -48,12 +49,15 @@ def _panel_to_frame(panel_path: Path) -> Image.Image:
 
 def _identity_calib() -> CalibrationResult:
     return CalibrationResult(
-        scale_x=1.0, scale_y=1.0,
-        frame_width=REFERENCE_W, frame_height=REFERENCE_H,
+        scale_x=1.0,
+        scale_y=1.0,
+        frame_width=REFERENCE_W,
+        frame_height=REFERENCE_H,
     )
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="module")
 def labels() -> dict:
@@ -63,6 +67,7 @@ def labels() -> dict:
 
 
 # ── Disc replay ───────────────────────────────────────────────────────────────
+
 
 class DiscAccumulator:
     """Collects per-field hits/misses across the full disc set."""
@@ -79,21 +84,16 @@ class DiscAccumulator:
         if got == expected:
             self.name_correct += 1
         elif conf >= SILENT_WRONG_CONF:
-            self.silent_wrongs.append(
-                f"{label}: got={got!r} expected={expected!r} conf={conf:.0f}"
-            )
+            self.silent_wrongs.append(f"{label}: got={got!r} expected={expected!r} conf={conf:.0f}")
 
     def record_numeric(self, got: Any, expected: Any, conf: float, label: str) -> None:
         self.num_total += 1
         if got == expected or (
-            isinstance(got, float) and isinstance(expected, float)
-            and abs(got - expected) < 0.05
+            isinstance(got, float) and isinstance(expected, float) and abs(got - expected) < 0.05
         ):
             self.num_correct += 1
         elif conf >= SILENT_WRONG_CONF:
-            self.silent_wrongs.append(
-                f"{label}: got={got!r} expected={expected!r} conf={conf:.0f}"
-            )
+            self.silent_wrongs.append(f"{label}: got={got!r} expected={expected!r} conf={conf:.0f}")
 
 
 def test_disc_golden_replay(labels):
@@ -116,41 +116,40 @@ def test_disc_golden_replay(labels):
             continue
 
         # Name/key fields
-        acc.record_name(disc.set_key, expect["set_key"], conf.get("set", 0.0),
-                        f"{disc_id}.set_key")
-        acc.record_name(disc.slot_key, str(expect["slot_key"]), conf.get("slot", 0.0),
-                        f"{disc_id}.slot_key")
-        acc.record_name(disc.main_stat_key, expect["main_stat_key"],
-                        conf.get("main_stat", 0.0), f"{disc_id}.main_stat_key")
+        acc.record_name(disc.set_key, expect["set_key"], conf.get("set", 0.0), f"{disc_id}.set_key")
+        acc.record_name(
+            disc.slot_key, str(expect["slot_key"]), conf.get("slot", 0.0), f"{disc_id}.slot_key"
+        )
+        acc.record_name(
+            disc.main_stat_key,
+            expect["main_stat_key"],
+            conf.get("main_stat", 0.0),
+            f"{disc_id}.main_stat_key",
+        )
 
         # Numeric fields
-        acc.record_numeric(disc.level, expect["level"], conf.get("level", 0.0),
-                           f"{disc_id}.level")
+        acc.record_numeric(disc.level, expect["level"], conf.get("level", 0.0), f"{disc_id}.level")
         # Rarity is excluded: synthetic frame (black canvas) breaks rarity detection.
 
         # Substats: match by position; tolerate up to one extra/fewer row
         exp_subs = expect.get("substats", [])
         got_subs = disc.substats or []
-        for i, (got_sub, exp_sub) in enumerate(zip(got_subs, exp_subs)):
+        for i, (got_sub, exp_sub) in enumerate(zip(got_subs, exp_subs, strict=False)):
             sub_conf = conf.get(f"substat_{i}_key", 0.0)
-            acc.record_name(got_sub.key, exp_sub["key"], sub_conf,
-                            f"{disc_id}.sub{i}.key")
+            acc.record_name(got_sub.key, exp_sub["key"], sub_conf, f"{disc_id}.sub{i}.key")
             val_conf = conf.get(f"substat_{i}_val", 0.0)
-            acc.record_numeric(got_sub.value, exp_sub["value"], val_conf,
-                               f"{disc_id}.sub{i}.value")
+            acc.record_numeric(got_sub.value, exp_sub["value"], val_conf, f"{disc_id}.sub{i}.value")
 
     # §10 gate assertions
     assert not acc.silent_wrongs, (
-        f"Silent wrong values (conf ≥ {SILENT_WRONG_CONF}):\n"
-        + "\n".join(acc.silent_wrongs)
+        f"Silent wrong values (conf ≥ {SILENT_WRONG_CONF}):\n" + "\n".join(acc.silent_wrongs)
     )
     assert failures == [], "Extraction failures:\n" + "\n".join(failures)
 
     if acc.name_total:
         name_rate = acc.name_correct / acc.name_total
         assert name_rate >= NAME_GATE, (
-            f"Name accuracy {name_rate:.1%} < {NAME_GATE:.0%} "
-            f"({acc.name_correct}/{acc.name_total})"
+            f"Name accuracy {name_rate:.1%} < {NAME_GATE:.0%} ({acc.name_correct}/{acc.name_total})"
         )
     if acc.num_total:
         num_rate = acc.num_correct / acc.num_total
@@ -161,6 +160,7 @@ def test_disc_golden_replay(labels):
 
 
 # ── Engine replay ─────────────────────────────────────────────────────────────
+
 
 def test_engine_golden_replay(labels):
     calib = _identity_calib()
@@ -194,10 +194,11 @@ def test_engine_golden_replay(labels):
         def rv(got, expected, c, label):
             nonlocal num_total, num_correct
             num_total += 1
-            match = (got == expected or (
-                isinstance(got, (int, float)) and isinstance(expected, (int, float))
+            match = got == expected or (
+                isinstance(got, (int, float))
+                and isinstance(expected, (int, float))
                 and abs(float(got) - float(expected)) < 0.5
-            ))
+            )
             if match:
                 num_correct += 1
             elif c >= SILENT_WRONG_CONF:
@@ -205,32 +206,33 @@ def test_engine_golden_replay(labels):
 
         rn(engine.key, expect["key"], conf.get("key", 0.0), f"{eng_id}.key")
         rv(engine.level, expect["level"], conf.get("level", 0.0), f"{eng_id}.level")
-        rv(engine.ascension, expect["ascension"], conf.get("ascension", 0.0),
-           f"{eng_id}.ascension")
-        rv(engine.refinement, expect["refinement"], conf.get("refinement", 0.0),
-           f"{eng_id}.refinement")
+        rv(engine.ascension, expect["ascension"], conf.get("ascension", 0.0), f"{eng_id}.ascension")
+        rv(
+            engine.refinement,
+            expect["refinement"],
+            conf.get("refinement", 0.0),
+            f"{eng_id}.refinement",
+        )
 
-    assert not silent_wrongs, (
-        f"Silent wrong values (conf ≥ {SILENT_WRONG_CONF}):\n"
-        + "\n".join(silent_wrongs)
+    assert not silent_wrongs, f"Silent wrong values (conf ≥ {SILENT_WRONG_CONF}):\n" + "\n".join(
+        silent_wrongs
     )
     assert failures == [], "Extraction failures:\n" + "\n".join(failures)
 
     if name_total:
         rate = name_correct / name_total
         assert rate >= NAME_GATE, (
-            f"Engine name accuracy {rate:.1%} < {NAME_GATE:.0%} "
-            f"({name_correct}/{name_total})"
+            f"Engine name accuracy {rate:.1%} < {NAME_GATE:.0%} ({name_correct}/{name_total})"
         )
     if num_total:
         rate = num_correct / num_total
         assert rate >= NUMERIC_GATE, (
-            f"Engine numeric accuracy {rate:.1%} < {NUMERIC_GATE:.0%} "
-            f"({num_correct}/{num_total})"
+            f"Engine numeric accuracy {rate:.1%} < {NUMERIC_GATE:.0%} ({num_correct}/{num_total})"
         )
 
 
 # ── Agent replay ──────────────────────────────────────────────────────────────
+
 
 def test_agent_golden_replay(labels):
     calib = _identity_calib()
@@ -267,10 +269,11 @@ def test_agent_golden_replay(labels):
         def rv(got, expected, c, label):
             nonlocal num_total, num_correct
             num_total += 1
-            match = (got == expected or (
-                isinstance(got, (int, float)) and isinstance(expected, (int, float))
+            match = got == expected or (
+                isinstance(got, (int, float))
+                and isinstance(expected, (int, float))
                 and abs(float(got) - float(expected)) < 0.5
-            ))
+            )
             if match:
                 num_correct += 1
             elif c >= SILENT_WRONG_CONF:
@@ -278,39 +281,49 @@ def test_agent_golden_replay(labels):
 
         rn(agent.key, expect["key"], conf.get("key", 0.0), f"{agent_id}.key")
         rv(agent.level, expect["level"], conf.get("level", 0.0), f"{agent_id}.level")
-        rv(agent.constellation, expect["constellation"],
-           conf.get("mindscape", conf.get("constellation", 0.0)), f"{agent_id}.constellation")
-        rv(agent.ascension, expect["ascension"], conf.get("ascension", 0.0),
-           f"{agent_id}.ascension")
+        rv(
+            agent.constellation,
+            expect["constellation"],
+            conf.get("mindscape", conf.get("constellation", 0.0)),
+            f"{agent_id}.constellation",
+        )
+        rv(
+            agent.ascension,
+            expect["ascension"],
+            conf.get("ascension", 0.0),
+            f"{agent_id}.ascension",
+        )
 
         exp_talent: dict = expect.get("talent", {})
         got_talent_dict = agent.talent.to_dict() if agent.talent is not None else {}
         for skill_name, exp_val in exp_talent.items():
             skill_conf = conf.get(f"talent_{skill_name}", conf.get("talent", 0.0))
-            rv(got_talent_dict.get(skill_name), exp_val, float(skill_conf),
-               f"{agent_id}.talent.{skill_name}")
+            rv(
+                got_talent_dict.get(skill_name),
+                exp_val,
+                float(skill_conf),
+                f"{agent_id}.talent.{skill_name}",
+            )
 
-    assert not silent_wrongs, (
-        f"Silent wrong values (conf ≥ {SILENT_WRONG_CONF}):\n"
-        + "\n".join(silent_wrongs)
+    assert not silent_wrongs, f"Silent wrong values (conf ≥ {SILENT_WRONG_CONF}):\n" + "\n".join(
+        silent_wrongs
     )
     assert failures == [], "Extraction failures:\n" + "\n".join(failures)
 
     if name_total:
         rate = name_correct / name_total
         assert rate >= NAME_GATE, (
-            f"Agent name accuracy {rate:.1%} < {NAME_GATE:.0%} "
-            f"({name_correct}/{name_total})"
+            f"Agent name accuracy {rate:.1%} < {NAME_GATE:.0%} ({name_correct}/{name_total})"
         )
     if num_total:
         rate = num_correct / num_total
         assert rate >= NUMERIC_GATE, (
-            f"Agent numeric accuracy {rate:.1%} < {NUMERIC_GATE:.0%} "
-            f"({num_correct}/{num_total})"
+            f"Agent numeric accuracy {rate:.1%} < {NUMERIC_GATE:.0%} ({num_correct}/{num_total})"
         )
 
 
 # ── Negative controls ─────────────────────────────────────────────────────────
+
 
 def test_negative_tinted_frame_rejected():
     """A Night-Light-warm-tinted frame must be refused by check_color_hygiene()."""

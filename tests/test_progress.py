@@ -2,6 +2,7 @@
 
 import io
 import json
+
 import pytest
 
 from youkai_ocr.progress import NullEmitter, ProgressEmitter

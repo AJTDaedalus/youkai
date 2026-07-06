@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $v = '${{ github.ref_name }}'.TrimStart('v')
+          } else {
+            $v = python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Derived version: $v"
+
+      - name: Version gate (tag builds only)
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: python scripts/check_versions.py --expect ${{ steps.version.outputs.version }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: pip install -e ".[dev]" pyinstaller
+
+      - name: Set up Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-06-01
+          components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "youkai -> target"
+
+      - name: Cache Tesseract
+        uses: actions/cache@v4
+        with:
+          path: dist/youkai-ocr/tesseract
+          key: tesseract-w64-v1-${{ hashFiles('packaging/get_tesseract.ps1') }}
+
+      - name: Install Tesseract (elevated, avoids NSIS UAC detach)
+        shell: pwsh
+        run: choco install tesseract --no-progress -y
+
+      - name: Build portable bundle
+        shell: pwsh
+        run: |
+          & packaging\ci_build.ps1 -Version ${{ steps.version.outputs.version }}
+
+      - name: Determine pre-release flag
+        id: flags
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          $pre = ($v -match '-rc|-beta').ToString().ToLower()
+          "prerelease=$pre" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            youkai-portable-${{ steps.version.outputs.version }}.zip
+            youkai-portable-${{ steps.version.outputs.version }}.zip.sha256
+          generate_release_notes: true
+          prerelease: ${{ steps.flags.outputs.prerelease == 'true' }}
+          body: |
+            > **Fan-project disclaimer:** Youkai is an unofficial, non-commercial fan tool.
+            > Not affiliated with HoYoverse (COGNOSPHERE PTE. LTD.). See [DISCLAIMER.md](DISCLAIMER.md) for full text.
+
+            ---
+
+      - name: Upload artifact (manual dispatch rehearsal)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: youkai-portable-${{ steps.version.outputs.version }}-${{ github.sha }}
+          path: youkai-portable-${{ steps.version.outputs.version }}.zip
+          retention-days: 7

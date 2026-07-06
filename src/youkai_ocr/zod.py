@@ -7,9 +7,7 @@ must be applied to both files in lockstep.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 def to_zod_key(value: str) -> str:
@@ -49,18 +47,18 @@ class ZodSubstat:
         return {"key": self.key, "value": self.value}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ZodSubstat":
+    def from_dict(cls, d: dict) -> ZodSubstat:
         return cls(key=d["key"], value=d["value"])
 
 
 @dataclass
 class ZodDisc:
     set_key: str
-    slot_key: str          # "1" through "6"
+    slot_key: str  # "1" through "6"
     level: int
-    rarity: int            # 4 = S-rank, 3 = A-rank, 2 = B-rank
+    rarity: int  # 4 = S-rank, 3 = A-rank, 2 = B-rank
     main_stat_key: str
-    location: str          # agent ZOD key, or "" if unequipped
+    location: str  # agent ZOD key, or "" if unequipped
     lock: bool
     substats: list[ZodSubstat] = field(default_factory=list)
 
@@ -77,7 +75,7 @@ class ZodDisc:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ZodDisc":
+    def from_dict(cls, d: dict) -> ZodDisc:
         return cls(
             set_key=d["setKey"],
             slot_key=d["slotKey"],
@@ -96,7 +94,7 @@ class ZodWEngine:
     level: int
     ascension: int
     refinement: int
-    location: str          # agent ZOD key, or "" if unequipped
+    location: str  # agent ZOD key, or "" if unequipped
     lock: bool
 
     def to_dict(self) -> dict:
@@ -110,7 +108,7 @@ class ZodWEngine:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ZodWEngine":
+    def from_dict(cls, d: dict) -> ZodWEngine:
         return cls(
             key=d["key"],
             level=d["level"],
@@ -124,12 +122,13 @@ class ZodWEngine:
 @dataclass
 class ZodTalent:
     """Six talent/skill levels for one agent."""
+
     basic: int
     dodge: int
     assist: int
     special: int
     chain: int
-    core: int              # Core Passive rank (0-6 in-game A–F nodes + inactive)
+    core: int  # Core Passive rank (0-6 in-game A–F nodes + inactive)
 
     def to_dict(self) -> dict:
         return {
@@ -146,9 +145,9 @@ class ZodTalent:
 class ZodAgent:
     key: str
     level: int
-    constellation: int     # Mindscape Cinema level 0-6
+    constellation: int  # Mindscape Cinema level 0-6
     ascension: int
-    talent: Optional[ZodTalent] = None
+    talent: ZodTalent | None = None
 
     def to_dict(self) -> dict:
         d: dict = {

@@ -11,6 +11,7 @@ Negatives use committed fixtures copied from the live archive:
     bogus base_stats.png; byte-identical to skills.png in agent_000).
   - agent_nav/menu.png — the agent menu (reference_12), no tab bar.
 """
+
 from pathlib import Path
 
 import numpy as np
@@ -18,13 +19,13 @@ import pytest
 from PIL import Image
 
 from youkai_ocr.agent_scanner import (
+    _TAB_BASE,
+    _TAB_EQUIP_IDX,
+    _TAB_SKILLS_IDX,
     _on_detail_page,
     _tab_active,
     _tab_content_rendered,
     _tab_yellow_frac,
-    _TAB_BASE,
-    _TAB_SKILLS_IDX,
-    _TAB_EQUIP_IDX,
 )
 from youkai_ocr.capture import CalibrationResult
 
@@ -49,11 +50,15 @@ def _load_fix(name: str) -> Image.Image:
 
 # ── Positives: the open tab is yellow-active, and we're on the detail page ─────
 
-@pytest.mark.parametrize("ref,tab", [
-    ("reference_3_agent_page.png",       _TAB_BASE),
-    ("reference_4_agent_skills_page.png", _TAB_SKILLS_IDX),
-    ("reference_7_agent_equipment.png",  _TAB_EQUIP_IDX),
-])
+
+@pytest.mark.parametrize(
+    "ref,tab",
+    [
+        ("reference_3_agent_page.png", _TAB_BASE),
+        ("reference_4_agent_skills_page.png", _TAB_SKILLS_IDX),
+        ("reference_7_agent_equipment.png", _TAB_EQUIP_IDX),
+    ],
+)
 def test_active_tab_detected(ref, tab):
     frame = _load_ref(ref)
     assert _tab_active(frame, _CALIB, tab), f"{ref}: expected tab {tab} active"
@@ -69,6 +74,7 @@ def test_only_the_open_tab_is_yellow():
 
 
 # ── Negatives: the wipe and the menu are NOT the detail page ───────────────────
+
 
 def test_wipe_is_not_detail_page():
     frame = _load_fix("wipe.png")
@@ -89,10 +95,13 @@ def test_blank_frame_is_not_detail_page():
 
 # ── H17: content-render gate (pill-yellow alone banks half-painted frames) ─────
 
+
 def test_content_gate_accepts_rendered_pages():
     # A fully-rendered Base / Skills page passes the content gate.
     assert _tab_content_rendered(_load_ref("reference_3_agent_page.png"), _CALIB, _TAB_BASE)
-    assert _tab_content_rendered(_load_ref("reference_4_agent_skills_page.png"), _CALIB, _TAB_SKILLS_IDX)
+    assert _tab_content_rendered(
+        _load_ref("reference_4_agent_skills_page.png"), _CALIB, _TAB_SKILLS_IDX
+    )
 
 
 def test_content_gate_rejects_unrendered_frame():

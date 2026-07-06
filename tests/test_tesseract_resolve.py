@@ -1,4 +1,5 @@
 """T13a: tests for resolve_tesseract() — bundled, default-install, and PATH slots."""
+
 from __future__ import annotations
 
 import os
@@ -7,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from youkai_ocr.recognize import resolve_tesseract
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -67,12 +67,12 @@ def test_frozen_bundle_no_tessdata_returns_none_prefix(
 # ── Slot 3: fallthrough to PATH ────────────────────────────────────────────────
 
 
-def test_no_bundle_falls_through_to_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_bundle_falls_through_to_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Empty app_root → no bundle → no Windows default → return (None, None)."""
     # Use a non-win32 platform so slot 2 (Program Files) is skipped.
-    monkeypatch.setattr("youkai_ocr.recognize.sys", _FrozenSys(tmp_path, platform="linux"), raising=False)
+    monkeypatch.setattr(
+        "youkai_ocr.recognize.sys", _FrozenSys(tmp_path, platform="linux"), raising=False
+    )
 
     cmd, tessdata = resolve_tesseract()
 
@@ -80,11 +80,11 @@ def test_no_bundle_falls_through_to_path(
     assert tessdata is None
 
 
-def test_no_bundle_win32_no_programfiles(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_bundle_win32_no_programfiles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Empty app_root on win32 where Program Files path doesn't exist → (None, None)."""
-    monkeypatch.setattr("youkai_ocr.recognize.sys", _FrozenSys(tmp_path, platform="win32"), raising=False)
+    monkeypatch.setattr(
+        "youkai_ocr.recognize.sys", _FrozenSys(tmp_path, platform="win32"), raising=False
+    )
     # Program Files path won't exist on WSL/CI — so slot 2 is skipped and we fall to PATH.
     cmd, tessdata = resolve_tesseract()
 
@@ -104,6 +104,7 @@ def test_init_sets_pytesseract_cmd(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("youkai_ocr.recognize.sys", _FrozenSys(app_root), raising=False)
 
     import pytesseract
+
     import youkai_ocr.recognize as rec
 
     original_cmd = pytesseract.pytesseract.tesseract_cmd

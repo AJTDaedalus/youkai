@@ -12,12 +12,13 @@ overlay can never drift from what the scanner really does.
 Saved alongside each archived frame as `*_overlay.png` when `--debug-overlays`
 is passed (see cli.py).  Pure visualization — no effect on scan logic.
 """
+
 from __future__ import annotations
 
 from PIL import Image, ImageDraw
 
-from .capture import CalibrationResult
 from . import agent_scanner as A
+from .capture import CalibrationResult
 
 # Colors: click targets = red, OCR/region crops = cyan, gates = yellow,
 # the active/!current target = bright green.
@@ -33,8 +34,12 @@ def _pt(calib: CalibrationResult, x: int, y: int) -> tuple[int, int]:
 
 def _box(calib: CalibrationResult, bbox: tuple) -> tuple:
     x0, y0, x1, y1 = bbox
-    return (round(x0 * calib.scale_x), round(y0 * calib.scale_y),
-            round(x1 * calib.scale_x), round(y1 * calib.scale_y))
+    return (
+        round(x0 * calib.scale_x),
+        round(y0 * calib.scale_y),
+        round(x1 * calib.scale_x),
+        round(y1 * calib.scale_y),
+    )
 
 
 def _dot(draw: ImageDraw.ImageDraw, calib, x, y, color, label="", r=10):
@@ -68,8 +73,11 @@ def draw_base_overlay(frame: Image.Image, calib: CalibrationResult) -> Image.Ima
     # Bottom tabs (click centers + active-pill bboxes).
     for bbox in A._TAB_ACTIVE_BBOXES:
         _rect(d, calib, bbox, _GATE, "")
-    for c, lbl in ((A._TAB_BASE_STATS, "Base"), (A._TAB_SKILLS, "Skills"),
-                   (A._TAB_EQUIPMENT, "Equip")):
+    for c, lbl in (
+        (A._TAB_BASE_STATS, "Base"),
+        (A._TAB_SKILLS, "Skills"),
+        (A._TAB_EQUIPMENT, "Equip"),
+    ):
         _dot(d, calib, *c, _CLICK, lbl)
     return out
 
@@ -80,7 +88,7 @@ def draw_skills_overlay(frame: Image.Image, calib: CalibrationResult) -> Image.I
     d = ImageDraw.Draw(out)
     _rect(d, calib, A._MINDSCAPE_BBOX, _CROP, "cinema")
     for i, bbox in enumerate(A._SKILL_LEVEL_BBOXES):
-        _rect(d, calib, bbox, _CROP, f"sk{i+1}")
+        _rect(d, calib, bbox, _CROP, f"sk{i + 1}")
     for i, bbox in enumerate(A._CORE_NODE_BBOXES):
         _rect(d, calib, bbox, _GATE, "ABCDEF"[i])
     return out
@@ -99,10 +107,17 @@ def draw_equip_overlay(
     out = frame.copy().convert("RGB")
     d = ImageDraw.Draw(out)
     for i, (cx, cy) in enumerate(A._ALL_SLOT_CENTERS):
-        is_active = (i == active_slot)
-        lbl = ("engine" if i == 6 else f"slot{i+1}")
-        _dot(d, calib, cx, cy, _ACTIVE if is_active else _CLICK,
-             ("*" + lbl if is_active else lbl), r=14 if is_active else 10)
+        is_active = i == active_slot
+        lbl = "engine" if i == 6 else f"slot{i + 1}"
+        _dot(
+            d,
+            calib,
+            cx,
+            cy,
+            _ACTIVE if is_active else _CLICK,
+            ("*" + lbl if is_active else lbl),
+            r=14 if is_active else 10,
+        )
     # Equip render-gate sample window.
     gx, gy = A._EQUIP_GATE_CENTER
     gr = A._EQUIP_GATE_RADIUS

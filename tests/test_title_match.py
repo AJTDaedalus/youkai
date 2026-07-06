@@ -5,14 +5,15 @@ Covers TASK-1 acceptance criteria:
 - resolve_accepted_titles: env parsing, extra iterable, dedup, blank-drop
 - TASK-3b: DEFAULT_GAME_TITLES includes both retail and chiaki-ng built-in
 """
+
 from youkai_ocr.capture import (
     DEFAULT_GAME_TITLES,
     resolve_accepted_titles,
     title_matches,
 )
 
-
 # ── DEFAULT_GAME_TITLES (TASK-3b) ──────────────────────────────────────────────
+
 
 def test_defaults_include_retail():
     assert "ZenlessZoneZero" in DEFAULT_GAME_TITLES
@@ -23,6 +24,7 @@ def test_defaults_include_chiaki_ng():
 
 
 # ── title_matches — default accepted set ──────────────────────────────────────
+
 
 def test_default_accepts_exact_game_title():
     assert title_matches("ZenlessZoneZero", DEFAULT_GAME_TITLES)
@@ -47,6 +49,7 @@ def test_default_rejects_blank_title():
 
 # ── title_matches — custom accepted set ───────────────────────────────────────
 
+
 def test_custom_accepts_after_add():
     accepted = resolve_accepted_titles(extra=["Chiaki"])
     assert title_matches("Chiaki Remote Play", accepted)
@@ -69,10 +72,11 @@ def test_custom_match_strips_whitespace():
 def test_retail_still_matches_after_adding_chiaki():
     accepted = resolve_accepted_titles(extra=["Chiaki"])
     assert title_matches("ZenlessZoneZero", accepted)
-    assert title_matches("chiaki-ng", accepted)   # built-in chiaki-ng also present
+    assert title_matches("chiaki-ng", accepted)  # built-in chiaki-ng also present
 
 
 # ── resolve_accepted_titles — env parsing ─────────────────────────────────────
+
 
 def test_env_comma_split():
     result = resolve_accepted_titles(env="A,B")
@@ -104,6 +108,7 @@ def test_defaults_always_present_with_env():
 
 # ── resolve_accepted_titles — dedup ───────────────────────────────────────────
 
+
 def test_dedup_preserves_order():
     # ZenlessZoneZero is already in defaults; passing it again must not duplicate it
     result = resolve_accepted_titles(extra=["ZenlessZoneZero", "NewClient"])
@@ -118,10 +123,11 @@ def test_no_blank_from_empty_env():
 
 def test_no_blank_from_none_extra():
     result = resolve_accepted_titles(extra=None, env=None)
-    assert all(t for t in result)   # no blank strings
+    assert all(t for t in result)  # no blank strings
 
 
 # ── resolve_accepted_titles — return type ────────────────────────────────────
+
 
 def test_returns_tuple():
     assert isinstance(resolve_accepted_titles(), tuple)

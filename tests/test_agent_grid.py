@@ -9,6 +9,7 @@ Ownership expectations:
   ref_13 — scrolled down, different agents, all 8 owned (8/8 YES)
   ref_14 — locked agents at top rows (rows 0-1), owned at bottom rows (rows 2-3) → 4 owned
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,6 +36,7 @@ _REF14 = _SCREENSHOTS / "reference_14_agent_menu_scrolled_up.png"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _identity_calib() -> CalibrationResult:
     return CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
 
@@ -48,6 +50,7 @@ def _load_game_frame(path: Path) -> Image.Image:
 
 # ── Column/row structure sanity ───────────────────────────────────────────────
 
+
 def test_grid_constants_structure():
     assert len(_AGENT_GRID_ROW_CENTERS) == 4
     for cy in _AGENT_GRID_ROW_CENTERS:
@@ -59,6 +62,7 @@ def test_grid_constants_structure():
 
 
 # ── ref_12: all 8 cells owned ────────────────────────────────────────────────
+
 
 @pytest.mark.skipif(not _REF12.exists(), reason="reference_12 not present")
 def test_ref12_all_owned():
@@ -82,6 +86,7 @@ def test_ref12_cell_centers_in_range():
 
 # ── ref_13: scrolled down, all 8 cells owned ─────────────────────────────────
 
+
 @pytest.mark.skipif(not _REF13.exists(), reason="reference_13 not present")
 def test_ref13_all_owned():
     frame = _load_game_frame(_REF13)
@@ -91,6 +96,7 @@ def test_ref13_all_owned():
 
 
 # ── ref_14: locked top rows (0-1), owned bottom rows (2-3) ───────────────────
+
 
 @pytest.mark.skipif(not _REF14.exists(), reason="reference_14 not present")
 def test_ref14_only_owned_bottom():
@@ -107,7 +113,7 @@ def test_ref14_owned_in_correct_rows():
     cells = detect_owned_agent_cells(frame, calib)
     owned_cys = {cy for _, cy in cells}
     locked_rows = set(_AGENT_GRID_ROW_CENTERS[:2])
-    owned_rows  = set(_AGENT_GRID_ROW_CENTERS[2:])
+    owned_rows = set(_AGENT_GRID_ROW_CENTERS[2:])
     assert owned_cys == owned_rows, (
         f"Expected owned rows {owned_rows}, got {owned_cys}. "
         f"Locked rows {locked_rows} must be skipped."

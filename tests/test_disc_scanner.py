@@ -4,22 +4,22 @@ C1/C2 (live game interaction) are not tested here — those require the game.
 This file covers: export_discs round-trip, GridParams geometry, and the
 _crop helper math.
 """
+
 from __future__ import annotations
 
 import json
 import tempfile
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
 from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.disc_scanner import _crop, export_discs
-from youkai_ocr.grid import DEFAULT_GRID, GridParams
+from youkai_ocr.grid import DEFAULT_GRID
 from youkai_ocr.zod import ZodDisc, ZodSubstat
 
-
 # ── GridParams ────────────────────────────────────────────────────────────────
+
 
 def test_cell_center_origin():
     g = DEFAULT_GRID
@@ -42,8 +42,8 @@ def test_cell_center_row_pitch():
     assert cx1 == cx0
 
 
-
 # ── _crop helper ──────────────────────────────────────────────────────────────
+
 
 def test_crop_identity():
     # At 1:1 scale (1920×1080), crop should be exact.
@@ -62,6 +62,7 @@ def test_crop_scaled():
 
 
 # ── export_discs ──────────────────────────────────────────────────────────────
+
 
 def _make_disc(slot: int = 1, set_key: str = "AstralVoice") -> ZodDisc:
     return ZodDisc(
@@ -124,16 +125,22 @@ def test_export_creates_parent_dirs():
 
 # ── Storage count reader ──────────────────────────────────────────────────────
 
+
 def test_read_disc_count_from_real_header():
     from pathlib import Path
-    from PIL import Image
-    from youkai_ocr.capture import calibrate
-    from youkai_ocr.recognize import make_recognizer
-    from youkai_ocr.disc_scanner import read_disc_count
 
-    fixture = Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
+    from PIL import Image
+
+    from youkai_ocr.capture import calibrate
+    from youkai_ocr.disc_scanner import read_disc_count
+    from youkai_ocr.recognize import make_recognizer
+
+    fixture = (
+        Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
+    )
     if not fixture.exists():
         import pytest
+
         pytest.skip("fixture missing")
     im = Image.open(fixture)
     count = read_disc_count(im, calibrate(im), make_recognizer("tesseract"))
@@ -144,11 +151,13 @@ def test_read_disc_count_from_real_header():
 
 # ── Parallel OCR pipeline ─────────────────────────────────────────────────────
 
+
 def test_scan_discs_parallel_preserves_order(monkeypatch):
     """Workers finish OCR out of order; results must still come back in scan order."""
     import random
     import time as _time
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
@@ -174,7 +183,7 @@ def test_scan_discs_parallel_preserves_order(monkeypatch):
             return {"idx": self.idx}
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
-        _time.sleep(random.uniform(0, 0.01))   # scramble completion order
+        _time.sleep(random.uniform(0, 0.01))  # scramble completion order
         return Stub(cell_idx), {"set": 99.0}
 
     monkeypatch.setattr(ds, "GridNavigator", FakeNav)
@@ -190,25 +199,31 @@ def test_scan_discs_parallel_preserves_order(monkeypatch):
 
 def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
     """on_item is called exactly once per disc with monotonically increasing scanned."""
-    import time as _time
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     N = 6
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             for i in range(N):
                 yield i, 0, f"frame{i}"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def __init__(self, idx): self.idx = idx
-        def to_dict(self): return {}
+        def __init__(self, idx):
+            self.idx = idx
+
+        def to_dict(self):
+            return {}
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
         return Stub(cell_idx), {"set": 99.0}
@@ -221,7 +236,9 @@ def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
 
     calls: list[tuple[int, int | None]] = []
     discs, _ = ds.scan_discs(
-        lambda: "preflight", calib=None, grid=DEFAULT_GRID,
+        lambda: "preflight",
+        calib=None,
+        grid=DEFAULT_GRID,
         on_item=lambda s, t: calls.append((s, t)),
     )
 
@@ -229,28 +246,37 @@ def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
     scanned_values = [s for s, _ in calls]
     # Disc scanner uses a thread pool — completion order is non-deterministic,
     # but every value 1..N must appear exactly once.
-    assert sorted(scanned_values) == list(range(1, N + 1)), f"expected {{1..N}}, got: {scanned_values}"
+    assert sorted(scanned_values) == list(range(1, N + 1)), (
+        f"expected {{1..N}}, got: {scanned_values}"
+    )
     assert all(t == N for _, t in calls), "total should equal N for all calls"
 
 
 def test_scan_discs_on_item_omitted_no_error(monkeypatch):
     """on_item=None (default) causes no error."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             for i in range(3):
                 yield i, 0, f"frame{i}"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def __init__(self, idx): self.idx = idx
-        def to_dict(self): return {}
+        def __init__(self, idx):
+            self.idx = idx
+
+        def to_dict(self):
+            return {}
 
     monkeypatch.setattr(ds, "GridNavigator", FakeNav)
     monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())

@@ -1,3 +1,6 @@
+# ── Windows Mark-of-the-Web NTFS streams (break `git checkout` on Windows) ────
+*Zone.Identifier
+
 # ── Python artifacts ──────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

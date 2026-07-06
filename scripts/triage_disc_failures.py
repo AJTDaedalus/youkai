@@ -7,6 +7,7 @@ title field only, which is what gates a critical fail:
     fail iff  not slot  OR  set_conf < 30
 Writes a JSON + a human summary so the failure set is durable on disk.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,8 +16,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from youkai_ocr.normalizer import normalize_disc_set, parse_slot
 from youkai_ocr.recognize import make_recognizer
-from youkai_ocr.normalizer import parse_slot, normalize_disc_set
 
 CRIT = 30.0
 
@@ -37,14 +38,16 @@ def main(archive: str, out: str) -> None:
         set_key, set_conf = normalize_disc_set(text)
         if not slot or set_conf < CRIT:
             reason = "no_slot" if not slot else f"low_set_conf:{set_conf:.0f}"
-            fails.append({
-                "dir": dd.name,
-                "reason": reason,
-                "slot": slot,
-                "set_key": set_key,
-                "set_conf": round(set_conf, 1),
-                "ocr": text,
-            })
+            fails.append(
+                {
+                    "dir": dd.name,
+                    "reason": reason,
+                    "slot": slot,
+                    "set_key": set_key,
+                    "set_conf": round(set_conf, 1),
+                    "ocr": text,
+                }
+            )
         if n % 100 == 0:
             print(f"  ...{n} discs, {len(fails)} fails so far", flush=True)
             Path(out).write_text(json.dumps({"scanned": n, "fails": fails}, indent=2))

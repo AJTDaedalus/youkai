@@ -1,4 +1,5 @@
 """Tests for D1/D2: W-Engine scanner helpers and export logic."""
+
 from __future__ import annotations
 
 import json
@@ -21,22 +22,26 @@ _CALIB_1080 = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, fram
 
 # ── parse_level_with_ascension ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("text,expected_level,expected_asc", [
-    ("Lv. 10/10",  10, 0),
-    ("Lv. 20/20",  20, 1),
-    ("Lv. 30/30",  30, 2),
-    ("Lv. 40/40",  40, 3),
-    ("Lv. 50/50",  50, 4),
-    ("Lv. 60/60",  60, 5),
-    # Partial ascension: level below the cap
-    ("Lv. 15/20",  15, 1),
-    ("Lv. 1/10",    1, 0),
-    # No slash: level only, ascension falls back to 0
-    ("Lv 60",      60, 0),
-    ("60",         60, 0),
-    # OCR noise
-    ("Lv. 40 /40", 40, 3),
-])
+
+@pytest.mark.parametrize(
+    "text,expected_level,expected_asc",
+    [
+        ("Lv. 10/10", 10, 0),
+        ("Lv. 20/20", 20, 1),
+        ("Lv. 30/30", 30, 2),
+        ("Lv. 40/40", 40, 3),
+        ("Lv. 50/50", 50, 4),
+        ("Lv. 60/60", 60, 5),
+        # Partial ascension: level below the cap
+        ("Lv. 15/20", 15, 1),
+        ("Lv. 1/10", 1, 0),
+        # No slash: level only, ascension falls back to 0
+        ("Lv 60", 60, 0),
+        ("60", 60, 0),
+        # OCR noise
+        ("Lv. 40 /40", 40, 3),
+    ],
+)
 def test_parse_level_with_ascension(text, expected_level, expected_asc):
     level, asc = parse_level_with_ascension(text)
     assert level == expected_level
@@ -50,6 +55,7 @@ def test_parse_level_with_ascension_empty():
 
 
 # ── count_filled_stars ────────────────────────────────────────────────────────
+
 
 def _make_star_strip(n_filled: int, width: int = 188, height: int = 34) -> Image.Image:
     """Build a synthetic star strip: first n_filled sections gold, rest grey."""
@@ -81,6 +87,7 @@ def test_count_filled_stars_all_grey_returns_1():
 
 # ── _crop helper ──────────────────────────────────────────────────────────────
 
+
 def test_crop_identity():
     calib = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
     frame = Image.new("RGB", (1920, 1080), color=(0, 128, 255))
@@ -89,6 +96,7 @@ def test_crop_identity():
 
 
 # ── export_engines round-trip ─────────────────────────────────────────────────
+
 
 def _make_engine(key: str = "BashfulDemon") -> ZodWEngine:
     return ZodWEngine(
@@ -117,7 +125,9 @@ def test_export_engines_roundtrip():
 
 
 def test_export_engine_fields():
-    eng = ZodWEngine(key="FusionCompiler", level=40, ascension=3, refinement=2, location="Zhu Yuan", lock=True)
+    eng = ZodWEngine(
+        key="FusionCompiler", level=40, ascension=3, refinement=2, location="Zhu Yuan", lock=True
+    )
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "export.json"
         export_engines([eng], path)
@@ -141,26 +151,34 @@ def test_export_creates_parent_dirs():
 
 # ── T5: on_item callback ──────────────────────────────────────────────────────
 
+
 def test_scan_engines_on_item_called_once_per_engine_monotonically(monkeypatch):
     """on_item is called exactly once per engine with monotonically increasing scanned."""
     from threading import Event
+
     import youkai_ocr.wengine_scanner as ws
     from youkai_ocr.grid import DEFAULT_GRID
 
     N = 5
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             for i in range(N):
                 yield i, 0, f"frame{i}"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def __init__(self, idx): self.idx = idx
-        def to_dict(self): return {}
+        def __init__(self, idx):
+            self.idx = idx
+
+        def to_dict(self):
+            return {}
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
         return Stub(cell_idx), {"key": 99.0}
@@ -173,47 +191,60 @@ def test_scan_engines_on_item_called_once_per_engine_monotonically(monkeypatch):
 
     calls: list[tuple[int, int | None]] = []
     ws.scan_engines(
-        lambda: "preflight", calib=None, grid=DEFAULT_GRID,
+        lambda: "preflight",
+        calib=None,
+        grid=DEFAULT_GRID,
         on_item=lambda s, t: calls.append((s, t)),
     )
 
     assert len(calls) == N
     scanned_values = [s for s, _ in calls]
-    assert scanned_values == list(range(1, N + 1)), f"not monotonically increasing: {scanned_values}"
+    assert scanned_values == list(range(1, N + 1)), (
+        f"not monotonically increasing: {scanned_values}"
+    )
     assert all(t == N for _, t in calls), "total should equal N for all calls"
 
 
 def test_scan_engines_on_item_omitted_no_error(monkeypatch):
     """on_item=None (default) causes no error."""
     from threading import Event
+
     import youkai_ocr.wengine_scanner as ws
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             for i in range(2):
                 yield i, 0, f"frame{i}"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def __init__(self, idx): self.idx = idx
-        def to_dict(self): return {}
+        def __init__(self, idx):
+            self.idx = idx
+
+        def to_dict(self):
+            return {}
 
     monkeypatch.setattr(ws, "GridNavigator", FakeNav)
     monkeypatch.setattr(ws, "make_recognizer", lambda *a, **k: object())
     monkeypatch.setattr(ws, "make_kill_listener", lambda: (Event(), FakeListener()))
     monkeypatch.setattr(ws, "read_engine_count", lambda *a, **k: 2)
-    monkeypatch.setattr(ws, "_extract_engine",
-                        lambda f, c, cx, cy, r, a, i: (Stub(i), {"key": 99.0}))
+    monkeypatch.setattr(
+        ws, "_extract_engine", lambda f, c, cx, cy, r, a, i: (Stub(i), {"key": 99.0})
+    )
 
     engines, _ = ws.scan_engines(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
     assert len(engines) == 2
 
 
 # ── T1.3: scan_equipped_engine_frame ─────────────────────────────────────────
+
 
 def test_scan_equipped_engine_frame_starlight():
     """agent_018/equip_slot_6.png (Starlight Engine Lv.60, ref=1) → correct key/level."""

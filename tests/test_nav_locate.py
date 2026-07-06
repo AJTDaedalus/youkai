@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -12,7 +11,6 @@ from PIL import Image
 
 from youkai_ocr.capture import calibrate
 from youkai_ocr.cli import (
-    ScreenAssertError,
     _NAV_AGENTS_CENTER,
     _NAV_STORAGE_CENTER,
     locate_bottom_nav_button,
@@ -22,7 +20,12 @@ _DIAG_NAV = Path(__file__).parent.parent / "archive" / "diag_nav"
 _FRAME_A = _DIAG_NAV / "live_20260615_202624" / "nav_pre_storage.png"
 _FRAME_B = _DIAG_NAV / "live_20260615_203054" / "nav_pre_storage.png"
 
-_TOLERANCE_PX = 15   # ref-coord tolerance for OCR-located vs true center
+pytestmark = pytest.mark.skipif(
+    not _FRAME_A.exists(),
+    reason="live archive fixtures not present (archive/ is local-only)",
+)
+
+_TOLERANCE_PX = 15  # ref-coord tolerance for OCR-located vs true center
 
 
 def _load(path: Path):
@@ -32,6 +35,7 @@ def _load(path: Path):
 
 
 # ── Locator accuracy on real main-menu frames ──────────────────────────────────
+
 
 @pytest.mark.parametrize("path", [_FRAME_A, _FRAME_B])
 def test_locate_storage_near_true_center(path):
@@ -55,6 +59,7 @@ def test_locate_agents_tracks_real_position(path):
 
 # ── Non-main-menu frame returns None ──────────────────────────────────────────
 
+
 def test_locate_returns_none_on_blank_frame():
     blank = Image.fromarray(np.zeros((1080, 1920, 3), dtype=np.uint8))
     calib = calibrate(blank)
@@ -64,29 +69,31 @@ def test_locate_returns_none_on_blank_frame():
 
 # ── Retry loop re-clicks when first click is dropped ─────────────────────────
 
+
 def test_navigate_to_storage_retries_on_dropped_click():
     """navigate_to_storage re-clicks when the screen doesn't transition."""
-    from youkai_ocr.cli import _NavDriver, _is_storage_screen
+    from youkai_ocr.cli import _NavDriver
 
     frame, calib = _load(_FRAME_A)
     # Frames: first N frames look like main-menu (not storage), last frame is storage.
     storage_frame = Image.fromarray(np.zeros((1080, 1920, 3), dtype=np.uint8))
 
     call_count = [0]
-    frames_before_confirm = 12   # force at least one re-click (re-click at poll=10)
+    frames_before_confirm = 12  # force at least one re-click (re-click at poll=10)
 
     def capture_fn():
         call_count[0] += 1
         if call_count[0] <= frames_before_confirm:
-            return frame     # still main menu
+            return frame  # still main menu
         return storage_frame  # triggers _is_storage_screen via storage-tab check
 
     driver = _NavDriver(calib, capture_fn)
-    driver._focus = lambda: None   # no-op
-    driver._click = MagicMock()    # record clicks without mouse
+    driver._focus = lambda: None  # no-op
+    driver._click = MagicMock()  # record clicks without mouse
 
     # Patch _is_storage_screen to return True only once storage_frame is returned
     import youkai_ocr.cli as cli_mod
+
     original = cli_mod._is_storage_screen
 
     def patched_is_storage(f, c):

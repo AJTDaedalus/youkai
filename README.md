@@ -1,5 +1,9 @@
 # Youkai
 
+[![CI](https://github.com/AJTDaedalus/youkai/actions/workflows/ci.yml/badge.svg)](https://github.com/AJTDaedalus/youkai/actions/workflows/ci.yml)
+[![Release](https://github.com/AJTDaedalus/youkai/actions/workflows/release.yml/badge.svg)](https://github.com/AJTDaedalus/youkai/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/AJTDaedalus/youkai)](https://github.com/AJTDaedalus/youkai/releases/latest)
+
 ZZZ inventory OCR scanner. Reads Drive Discs, W-Engines, and Agent stats directly from the game window and exports them as [ZOD](https://frzyc.github.io/zenless-optimizer/)-format JSON, importable into ZZZ-Optimizer and similar tools.
 
 ## Quick start
@@ -114,6 +118,10 @@ Output is extended ZOD JSON for the [Zenless Optimizer](https://frzyc.github.io/
 ## Safety
 
 Youkai is passive: it reads the game window framebuffer (BitBlt) and sends synthetic mouse/keyboard input. It never reads process memory, modifies game files, or intercepts network traffic. See [docs/RUNBOOK.md §Safety rules](docs/RUNBOOK.md#safety-rules-required--read-before-first-use) for details.
+
+## Disclaimer
+
+Youkai is an unofficial, fan-made tool and is not affiliated with, endorsed, sponsored, or approved by HoYoverse (COGNOSPHERE PTE. LTD.), miHoYo, or any of their affiliates. See [DISCLAIMER.md](DISCLAIMER.md) for the full text.
 
 ## License
 

@@ -4,6 +4,7 @@ The overlays are pure visualization, so we only assert they run and return a
 same-size RGB image for each screen type — guarding against import/constant drift
 (e.g. a renamed coordinate constant in agent_scanner).
 """
+
 from PIL import Image
 
 from youkai_ocr import debug_overlay as dbg
