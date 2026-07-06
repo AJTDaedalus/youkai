@@ -8,8 +8,6 @@ ZZZ inventory OCR scanner. Reads Drive Discs, W-Engines, and Agent stats directl
 
 Download the `youkai-portable.zip` release, extract it, and launch `youkai.exe`. The GUI drives the scanner directly — no Python or Tesseract installation needed.
 
-See the **[Portable release quickstart](docs/RUNBOOK.md#build-the-portable-release-t13bt13c)** section in the runbook for build instructions (if you are packaging it yourself).
-
 ### Developer install
 
 Requires Python 3.12+ and Tesseract 5.x on `PATH`.
@@ -18,8 +16,6 @@ Requires Python 3.12+ and Tesseract 5.x on `PATH`.
 pip install -e .
 python -m youkai_ocr --help
 ```
-
-See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the full scan procedure, safety notes, and troubleshooting guide.
 
 ## Requirements (live scan)
 
@@ -38,7 +34,7 @@ Launch `youkai.exe` (portable release), choose a scan mode (Full or Discs Only),
 
 ### CLI (developer / headless)
 
-`scan-all` navigates automatically from the main menu — no manual prompts. Add `--manual-nav` if the automatic screen transitions fail on your setup (see [RUNBOOK §scan-all](docs/RUNBOOK.md#2-full-scan-scan-all)).
+`scan-all` navigates automatically from the main menu — no manual prompts. Add `--manual-nav` if the automatic screen transitions fail on your setup.
 
 ```bash
 # Full scan — all three phases in one command
@@ -90,7 +86,7 @@ regardless of any `--window-title` or environment flags.
 
 `export/youkai_export.json` — ZOD-format export with `discs`, `weapons`, and `characters` arrays. A disc that fails invariant validation is excluded from the export (never a known-wrong value) and instead reported in `issues.json`/`review.txt` for manual re-scan.
 
-Have an older archived run with wrong disc values? `youkai-ocr revalidate --archive <dir> --out <export.json>` replays its `disc_NNNN/panel.png` crops through the current validator/repair tables offline (no game, no live scan) and writes a corrected export plus a repair report. See [RUNBOOK §6](docs/RUNBOOK.md#6-offline-correction-of-a-past-export-revalidate).
+Have an older archived run with wrong disc values? `youkai-ocr revalidate --archive <dir> --out <export.json>` replays its `disc_NNNN/panel.png` crops through the current validator/repair tables offline (no game, no live scan) and writes a corrected export plus a repair report.
 
 Each run also writes a timestamped directory under `--archive-dir` containing:
 - `review.txt` — human-readable summary of low-confidence items needing manual verification
@@ -115,7 +111,26 @@ Output is extended ZOD JSON for the [Zenless Optimizer](https://frzyc.github.io/
 
 ## Safety
 
-Youkai is passive: it reads the game window framebuffer (BitBlt) and sends synthetic mouse/keyboard input. It never reads process memory, modifies game files, or intercepts network traffic. See [docs/RUNBOOK.md §Safety rules](docs/RUNBOOK.md#safety-rules-required--read-before-first-use) for details.
+**Youkai is passive.** It reads the game-window framebuffer (BitBlt) and sends synthetic mouse and keyboard input through the OS, exactly as a physical device would. It never reads or writes process memory, never modifies game files, and never intercepts or injects network traffic — there is nothing for a kernel anti-cheat to observe at the process or network level.
+
+Our reading of HoYoverse's Terms of Service is that a passive, read-only screen scanner like this does not grant an unfair competitive advantage and should be permissible, and to our knowledge no one has been penalized for using this or a similar screen-OCR scanner. That is our interpretation, not a guarantee — if you have any concern, skip the automated mode and enter data by hand, and **always test on a secondary/alt account first.**
+
+### Automated ("auto") scanning mode
+
+- **Run as administrator.** Auto mode must run elevated to deliver input to the game window; unelevated, the synthetic mouse/keyboard events are silently dropped.
+- **It takes over your mouse and keyboard.** During a scan it clicks, scrolls, and presses keys on its own — do not move the mouse or type while it runs.
+- **Press `Esc` to abort.** The scanner watches for a physical `Esc` and stops immediately. (Its own in-game "back" navigation presses `Esc` programmatically without tripping the abort.)
+
+### Keep on-screen colors unmodified
+
+Youkai identifies content by OCR and by sampling rendered colors (rarity, badge digits, disc fill tiers), so anything that shifts the game's on-screen colors corrupts a read. Youkai **rejects** color-shifted frames rather than emitting wrong values, so an interfering overlay makes scans *fail* instead of silently mis-reading. Turn these off before scanning:
+
+- Windows **Night Light**, **f.lux**, and **HDR**
+- **ReShade** and **NVIDIA Freestyle / game filters**
+- **Colorblind** compensation filters
+- Image sharpening such as **Radeon Image Sharpening** or **NVIDIA Image Sharpening**
+
+(See also the display requirements above: windowed, 16:9, 100% scale.)
 
 ## License
 
