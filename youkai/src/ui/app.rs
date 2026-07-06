@@ -1,3 +1,6 @@
+// Float literals in egui API calls (Stroke::new etc.) fall back to f32 — pre-existing,
+// will be cleaned up when egui is updated.
+#![allow(float_literal_f32_fallback)]
 use std::{fs, thread};
 
 use egui::{
@@ -19,21 +22,12 @@ enum FileDialogPurpose {
     ExportFile,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SavedAppState {
     #[serde(default)]
     tracing_level: TracingLevel,
     #[serde(default)]
     pub scan_config: ScanConfig,
-}
-
-impl Default for SavedAppState {
-    fn default() -> Self {
-        Self {
-            tracing_level: Default::default(),
-            scan_config: Default::default(),
-        }
-    }
 }
 
 pub struct YoukaiApp {
@@ -187,7 +181,7 @@ impl eframe::App for YoukaiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             let rect = ui.max_rect();
             ui.painter()
-                .rect_filled(rect, egui::Rounding::ZERO, Color32::from_rgb(0, 0, 0));
+                .rect_filled(rect, egui::CornerRadius::ZERO, Color32::from_rgb(0, 0, 0));
 
             ui.vertical(|ui| {
                 clicked_exit = self.title_bar(ui);
@@ -231,34 +225,37 @@ impl eframe::App for YoukaiApp {
                     egui::Stroke::new(0.8, Color32::from_rgb(0xff, 0x00, 0x90));
                 ui.painter().rect_stroke(
                     window_rect,
-                    egui::Rounding::ZERO,
+                    egui::CornerRadius::ZERO,
                     frame_stroke_outer,
                     egui::StrokeKind::Inside,
                 );
                 ui.painter().rect_stroke(
                     window_rect.shrink(3.0),
-                    egui::Rounding::ZERO,
+                    egui::CornerRadius::ZERO,
                     frame_stroke_inner,
                     egui::StrokeKind::Inside,
                 );
 
-                ui.allocate_ui_at_rect(window_rect.shrink(8.0), |ui| {
-                    ui.shrink_clip_rect(window_rect.shrink(8.0));
-                    ui.vertical(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new("// SYSTEM STATUS // YOUKAI_GRID_OS v9.4")
-                                    .color(Color32::from_rgb(0xff, 0x00, 0x90))
-                                    .strong()
-                                    .size(11.0),
-                            );
-                        });
-                        ui.separator();
-                        ui.add_space(8.0);
+                ui.scope_builder(
+                    egui::UiBuilder::new().max_rect(window_rect.shrink(8.0)),
+                    |ui| {
+                        ui.shrink_clip_rect(window_rect.shrink(8.0));
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new("// SYSTEM STATUS // YOUKAI_GRID_OS v9.4")
+                                        .color(Color32::from_rgb(0xff, 0x00, 0x90))
+                                        .strong()
+                                        .size(11.0),
+                                );
+                            });
+                            ui.separator();
+                            ui.add_space(8.0);
 
-                        self.main_ui(ui, ctx);
-                    });
-                });
+                            self.main_ui(ui, ctx);
+                        });
+                    },
+                );
             });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
@@ -349,7 +346,7 @@ impl YoukaiApp {
         let is_scanning = self.scan_handle.is_some();
 
         if !crate::ui::admin::is_admin() {
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(Color32::from_rgb(0x1a, 0x0a, 0x00))
                 .stroke(egui::Stroke::new(1.2, Color32::from_rgb(0xff, 0x88, 0x00)))
                 .inner_margin(8.0)

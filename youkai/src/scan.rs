@@ -168,6 +168,7 @@ fn resolve_command() -> (String, Vec<String>) {
     ("python".into(), vec!["-m".into(), "youkai_ocr".into()])
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum ScanEvent {
@@ -239,7 +240,6 @@ fn reader_thread(
     let mut terminal = false;
     let mut run_dir: Option<String> = None;
     let mut cur_phase: Option<ScanPhase> = None;
-    let mut cur_scanned: u32 = 0;
     let mut cur_total: Option<u32> = None;
     let mut counts = PhaseCounts::empty();
 
@@ -264,7 +264,6 @@ fn reader_thread(
             }
             ScanEvent::PhaseStart { phase, total } => {
                 cur_phase = parse_phase(&phase);
-                cur_scanned = 0;
                 cur_total = total;
                 *state.lock().unwrap() = ScanState::Running {
                     phase: cur_phase.clone(),
@@ -274,13 +273,12 @@ fn reader_thread(
                 };
             }
             ScanEvent::Progress { scanned, total, .. } => {
-                cur_scanned = scanned;
                 if total.is_some() {
                     cur_total = total;
                 }
                 *state.lock().unwrap() = ScanState::Running {
                     phase: cur_phase.clone(),
-                    scanned: cur_scanned,
+                    scanned,
                     total: cur_total,
                     counts: counts.clone(),
                 };
@@ -298,7 +296,6 @@ fn reader_thread(
                     _ => {}
                 }
                 cur_phase = None;
-                cur_scanned = 0;
                 cur_total = None;
                 *state.lock().unwrap() = ScanState::Running {
                     phase: None,
