@@ -54,3 +54,7 @@ SOUL.md
 TOOLS.md
 USER.md
 .openclaw/
+
+# ── Local-only planning docs & project instructions (kept off remote) ──
+docs/
+CLAUDE.md
