@@ -5,19 +5,25 @@ Acceptance (H4):
   - key='Zhao', level=60 from ref_3.
   - mindscape=0, skills=(12,10,11,12,11), core=6 from ref_4.
   - ascension in valid range 0–6 (heuristic; low-confidence per design).
-  - disc_set='BunnyInWonderland' from ref_9; disc_set='AstralVoice' + engine='TheRestrained' from ref_10.
+  - disc_set='BunnyInWonderland' from ref_9;
+    disc_set='AstralVoice' + engine='TheRestrained' from ref_10.
 
 H25 acceptance (added below ref_4 tests):
   - Dim non-maxed badges (live agent_001: 8,1,8,12,11) read ≥4/5 correctly at the new
     two-pass threshold (pass-1 @180 for bright, pass-2 @130 fallback for dim).
   - No regression on any of the H4 bright-badge cases (12,10,11,12,11 from ref_4).
 """
-import pytest
+
 from pathlib import Path
+
+import pytest
 from PIL import Image
 
 from youkai_ocr.agent_scanner import (
-    scan_single_frame_agent, _extract_equip_frame, _read_skill_badge, _SKILL_LEVEL_BBOXES,
+    _SKILL_LEVEL_BBOXES,
+    _extract_equip_frame,
+    _read_skill_badge,
+    scan_single_frame_agent,
 )
 from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.recognize import make_recognizer
@@ -63,6 +69,7 @@ def zhao_agent(zhao_base, zhao_skills):
 
 # ── Base stats (ref_3) ────────────────────────────────────────────────────────
 
+
 def test_zhao_key(zhao_agent):
     agent, _ = zhao_agent
     assert agent is not None, "scan_single_frame_agent returned None (critical confidence failure)"
@@ -80,10 +87,13 @@ def test_zhao_ascension(zhao_agent):
     agent, conf = zhao_agent
     assert agent is not None
     assert agent.ascension == 5, f"Zhao Lv.60 should be ascension 5 (cap=60), got {agent.ascension}"
-    assert conf.get("ascension", 0) >= 80.0, "ascension confidence should be high when cap is readable"
+    assert conf.get("ascension", 0) >= 80.0, (
+        "ascension confidence should be high when cap is readable"
+    )
 
 
 # ── Skills tab (ref_4) ────────────────────────────────────────────────────────
+
 
 def test_zhao_mindscape(zhao_agent):
     agent, _ = zhao_agent
@@ -91,13 +101,16 @@ def test_zhao_mindscape(zhao_agent):
     assert agent.constellation == 0  # CINEMA 0/6 visible in ref_4
 
 
-@pytest.mark.parametrize("skill,expected", [
-    ("basic",   12),
-    ("dodge",   10),
-    ("assist",  11),
-    ("special", 12),
-    ("chain",   11),
-])
+@pytest.mark.parametrize(
+    "skill,expected",
+    [
+        ("basic", 12),
+        ("dodge", 10),
+        ("assist", 11),
+        ("special", 12),
+        ("chain", 11),
+    ],
+)
 def test_zhao_skill_levels(zhao_agent, skill, expected):
     agent, _ = zhao_agent
     assert agent is not None
@@ -113,6 +126,7 @@ def test_zhao_core_rank(zhao_agent):
 
 # ── Equipment-tab frames (ref_9 / ref_10) ─────────────────────────────────────
 
+
 @pytest.fixture(scope="module")
 def _rec():
     return make_recognizer("tesseract")
@@ -123,7 +137,7 @@ def test_ref9_disc_set(ref9, _rec, slot_idx):
     result = _extract_equip_frame(ref9, _CALIB, _rec, slot_idx)
     assert result is not None, f"slot {slot_idx}: no equip record returned"
     assert result["disc_set"] == "BunnyInWonderland"
-    assert result["slot_key"] == str(6 - slot_idx)   # H18: slot# = 6 - idx (reference_17 layout)
+    assert result["slot_key"] == str(6 - slot_idx)  # H18: slot# = 6 - idx (reference_17 layout)
 
 
 @pytest.mark.parametrize("slot_idx", [0, 1, 2, 3, 4, 5])
@@ -135,7 +149,7 @@ def test_ref10_disc_set(ref10, _rec, slot_idx):
 
 def test_ref9_no_engine(ref9, _rec):
     """ref_9 shows a disc slot panel — engine slot should not return a confident match."""
-    result = _extract_equip_frame(ref9, _CALIB, _rec, 6)
+    _extract_equip_frame(ref9, _CALIB, _rec, 6)
     # Either None (below confidence threshold) or engine_key may be present — both acceptable.
     # The key requirement is that disc slots 0–5 work correctly (tested above).
 
@@ -169,13 +183,16 @@ def _read_badge_crop(crop: Image.Image) -> int | None:
     return raw[0] if raw is not None else None
 
 
-@pytest.mark.parametrize("skill_idx,expected", [
-    (0, 12),  # basic  — bright badge, pass-1 ✓
-    (1, 10),  # dodge  — bright badge, pass-1 ✓
-    (2, 11),  # assist — bright badge, pass-1 ✓
-    (3, 12),  # special— bright badge, pass-1 ✓
-    (4, 11),  # chain  — bright badge, pass-1 ✓
-])
+@pytest.mark.parametrize(
+    "skill_idx,expected",
+    [
+        (0, 12),  # basic  — bright badge, pass-1 ✓
+        (1, 10),  # dodge  — bright badge, pass-1 ✓
+        (2, 11),  # assist — bright badge, pass-1 ✓
+        (3, 12),  # special— bright badge, pass-1 ✓
+        (4, 11),  # chain  — bright badge, pass-1 ✓
+    ],
+)
 def test_h25_ref4_bright_badges_no_regression(skill_idx, expected):
     """H25: pass-1 (threshold=180) still classifies all of Zhao's maxed skills correctly."""
     img_raw = Image.open(REF / "reference_4_agent_skills_page.png")
@@ -185,12 +202,15 @@ def test_h25_ref4_bright_badges_no_regression(skill_idx, expected):
     assert got == expected, f"talent.{names[skill_idx]}: expected {expected}, got {got}"
 
 
-@pytest.mark.parametrize("skill_idx,expected", [
-    (0, 8),   # basic=8 (dim "08" badge): pass-2 fallback with zero-prefix + round "8"
-    (1, 1),   # dodge=1 (dim "01" badge): pass-2 fallback with zero-prefix + thin "1"
-    (3, 12),  # special=12 (bright "12/12" badge): pass-1
-    (4, 11),  # chain=11 (bright-ish badge): pass-1
-])
+@pytest.mark.parametrize(
+    "skill_idx,expected",
+    [
+        (0, 8),  # basic=8 (dim "08" badge): pass-2 fallback with zero-prefix + round "8"
+        (1, 1),  # dodge=1 (dim "01" badge): pass-2 fallback with zero-prefix + thin "1"
+        (3, 12),  # special=12 (bright "12/12" badge): pass-1
+        (4, 11),  # chain=11 (bright-ish badge): pass-1
+    ],
+)
 def test_h25_dim_badge_fallback(skill_idx, expected):
     """H25: pass-2 (threshold=130) recovers dim non-maxed badges from live agent_001."""
     path = _ARCHIVE / "agent_001" / "skills.png"
@@ -204,13 +224,17 @@ def test_h25_dim_badge_fallback(skill_idx, expected):
 
 # ── H25.1: Wide-b1 dim fallback for "0X" badges (zero-prefix, max=16 format) ─
 
-@pytest.mark.parametrize("fname,expected_value,description", [
-    ("badge_08_of_16.png", 8,  "dodge=8/16: '8' digit — hole-count=2 → 8 (T8)"),
-    ("badge_09_of_16.png", 9,  "assist=9/16: '9' digit — template-match, Bug-B2 fixed (T8)"),
-    ("badge_07_of_12.png", 7,  "dodge=7/12: wide '7' digit"),
-    ("badge_08_of_12_narrow.png", 8, "basic=8/12: narrow-bleed '8' — hole-count=2 → 8 (T8)"),
-    ("badge_03_of_12.png", 3,  "assist=3/12: '3' digit — template-match, Bug-B fixed (T8)"),
-])
+
+@pytest.mark.parametrize(
+    "fname,expected_value,description",
+    [
+        ("badge_08_of_16.png", 8, "dodge=8/16: '8' digit — hole-count=2 → 8 (T8)"),
+        ("badge_09_of_16.png", 9, "assist=9/16: '9' digit — template-match, Bug-B2 fixed (T8)"),
+        ("badge_07_of_12.png", 7, "dodge=7/12: wide '7' digit"),
+        ("badge_08_of_12_narrow.png", 8, "basic=8/12: narrow-bleed '8' — hole-count=2 → 8 (T8)"),
+        ("badge_03_of_12.png", 3, "assist=3/12: '3' digit — template-match, Bug-B fixed (T8)"),
+    ],
+)
 def test_h25_1_wide_dim_badge_nonzero(fname, expected_value, description):
     """H25.1 (T8): dim-badge units digits matched by template/hole-count, not fill-ratio tiers."""
     path = _BADGE_FIXTURES / fname
@@ -221,14 +245,13 @@ def test_h25_1_wide_dim_badge_nonzero(fname, expected_value, description):
     assert got is not None and got != 0, (
         f"{description}: classifier returned {got} (expected {expected_value})"
     )
-    assert got == expected_value, (
-        f"{description}: expected {expected_value}, got {got}"
-    )
+    assert got == expected_value, f"{description}: expected {expected_value}, got {got}"
 
 
 def test_h25_1_wide_dim_badge_confidence_above_threshold():
     """T8: template/hole-count match is high-confidence (≥70) — no longer tier-estimated."""
     from youkai_ocr.agent_scanner import _LOW_CONF_THRESHOLD
+
     path = _BADGE_FIXTURES / "badge_08_of_16.png"
     if not path.exists():
         pytest.skip("badge fixture not found")

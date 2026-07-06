@@ -6,12 +6,13 @@ Responsibilities:
 - Given any 16:9 game frame, compute scale against the 1920×1080 reference layout
 - Reject unsupported aspect ratios with a clear error message
 """
+
 from __future__ import annotations
 
 import ctypes
 import sys
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
 
 import numpy as np
 from PIL import Image
@@ -42,7 +43,7 @@ class CalibrationResult:
     frame_width: int
     frame_height: int
     window_left: int = 0  # screen x of game client area top-left
-    window_top: int = 0   # screen y of game client area top-left
+    window_top: int = 0  # screen y of game client area top-left
 
     @property
     def is_identity(self) -> bool:
@@ -70,7 +71,7 @@ class CalibrationResult:
         )
 
 
-def calibrate(frame: "Image.Image | np.ndarray") -> CalibrationResult:
+def calibrate(frame: Image.Image | np.ndarray) -> CalibrationResult:
     """Compute scale from a game client-area frame against the 1920×1080 reference.
 
     Does NOT set window_left/window_top — use calibrate_window() when you need
@@ -129,6 +130,7 @@ def check_color_hygiene(frame: Image.Image) -> None:
 
 # ── Windows-only capture ──────────────────────────────────────────────────────
 
+
 class _POINT(ctypes.Structure):
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
@@ -138,7 +140,7 @@ def _normalize_title(s: str) -> str:
     return "".join(s.lower().split())
 
 
-def title_matches(window_title: str, accepted: "Iterable[str]") -> bool:
+def title_matches(window_title: str, accepted: Iterable[str]) -> bool:
     """Return True if any accepted title is a normalized substring of window_title.
 
     Pure function — no module state; unit-testable without a live window.
@@ -149,9 +151,9 @@ def title_matches(window_title: str, accepted: "Iterable[str]") -> bool:
 
 
 def resolve_accepted_titles(
-    extra: "Iterable[str] | None" = None,
-    env: "str | None" = None,
-) -> "tuple[str, ...]":
+    extra: Iterable[str] | None = None,
+    env: str | None = None,
+) -> tuple[str, ...]:
     """Build the accepted-titles tuple from defaults + env var + extra iterable.
 
     Merge order (lowest → highest priority, all merged as a union):
@@ -164,9 +166,7 @@ def resolve_accepted_titles(
     seen: set[str] = set()
     result: list[str] = []
     candidates: list[str] = (
-        list(DEFAULT_GAME_TITLES)
-        + [s.strip() for s in (env or "").split(",")]
-        + list(extra or [])
+        list(DEFAULT_GAME_TITLES) + [s.strip() for s in (env or "").split(",")] + list(extra or [])
     )
     for t in candidates:
         if t and t not in seen:
@@ -175,7 +175,7 @@ def resolve_accepted_titles(
     return tuple(result)
 
 
-def set_accepted_titles(titles: "Iterable[str]") -> None:
+def set_accepted_titles(titles: Iterable[str]) -> None:
     """Replace the module-level accepted-titles list (always unions in defaults).
 
     Call this once in main() after parsing args; all capture functions read
@@ -187,7 +187,7 @@ def set_accepted_titles(titles: "Iterable[str]") -> None:
     _accepted_titles = resolve_accepted_titles(extra=titles)
 
 
-def get_accepted_titles() -> "tuple[str, ...]":
+def get_accepted_titles() -> tuple[str, ...]:
     """Return the current module-level accepted-titles tuple."""
     return _accepted_titles
 
@@ -214,22 +214,30 @@ def list_game_windows() -> list[dict]:
         try:
             if not win32gui.IsWindowVisible(hwnd):
                 return
-            if win32gui.IsIconic(hwnd):           # minimized → 0×0 client rect
+            if win32gui.IsIconic(hwnd):  # minimized → 0×0 client rect
                 return
             title = win32gui.GetWindowText(hwnd)
             if not title_matches(title, get_accepted_titles()):
                 return
-            _, _, cw, ch = win32gui.GetClientRect(hwnd)   # (0, 0, w, h)
-            if cw <= 0 or ch <= 0:                # hidden/message-only helper window
+            _, _, cw, ch = win32gui.GetClientRect(hwnd)  # (0, 0, w, h)
+            if cw <= 0 or ch <= 0:  # hidden/message-only helper window
                 return
             pt = _POINT(0, 0)
             ctypes.windll.user32.ClientToScreen(hwnd, ctypes.byref(pt))
-            out.append({
-                "hwnd": hwnd, "title": title,
-                "left": pt.x, "top": pt.y, "right": pt.x + cw, "bottom": pt.y + ch,
-                "w": cw, "h": ch, "aspect": cw / ch,
-                "is_16_9": abs(cw / ch - REFERENCE_ASPECT) <= ASPECT_TOLERANCE,
-            })
+            out.append(
+                {
+                    "hwnd": hwnd,
+                    "title": title,
+                    "left": pt.x,
+                    "top": pt.y,
+                    "right": pt.x + cw,
+                    "bottom": pt.y + ch,
+                    "w": cw,
+                    "h": ch,
+                    "aspect": cw / ch,
+                    "is_16_9": abs(cw / ch - REFERENCE_ASPECT) <= ASPECT_TOLERANCE,
+                }
+            )
         except Exception:
             return  # skip any window that errors; keep enumerating
 
@@ -270,12 +278,20 @@ def list_all_windows() -> list[dict]:
                 return
             pt = _POINT(0, 0)
             ctypes.windll.user32.ClientToScreen(hwnd, ctypes.byref(pt))
-            out.append({
-                "hwnd": hwnd, "title": title,
-                "left": pt.x, "top": pt.y, "right": pt.x + cw, "bottom": pt.y + ch,
-                "w": cw, "h": ch, "aspect": cw / ch,
-                "is_16_9": abs(cw / ch - REFERENCE_ASPECT) <= ASPECT_TOLERANCE,
-            })
+            out.append(
+                {
+                    "hwnd": hwnd,
+                    "title": title,
+                    "left": pt.x,
+                    "top": pt.y,
+                    "right": pt.x + cw,
+                    "bottom": pt.y + ch,
+                    "w": cw,
+                    "h": ch,
+                    "aspect": cw / ch,
+                    "is_16_9": abs(cw / ch - REFERENCE_ASPECT) <= ASPECT_TOLERANCE,
+                }
+            )
         except Exception:
             return
 
@@ -286,7 +302,7 @@ def list_all_windows() -> list[dict]:
     return out
 
 
-def pick_best_window(cands: list[dict]) -> Optional[dict]:
+def pick_best_window(cands: list[dict]) -> dict | None:
     """Choose the real render surface from same-title candidates: 16:9 first, then
     largest area.  Skips the hidden 0×0 helpers and the non-16:9 launcher window."""
     if not cands:
@@ -294,7 +310,7 @@ def pick_best_window(cands: list[dict]) -> Optional[dict]:
     return sorted(cands, key=lambda c: (0 if c["is_16_9"] else 1, -(c["w"] * c["h"])))[0]
 
 
-def _find_game_window() -> Optional[tuple[int, int, int, int, int]]:
+def _find_game_window() -> tuple[int, int, int, int, int] | None:
     """Return (left, top, right, bottom, hwnd) for the best game window, or None."""
     best = pick_best_window(list_game_windows())
     if best is None:
@@ -314,6 +330,7 @@ def focus_game_window() -> bool:
     *_, hwnd = result
     try:
         import win32gui
+
         # AllowSetForegroundWindow lets a background process steal foreground.
         ctypes.windll.user32.AllowSetForegroundWindow(ctypes.windll.kernel32.GetCurrentProcessId())
         win32gui.SetForegroundWindow(hwnd)
@@ -337,7 +354,7 @@ def _require_window() -> tuple[int, int, int, int]:
         )
     left, top, right, bottom, _hwnd = result
     w, h = right - left, bottom - top
-    if w <= 0 or h <= 0:    # defensive; list_game_windows already filters these out
+    if w <= 0 or h <= 0:  # defensive; list_game_windows already filters these out
         raise RuntimeError(
             f"Game window has a zero-size client area ({w}×{h}) — it is minimized or "
             "still loading. Restore the window and retry."
@@ -345,9 +362,12 @@ def _require_window() -> tuple[int, int, int, int]:
     aspect = w / h
     if abs(aspect - REFERENCE_ASPECT) > ASPECT_TOLERANCE:
         others = [c for c in list_game_windows() if c["is_16_9"]]
-        hint = (f" A 16:9 candidate does exist ({others[0]['w']}×{others[0]['h']}) — "
-                "another same-title window was picked; close the launcher." if others else
-                " Change the in-game resolution to a 16:9 value (e.g. 1920×1080).")
+        hint = (
+            f" A 16:9 candidate does exist ({others[0]['w']}×{others[0]['h']}) — "
+            "another same-title window was picked; close the launcher."
+            if others
+            else " Change the in-game resolution to a 16:9 value (e.g. 1920×1080)."
+        )
         raise ValueError(f"Game window is {w}×{h} ({aspect:.4f}); expected 16:9.{hint}")
     return (left, top, right, bottom)
 
@@ -361,6 +381,7 @@ def _grab_region(region: tuple[int, int, int, int]) -> Image.Image:
     left, top, right, bottom = region
     try:
         import dxcam
+
         if _dxcam_camera is None:
             _dxcam_camera = dxcam.create(output_color="RGB")
         frame_np = _dxcam_camera.grab(region=(left, top, right, bottom))
@@ -369,12 +390,13 @@ def _grab_region(region: tuple[int, int, int, int]) -> Image.Image:
     except Exception:
         pass
     from PIL import ImageGrab
+
     try:
         return ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).convert("RGB")
     except OSError as e:
         raise RuntimeError(
             f"Screen capture failed (PIL.ImageGrab region=({left},{top},{right},{bottom}) "
-            f"size={right-left}x{bottom-top}): {e}. "
+            f"size={right - left}x{bottom - top}): {e}. "
             "If DPI scaling is not 100%, try setting Display Scale to 100% in Windows Settings, "
             "or run the CLI directly from a terminal."
         ) from e
@@ -407,5 +429,8 @@ def calibrate_window() -> tuple[CalibrationResult, Callable[[], Image.Image]]:
         window_left=left,
         window_top=top,
     )
-    capture_fn: Callable[[], Image.Image] = lambda: _grab_region(region)
+
+    def capture_fn() -> Image.Image:
+        return _grab_region(region)
+
     return calib, capture_fn

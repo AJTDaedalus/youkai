@@ -17,14 +17,15 @@ Usage::
     finally:
         listener.stop()
 """
+
 from __future__ import annotations
 
 import hashlib
 import time
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Callable, Generator
 
 import numpy as np
 from PIL import Image
@@ -33,6 +34,7 @@ from .capture import CalibrationResult
 from .input_utils import jitter, natural_click
 
 # ── Grid geometry ─────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class GridParams:
@@ -54,50 +56,53 @@ DEFAULT_GRID = GridParams()
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 
-CLICK_DELAY_S    = 0.15   # post-click settle before render-gate (was 0.09 — raised so panel has a head start)
-SCROLL_WAIT_S    = 0.50   # wait after scroll-trigger click for animation
-CAPTURE_MIN_INTERVAL_S = 0.40   # min wall time per disc (human-cadence floor; OCR backpressure may make it longer)
+# post-click settle before render-gate (was 0.09 — raised so panel has a head start)
+CLICK_DELAY_S = 0.15
+SCROLL_WAIT_S = 0.50  # wait after scroll-trigger click for animation
+# min wall time per disc (human-cadence floor; OCR backpressure may make it longer)
+CAPTURE_MIN_INTERVAL_S = 0.40
 
 # ── Render-gate: wait for the detail panel to actually appear ─────────────────
 # ZZZ fades the detail panel in on each selection change.  At the old 0.09 s
 # settle roughly half the captures landed during the fade (mean luma ≈ 0) and
 # produced unreadable/blank crops.  The gate samples the title sub-region; once
 # mean luma rises above RENDER_GATE_LUMA_FLOOR the panel is considered rendered.
-RENDER_GATE_BBOX      = (1421, 270, 1860, 385)  # title area; same for discs and engines
-RENDER_GATE_LUMA_FLOOR = 15   # blank/faded panel mean luma ≈ 0–5; rendered > 15
-RENDER_GATE_TIMEOUT_S  = 1.0  # give up and return the best frame we have
-RENDER_GATE_POLL_S     = 0.08 # re-sample interval
+RENDER_GATE_BBOX = (1421, 270, 1860, 385)  # title area; same for discs and engines
+RENDER_GATE_LUMA_FLOOR = 15  # blank/faded panel mean luma ≈ 0–5; rendered > 15
+RENDER_GATE_TIMEOUT_S = 1.0  # give up and return the best frame we have
+RENDER_GATE_POLL_S = 0.08  # re-sample interval
 
 # ── Scroll-to-top via scrollbar thumb (reference 1920×1080 coords) ─────────────
 # The grid's scrollbar groove is a near-black vertical channel containing only a
 # static up-arrow, the thumb, and a static down-arrow.  Unlike the grid cells it
 # is immune to selection-glow / hover / icon animation — it moves ONLY when the
 # viewport scrolls — so the thumb's top edge is a clean absolute scroll position.
-SCROLLBAR_GROOVE_BBOX  = (1358, 232, 1373, 872)  # x0,y0,x1,y1; excludes both arrows
-SCROLLBAR_BRIGHT_THRESH = 18     # row-mean luma above this = thumb pixel (track≈0)
-SCROLLBAR_TOP_Y         = 250    # thumb top edge ≤ this ⇒ rewound to first row (≈238)
-SCROLLBAR_STALL_PX      = 2      # thumb rose < this between bursts ⇒ no progress
-SCROLL_TO_TOP_BURST     = 6      # wheel notches per measurement (overshoot-up is safe)
-SCROLL_TO_TOP_MAX_BURSTS = 80    # hard cap (~480 notches) so we can never loop forever
-SCROLL_NOTCH_S          = 0.03   # gap between wheel notches within a burst
-SCROLL_SETTLE_S         = 0.18   # settle after a burst before measuring the thumb
+SCROLLBAR_GROOVE_BBOX = (1358, 232, 1373, 872)  # x0,y0,x1,y1; excludes both arrows
+SCROLLBAR_BRIGHT_THRESH = 18  # row-mean luma above this = thumb pixel (track≈0)
+SCROLLBAR_TOP_Y = 250  # thumb top edge ≤ this ⇒ rewound to first row (≈238)
+SCROLLBAR_STALL_PX = 2  # thumb rose < this between bursts ⇒ no progress
+SCROLL_TO_TOP_BURST = 6  # wheel notches per measurement (overshoot-up is safe)
+SCROLL_TO_TOP_MAX_BURSTS = 80  # hard cap (~480 notches) so we can never loop forever
+SCROLL_NOTCH_S = 0.03  # gap between wheel notches within a burst
+SCROLL_SETTLE_S = 0.18  # settle after a burst before measuring the thumb
 
 # Scroll-progress guard: the thumb moves only ~2-3 px per row on a large
 # inventory, so progress is checked cumulatively over a window of scrolls rather
 # than per scroll.  If the thumb descends ≤ MIN_PX across WINDOW scrolls, scrolling
 # has stalled (bottom reached, or the click stopped scrolling) → stop.
-SCROLL_PROGRESS_WINDOW   = 5     # scrolls between thumb-progress checks
-SCROLL_PROGRESS_MIN_PX   = 4     # min thumb descent over a window to count as progress
-SCAN_MAX_ROWS            = 400   # hard cap on count-free scrolling (≈ 3600 discs)
-SCAN_DEBUG_FRAMES        = 30    # when debug_dir set, save this many read frames
-_PANEL_DBG_BBOX          = (1421, 260, 1860, 790)  # detail-panel region for the log fingerprint
+SCROLL_PROGRESS_WINDOW = 5  # scrolls between thumb-progress checks
+SCROLL_PROGRESS_MIN_PX = 4  # min thumb descent over a window to count as progress
+SCAN_MAX_ROWS = 400  # hard cap on count-free scrolling (≈ 3600 discs)
+SCAN_DEBUG_FRAMES = 30  # when debug_dir set, save this many read frames
+_PANEL_DBG_BBOX = (1421, 260, 1860, 790)  # detail-panel region for the log fingerprint
 
 CaptureFunc = Callable[[], Image.Image]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _panel_luma(frame: Image.Image, calib: "CalibrationResult") -> float:
+
+def _panel_luma(frame: Image.Image, calib: CalibrationResult) -> float:
     """Return mean luma of the detail-panel title region (render-gate probe)."""
     x0, y0, x1, y1 = calib.scale_bbox(RENDER_GATE_BBOX)
     strip = np.asarray(frame.convert("L"))[y0:y1, x0:x1]
@@ -106,7 +111,7 @@ def _panel_luma(frame: Image.Image, calib: "CalibrationResult") -> float:
 
 def _scrollbar_thumb_top(
     frame: Image.Image,
-    calib: "CalibrationResult",
+    calib: CalibrationResult,
 ) -> float | None:
     """Return the scrollbar thumb's top edge in reference-Y, or None if absent.
 
@@ -136,6 +141,7 @@ def _scrollbar_thumb_top(
 
 # ── Navigator ─────────────────────────────────────────────────────────────────
 
+
 class GridNavigator:
     """Click-driven grid iterator. Yields (cell_index, visual_row, frame)."""
 
@@ -145,21 +151,22 @@ class GridNavigator:
         calib: CalibrationResult,
         grid: GridParams = DEFAULT_GRID,
         kill_event: Event | None = None,
-        debug_dir: "Path | None" = None,
+        debug_dir: Path | None = None,
     ) -> None:
         self._capture = capture_fn
         self._calib = calib
         self._grid = grid
         self._kill = kill_event or Event()
         self._mouse = None
-        self._t0: float = 0.0   # scan start time for relative timestamps
+        self._t0: float = 0.0  # scan start time for relative timestamps
         self._debug_dir = debug_dir
         if debug_dir is not None:
             debug_dir.mkdir(parents=True, exist_ok=True)
 
     def _mouse_ctrl(self):
         if self._mouse is None:
-            from pynput.mouse import Button, Controller
+            from pynput.mouse import Controller
+
             self._mouse = Controller()
         return self._mouse
 
@@ -342,12 +349,12 @@ class GridNavigator:
         cols = self._grid.columns
         rows_visible = self._grid.rows_visible
         last_row = rows_visible - 1
-        repeat_row = rows_visible - 2   # second-to-last: fresh content after each scroll
+        repeat_row = rows_visible - 2  # second-to-last: fresh content after each scroll
         cell_idx = 0
 
         def emit(row: int, cells: list):
             nonlocal cell_idx
-            for col, frame, (t0, t1, t2, t3) in cells:
+            for col, frame, (t0, _t1, _t2, t3) in cells:
                 if self._debug_dir is not None and cell_idx < SCAN_DEBUG_FRAMES:
                     frame.save(self._debug_dir / f"read_{cell_idx:03d}_r{row}c{col}.png")
                 # panel fingerprint: same value on consecutive discs ⇒ selection
@@ -355,9 +362,9 @@ class GridNavigator:
                 pcrop = frame.crop(self._calib.scale_bbox(_PANEL_DBG_BBOX))
                 psig = hashlib.md5(pcrop.tobytes()).hexdigest()[:6]
                 print(
-                    f"  [nav] +{self._ms():>6}ms  d{cell_idx+1:<4}  r{row}c{col}"
+                    f"  [nav] +{self._ms():>6}ms  d{cell_idx + 1:<4}  r{row}c{col}"
                     f"  panel={psig}"
-                    f"  tot={int((t3-t0)*1000)}ms"
+                    f"  tot={int((t3 - t0) * 1000)}ms"
                 )
                 yield cell_idx, row, frame
                 cell_idx += 1
@@ -374,7 +381,7 @@ class GridNavigator:
 
         # ── Deterministic traversal from the known disc count ──────────────────
         total_rows = (total_discs + cols - 1) // cols
-        last_width = total_discs - (total_rows - 1) * cols   # discs in the last row (1..cols)
+        last_width = total_discs - (total_rows - 1) * cols  # discs in the last row (1..cols)
         print(f"  [nav] {total_discs} discs → {total_rows} rows (last row {last_width})")
 
         if total_rows <= rows_visible:
@@ -406,10 +413,15 @@ class GridNavigator:
             yield from emit(repeat_row, self._read_row(repeat_row, cols))
             if (i + 1) % SCROLL_PROGRESS_WINDOW == 0:
                 now = self._thumb()
-                if (ckpt_thumb is not None and now is not None
-                        and now <= ckpt_thumb + SCROLL_PROGRESS_MIN_PX):
-                    print(f"  [nav] scrolling stalled at inv row {inv_row} "
-                          f"(thumb {ckpt_thumb:.0f}→{now:.0f}); stopping")
+                if (
+                    ckpt_thumb is not None
+                    and now is not None
+                    and now <= ckpt_thumb + SCROLL_PROGRESS_MIN_PX
+                ):
+                    print(
+                        f"  [nav] scrolling stalled at inv row {inv_row} "
+                        f"(thumb {ckpt_thumb:.0f}→{now:.0f}); stopping"
+                    )
                     return
                 ckpt_thumb = now
 
@@ -435,9 +447,8 @@ class GridNavigator:
             before = self._thumb()
             self._scroll_down()
             after = self._thumb()
-            if (before is not None and after is not None
-                    and after <= before + 1.0):
-                break   # thumb didn't descend → bottom reached (emit nothing)
+            if before is not None and after is not None and after <= before + 1.0:
+                break  # thumb didn't descend → bottom reached (emit nothing)
             yield from emit(repeat_row, self._read_row(repeat_row))
             scrolled += 1
         if not self._kill.is_set():
@@ -445,6 +456,7 @@ class GridNavigator:
 
 
 # ── Kill switch ───────────────────────────────────────────────────────────────
+
 
 def make_kill_listener(
     kill_key=None,

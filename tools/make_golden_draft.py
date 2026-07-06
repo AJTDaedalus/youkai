@@ -14,6 +14,7 @@ The draft labels are the *scanner's* current output — they become ground truth
 only after a human verifies them against the images (see labels.json
 "verified" flags).
 """
+
 import json
 import sys
 from dataclasses import asdict
@@ -23,11 +24,11 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from youkai_ocr.capture import CalibrationResult
-from youkai_ocr.disc_scanner import _extract_disc, _PANEL_BBOX
-from youkai_ocr.wengine_scanner import _extract_engine
 from youkai_ocr.agent_scanner import scan_single_frame_agent
+from youkai_ocr.capture import CalibrationResult
+from youkai_ocr.disc_scanner import _PANEL_BBOX, _extract_disc
 from youkai_ocr.recognize import make_recognizer
+from youkai_ocr.wengine_scanner import _extract_engine
 
 ROOT = Path(__file__).parent.parent
 DISC_RUN = ROOT / "archive/live_20260605"
@@ -37,9 +38,38 @@ CALIB = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_heig
 # Lock strip reads outside the panel → black canvas → lock excluded from golden set.
 DUMMY_CELL = (300, 300)
 
-DISC_INDICES = [0, 74, 148, 222, 296, 370, 444, 518, 592, 666,
-                740, 814, 888, 962, 1036, 1110, 1184, 1258, 1332, 1406,
-                1480, 1554, 1628, 1702, 1776, 1850, 1924, 1998, 2072, 2146]
+DISC_INDICES = [
+    0,
+    74,
+    148,
+    222,
+    296,
+    370,
+    444,
+    518,
+    592,
+    666,
+    740,
+    814,
+    888,
+    962,
+    1036,
+    1110,
+    1184,
+    1258,
+    1332,
+    1406,
+    1480,
+    1554,
+    1628,
+    1702,
+    1776,
+    1850,
+    1924,
+    1998,
+    2072,
+    2146,
+]
 ENGINE_INDICES = [0, 30, 60, 90, 120, 150, 180, 210]
 
 
@@ -61,13 +91,17 @@ def main() -> None:
             print(f"disc_{idx:04d}: MISSING")
             continue
         disc, conf = _extract_disc(panel_to_frame(p), CALIB, *DUMMY_CELL, recognizer, None, idx)
-        rec = {"src": f"disc_{idx:04d}", "ok": disc is not None,
-               "conf": {k: round(v, 1) for k, v in conf.items() if not k.startswith("_")},
-               "fail": conf.get("_fail_reason", "")}
+        rec = {
+            "src": f"disc_{idx:04d}",
+            "ok": disc is not None,
+            "conf": {k: round(v, 1) for k, v in conf.items() if not k.startswith("_")},
+            "fail": conf.get("_fail_reason", ""),
+        }
         if disc is not None:
             rec["disc"] = asdict(disc)
         out["discs"].append(rec)
-        print(f"disc_{idx:04d}: {'OK ' + disc.set_key if disc else 'FAIL ' + str(conf.get('_fail_reason'))}")
+        result = "OK " + disc.set_key if disc else "FAIL " + str(conf.get("_fail_reason"))
+        print(f"disc_{idx:04d}: {result}")
 
     for idx in ENGINE_INDICES:
         p = MAIN_RUN / f"engine_{idx:04d}/panel.png"
@@ -75,8 +109,11 @@ def main() -> None:
             print(f"engine_{idx:04d}: MISSING")
             continue
         eng, conf = _extract_engine(panel_to_frame(p), CALIB, *DUMMY_CELL, recognizer, None, idx)
-        rec = {"src": f"engine_{idx:04d}", "ok": eng is not None,
-               "conf": {k: round(v, 1) for k, v in conf.items()}}
+        rec = {
+            "src": f"engine_{idx:04d}",
+            "ok": eng is not None,
+            "conf": {k: round(v, 1) for k, v in conf.items()},
+        }
         if eng is not None:
             rec["engine"] = asdict(eng)
         out["engines"].append(rec)
@@ -87,9 +124,13 @@ def main() -> None:
         if not (base.exists() and skills.exists()):
             continue
         agent, conf = scan_single_frame_agent(
-            Image.open(base).convert("RGB"), Image.open(skills).convert("RGB"), CALIB)
-        rec = {"src": d.name, "ok": agent is not None,
-               "conf": {k: round(v, 1) for k, v in conf.items()}}
+            Image.open(base).convert("RGB"), Image.open(skills).convert("RGB"), CALIB
+        )
+        rec = {
+            "src": d.name,
+            "ok": agent is not None,
+            "conf": {k: round(v, 1) for k, v in conf.items()},
+        }
         if agent is not None:
             rec["agent"] = asdict(agent)
         out["agents"].append(rec)

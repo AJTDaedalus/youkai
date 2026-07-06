@@ -12,6 +12,7 @@ changed — this is the evidence-gathering step for T3.
 
 Run: python tools/diag_skill_badges.py
 """
+
 from __future__ import annotations
 
 import csv
@@ -23,11 +24,11 @@ import numpy as np
 from PIL import Image
 
 from youkai_ocr.agent_scanner import (
-    _SKILL_LEVEL_BBOXES,
-    _read_skill_badge,
+    _BADGE_NARROW_W,
     _BADGE_THRESHOLD_HI,
     _BADGE_THRESHOLD_LO,
-    _BADGE_NARROW_W,
+    _SKILL_LEVEL_BBOXES,
+    _read_skill_badge,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,11 +51,7 @@ def measure(badge_crop: Image.Image) -> list[dict]:
         _, binary = cv2.threshold(gray, thr, 255, cv2.THRESH_BINARY)
         left_w = int(binary.shape[1] * 0.52)
         n, _, stats, centroids = cv2.connectedComponentsWithStats(binary[:, :left_w])
-        blobs = [
-            (stats[i], centroids[i])
-            for i in range(1, n)
-            if stats[i, cv2.CC_STAT_AREA] > 200
-        ]
+        blobs = [(stats[i], centroids[i]) for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] > 200]
         blobs.sort(key=lambda x: x[1][0])
         rec: dict = {"pass": label, "nblobs": len(blobs)}
         for j, (s, _c) in enumerate(blobs[:2]):
@@ -72,9 +69,21 @@ def measure(badge_crop: Image.Image) -> list[dict]:
 def main() -> None:
     oracle = json.loads(ORACLE.read_text())
     fieldnames = [
-        "key", "idx", "skill", "truth", "classified", "match",
-        "pass", "nblobs", "narrow_w",
-        "b0_w", "b0_h", "b0_fill", "b1_w", "b1_h", "b1_fill",
+        "key",
+        "idx",
+        "skill",
+        "truth",
+        "classified",
+        "match",
+        "pass",
+        "nblobs",
+        "narrow_w",
+        "b0_w",
+        "b0_h",
+        "b0_fill",
+        "b1_w",
+        "b1_h",
+        "b1_fill",
     ]
     out_rows: list[dict] = []
 
@@ -85,7 +94,7 @@ def main() -> None:
             print(f"!! missing {frame_path}")
             continue
         frame = Image.open(frame_path)
-        for skill, bbox in zip(SKILL_ORDER, _SKILL_LEVEL_BBOXES):
+        for skill, bbox in zip(SKILL_ORDER, _SKILL_LEVEL_BBOXES, strict=True):
             crop = frame.crop(bbox)  # identity calib (frames are 1920x1080)
             truth = a["talent_truth"][skill]
             raw = _read_skill_badge(crop)
@@ -94,13 +103,18 @@ def main() -> None:
             # Which pass would the classifier actually land on? hi first; if it
             # returns a value, lo is never reached. Report both for evidence.
             for m in metrics:
-                out_rows.append({
-                    "key": a["key"], "idx": idx, "skill": skill,
-                    "truth": truth, "classified": classified,
-                    "match": "OK" if classified == truth else "MISS",
-                    "narrow_w": _BADGE_NARROW_W,
-                    **m,
-                })
+                out_rows.append(
+                    {
+                        "key": a["key"],
+                        "idx": idx,
+                        "skill": skill,
+                        "truth": truth,
+                        "classified": classified,
+                        "match": "OK" if classified == truth else "MISS",
+                        "narrow_w": _BADGE_NARROW_W,
+                        **m,
+                    }
+                )
 
     OUT_CSV.parent.mkdir(exist_ok=True)
     with OUT_CSV.open("w", newline="") as f:
@@ -114,18 +128,22 @@ def main() -> None:
     # For each badge we report the LO-pass b1 metrics (the dim-fallback path),
     # since that's the path T3 targets. We dedup to one row per (key,idx,skill).
     print("\n== Dim-pass (lo) b1 metrics, grouped by truth value ==")
-    print(f"{'truth':>5} {'key':<14} {'skill':<8} {'cls':>4} {'res':<4} "
-          f"{'b0_w':>5} {'b0_fill':>7} {'b1_w':>5} {'b1_fill':>7}")
+    print(
+        f"{'truth':>5} {'key':<14} {'skill':<8} {'cls':>4} {'res':<4} "
+        f"{'b0_w':>5} {'b0_fill':>7} {'b1_w':>5} {'b1_fill':>7}"
+    )
     per_badge: dict[tuple, dict] = {}
     for r in out_rows:
         if r["pass"] != "lo":
             continue
         per_badge[(r["idx"], r["skill"])] = r
     for r in sorted(per_badge.values(), key=lambda x: (x["truth"], x["key"])):
-        print(f"{r['truth']:>5} {r['key']:<14} {r['skill']:<8} "
-              f"{str(r['classified']):>4} {r['match']:<4} "
-              f"{r.get('b0_w',''):>5} {str(r.get('b0_fill','')):>7} "
-              f"{r.get('b1_w',''):>5} {str(r.get('b1_fill','')):>7}")
+        print(
+            f"{r['truth']:>5} {r['key']:<14} {r['skill']:<8} "
+            f"{str(r['classified']):>4} {r['match']:<4} "
+            f"{r.get('b0_w', ''):>5} {str(r.get('b0_fill', '')):>7} "
+            f"{r.get('b1_w', ''):>5} {str(r.get('b1_fill', '')):>7}"
+        )
 
 
 if __name__ == "__main__":
