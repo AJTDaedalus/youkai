@@ -75,7 +75,10 @@ impl ScanHandle {
                 if let Some(c) = &ctx {
                     c.request_repaint();
                 }
-                return ScanHandle { state, child: Arc::new(Mutex::new(None)) };
+                return ScanHandle {
+                    state,
+                    child: Arc::new(Mutex::new(None)),
+                };
             }
         };
 
@@ -168,13 +171,39 @@ fn resolve_command() -> (String, Vec<String>) {
 #[derive(Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum ScanEvent {
-    RunStart { run_dir: String, output: String, phases: Vec<String> },
-    PhaseStart { phase: String, total: Option<u32> },
-    Progress { phase: String, scanned: u32, total: Option<u32> },
-    PhaseDone { phase: String, count: u32, issues: u32, elapsed: f64, resumed: bool },
-    Warning { message: String },
-    Done { output: String, run_dir: String, summary: EventSummary, review_path: Option<String> },
-    Error { message: String },
+    RunStart {
+        run_dir: String,
+        output: String,
+        phases: Vec<String>,
+    },
+    PhaseStart {
+        phase: String,
+        total: Option<u32>,
+    },
+    Progress {
+        phase: String,
+        scanned: u32,
+        total: Option<u32>,
+    },
+    PhaseDone {
+        phase: String,
+        count: u32,
+        issues: u32,
+        elapsed: f64,
+        resumed: bool,
+    },
+    Warning {
+        message: String,
+    },
+    Done {
+        output: String,
+        run_dir: String,
+        summary: EventSummary,
+        review_path: Option<String>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -256,7 +285,12 @@ fn reader_thread(
                     counts: counts.clone(),
                 };
             }
-            ScanEvent::PhaseDone { phase, count, issues, .. } => {
+            ScanEvent::PhaseDone {
+                phase,
+                count,
+                issues,
+                ..
+            } => {
                 match phase.as_str() {
                     "engines" => counts.engines = Some(PhaseResult { count, issues }),
                     "discs" => counts.discs = Some(PhaseResult { count, issues }),
@@ -273,7 +307,12 @@ fn reader_thread(
                     counts: counts.clone(),
                 };
             }
-            ScanEvent::Done { output, run_dir: rd, summary, review_path } => {
+            ScanEvent::Done {
+                output,
+                run_dir: rd,
+                summary,
+                review_path,
+            } => {
                 terminal = true;
                 *state.lock().unwrap() = ScanState::Done {
                     summary: Summary {
@@ -327,10 +366,11 @@ fn reader_thread(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::process::Command;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    use super::*;
 
     fn python3() -> &'static str {
         if Command::new("python3").arg("--version").output().is_ok() {

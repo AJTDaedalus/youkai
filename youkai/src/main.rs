@@ -24,7 +24,11 @@ pub struct PhaseCounts {
 
 impl PhaseCounts {
     pub fn empty() -> Self {
-        Self { engines: None, discs: None, agents: None }
+        Self {
+            engines: None,
+            discs: None,
+            agents: None,
+        }
     }
 }
 
