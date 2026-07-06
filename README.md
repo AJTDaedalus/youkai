@@ -113,7 +113,7 @@ Output is extended ZOD JSON for the [Zenless Optimizer](https://frzyc.github.io/
 
 **Youkai is passive.** It reads the game-window framebuffer (BitBlt) and sends synthetic mouse and keyboard input through the OS, exactly as a physical device would. It never reads or writes process memory, never modifies game files, and never intercepts or injects network traffic — there is nothing for a kernel anti-cheat to observe at the process or network level.
 
-Our reading of HoYoverse's Terms of Service is that a passive, read-only screen scanner like this does not grant an unfair competitive advantage and should be permissible, and to our knowledge no one has been penalized for using this or a similar screen-OCR scanner. That is our interpretation, not a guarantee — if you have any concern, skip the automated mode and enter data by hand, and **always test on a secondary/alt account first.**
+Our reading of HoYoverse's Terms of Service is that a passive, read-only screen scanner like this does not grant an unfair competitive advantage and should be permissible, and to our knowledge no one has been penalized for using this or a similar screen-OCR scanner. That is our interpretation, not a guarantee — if you have any concern, skip the automated mode and enter data by hand.
 
 ### Automated ("auto") scanning mode
 
