@@ -387,17 +387,16 @@ mod tests {
             if matches!(s, ScanState::Done { .. } | ScanState::Failed { .. }) {
                 return s;
             }
-            assert!(Instant::now() < deadline, "timed out waiting for terminal state");
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for terminal state"
+            );
             thread::sleep(Duration::from_millis(20));
         }
     }
 
     fn run_script(script: &str) -> ScanHandle {
-        ScanHandle::spawn_with_command(
-            python3(),
-            &["-c".to_string(), script.to_string()],
-            None,
-        )
+        ScanHandle::spawn_with_command(python3(), &["-c".to_string(), script.to_string()], None)
     }
 
     #[test]
@@ -479,7 +478,10 @@ for l in lines:
         let (_, args) = build_command(&config);
         assert!(args.contains(&"scan-all".to_string()));
         assert!(args.contains(&"--porcelain".to_string()));
-        assert!(!args.contains(&"--phases".to_string()), "Full mode must not emit --phases");
+        assert!(
+            !args.contains(&"--phases".to_string()),
+            "Full mode must not emit --phases"
+        );
     }
 
     #[test]
@@ -490,7 +492,10 @@ for l in lines:
             debug_overlays: false,
         };
         let (_, args) = build_command(&config);
-        let phases_idx = args.iter().position(|a| a == "--phases").expect("--phases missing");
+        let phases_idx = args
+            .iter()
+            .position(|a| a == "--phases")
+            .expect("--phases missing");
         assert_eq!(args[phases_idx + 1], "discs");
     }
 

@@ -3,20 +3,22 @@
 rapidfuzz fuzzy-maps OCR text → canonical ZOD keys from data/zzz_1.4/*.json.
 Numeric parsers and range validators live here too.
 """
+
 from __future__ import annotations
 
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 from rapidfuzz import fuzz, process
+
 
 def _find_data_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS) / "data" / "zzz_1.4"
     return Path(__file__).parent.parent.parent / "data" / "zzz_1.4"
+
 
 _DATA_DIR = _find_data_dir()
 
@@ -73,6 +75,7 @@ _NUMERIC_STRIP = re.compile(r"[^\d.,]")
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 def normalize_disc_set(text: str) -> tuple[str, float]:
     """Fuzzy-map display text (may include '[N]' slot suffix) → (ZOD key, 0-100)."""
     _load()
@@ -84,7 +87,7 @@ def normalize_disc_set(text: str) -> tuple[str, float]:
     return (_disc_sets[display], float(score))
 
 
-def parse_slot(text: str) -> Optional[int]:
+def parse_slot(text: str) -> int | None:
     """Extract slot number from title text like 'Set Name [3]'. Returns None if absent."""
     m = _SLOT_RE.search(text)
     if m:
@@ -93,7 +96,7 @@ def parse_slot(text: str) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def parse_panel_slot(*texts: str) -> Optional[int]:
+def parse_panel_slot(*texts: str) -> int | None:
     """Parse a slot 1-6 from one or more digit+bracket OCR passes (G5 fallback).
 
     A fully-bracketed ``[N]`` in any pass wins (preferred over noise digits like
@@ -216,7 +219,7 @@ def normalize_engine(text: str) -> tuple[str, float]:
     return (_engines[display], float(score))
 
 
-def parse_level(text: str) -> Optional[int]:
+def parse_level(text: str) -> int | None:
     """Parse 'Lv. 15/15' or 'Lv 60' → first integer."""
     m = _LV_RE.search(text)
     if m:
@@ -245,7 +248,7 @@ def parse_level_with_ascension(text: str) -> tuple[int, int]:
     return (level, 0)
 
 
-def parse_numeric(text: str) -> Optional[float]:
+def parse_numeric(text: str) -> float | None:
     """Parse a stat value like '1,234' or '15.3%' → float."""
     clean = text.replace(",", "").replace("%", "").strip()
     try:
@@ -256,6 +259,7 @@ def parse_numeric(text: str) -> Optional[float]:
 
 
 # ── Validators ────────────────────────────────────────────────────────────────
+
 
 def validate_disc_level(level: int) -> bool:
     return 0 <= level <= 15

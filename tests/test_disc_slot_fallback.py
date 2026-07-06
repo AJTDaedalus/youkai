@@ -9,6 +9,7 @@ and correct on every one; only the tier-1 title-text parse fails.
 This test asserts the tier-3 fallback recovers all 12 (the offline acceptance
 gate from TASKS_ocr.md G5).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,17 +66,18 @@ def test_panel_slot_fallback_recovers_all_twelve(recognizer):
 
 # ── parse_panel_slot unit cases (pure, no OCR) ────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "texts,expected",
     [
-        (("[3]4", ""), 3),          # Fanged Metal: bracketed slot + trailing noise
+        (("[3]4", ""), 3),  # Fanged Metal: bracketed slot + trailing noise
         (("[6]4", ""), 6),
-        (("", "[6]"), 6),           # Dawn's Bloom: clean bracket in pass B
-        (("", "6]"), 6),            # partial bracket (no opening)
-        (("", "16]"), 6),           # leading noise digit; "6]" still wins
-        (("", "[6"), 6),            # partial bracket (no closing)
-        (("", ""), None),           # nothing recoverable
-        (("789", "0"), None),       # bare digits, no bracket → no slot
+        (("", "[6]"), 6),  # Dawn's Bloom: clean bracket in pass B
+        (("", "6]"), 6),  # partial bracket (no opening)
+        (("", "16]"), 6),  # leading noise digit; "6]" still wins
+        (("", "[6"), 6),  # partial bracket (no closing)
+        (("", ""), None),  # nothing recoverable
+        (("789", "0"), None),  # bare digits, no bracket → no slot
     ],
 )
 def test_parse_panel_slot(texts, expected):

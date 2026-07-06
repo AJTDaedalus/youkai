@@ -3,6 +3,7 @@
 grab_window() is not tested here (requires a live Windows display).
 Calibration is pure math — tested against the real reference screenshots.
 """
+
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,6 @@ from PIL import Image
 from youkai_ocr.capture import (
     REFERENCE_H,
     REFERENCE_W,
-    CalibrationResult,
     calibrate,
 )
 

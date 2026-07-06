@@ -9,6 +9,7 @@ Re-run whenever fairy adds an engine:  python tools/gen_engines.py
 
 Source of truth: /root/fairy. Do not hand-edit data/zzz_1.4/engines.json.
 """
+
 from __future__ import annotations
 
 import glob
@@ -32,8 +33,11 @@ KEY_OVERRIDES = {"Roaring Fur-nace": "RoaringFurnace"}
 # Engines newer than zo-allStat_gen.json's keyset (that reference is slightly stale).
 # Their to_zod_key output is trusted; listed so unexpected key drift still hard-errors.
 NEWER_THAN_REF = {
-    "Frostfall Sickle", "Neon Fantasies", "Serpentine Seeker",
-    "Starlight Rider Faceplate", "The Simmering Pot",
+    "Frostfall Sickle",
+    "Neon Fantasies",
+    "Serpentine Seeker",
+    "Starlight Rider Faceplate",
+    "The Simmering Pot",
 }
 
 
@@ -86,7 +90,7 @@ def main() -> None:
         seg = [f'    "{comment_key}": "{comment_val}",']
         for name in names:
             key = engines[name][0]
-            seg.append(f'    {json.dumps(name)}: {json.dumps(key)},')
+            seg.append(f"    {json.dumps(name)}: {json.dumps(key)},")
         body.append("\n".join(seg))
     joined = "\n\n".join(body)
     joined = joined.rstrip(",")  # last entry must not have a trailing comma
@@ -97,9 +101,11 @@ def main() -> None:
     OUT.write_text("\n".join(lines) + "\n")
 
     total = sum(len(g) for g in groups.values())
-    print(f"Wrote {OUT} — {total} engines "
-          f"(S={len(groups['S'])}, A={len(groups['A'])}, "
-          f"B={len(groups['B'])}, B-series={len(groups['Bb'])})")
+    print(
+        f"Wrote {OUT} — {total} engines "
+        f"(S={len(groups['S'])}, A={len(groups['A'])}, "
+        f"B={len(groups['B'])}, B-series={len(groups['Bb'])})"
+    )
 
 
 if __name__ == "__main__":

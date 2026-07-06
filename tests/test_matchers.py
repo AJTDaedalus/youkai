@@ -1,4 +1,5 @@
 """Tests for B3 matchers."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -7,13 +8,11 @@ from PIL import Image
 
 from youkai_ocr.matchers import detect_lock_from_text, detect_rarity
 
-
 # ── detect_rarity ─────────────────────────────────────────────────────────────
 
+
 def _solid(rgb: tuple[int, int, int], size: int = 10) -> Image.Image:
-    return Image.fromarray(
-        np.full((size, size, 3), rgb, dtype=np.uint8), "RGB"
-    )
+    return Image.fromarray(np.full((size, size, 3), rgb, dtype=np.uint8), "RGB")
 
 
 def test_rarity_s():
@@ -45,14 +44,18 @@ def test_rarity_unrecognized():
 
 # ── detect_lock_from_text ─────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("text,expected", [
-    ("Lv. 15 L",   True),
-    ("Lv. 4",      False),
-    ("Lv. 12 L",   True),
-    ("Lv 9 L",     True),
-    ("Lv. 0",      False),
-    ("",           False),
-    ("15 L bonus", True),   # unusual but should trigger
-])
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Lv. 15 L", True),
+        ("Lv. 4", False),
+        ("Lv. 12 L", True),
+        ("Lv 9 L", True),
+        ("Lv. 0", False),
+        ("", False),
+        ("15 L bonus", True),  # unusual but should trigger
+    ],
+)
 def test_detect_lock(text, expected):
     assert detect_lock_from_text(text) is expected

@@ -1,16 +1,16 @@
 use std::{fs, thread};
 
 use egui::{
-    Button, Color32, Id, Key, KeyboardShortcut, Modal, Modifiers, OpenUrl,
-    PointerButton, RichText, Sense, ViewportCommand,
+    Button, Color32, Id, Key, KeyboardShortcut, Modal, Modifiers, OpenUrl, PointerButton, RichText,
+    Sense, ViewportCommand,
 };
 use egui_file_dialog::FileDialog;
 use egui_notify::Toasts;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ReloadHandle, ScanConfig, ScanHandle, ScanMode, ScanPhase, ScanState,
-    TracingLevel, open_log_dir,
+    ReloadHandle, ScanConfig, ScanHandle, ScanMode, ScanPhase, ScanState, TracingLevel,
+    open_log_dir,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -29,7 +29,10 @@ pub struct SavedAppState {
 
 impl Default for SavedAppState {
     fn default() -> Self {
-        Self { tracing_level: Default::default(), scan_config: Default::default() }
+        Self {
+            tracing_level: Default::default(),
+            scan_config: Default::default(),
+        }
     }
 }
 
@@ -81,13 +84,11 @@ impl YoukaiApp {
             style.visuals.widgets.inactive.weak_bg_fill = widget_inactive_bg;
 
             style.visuals.widgets.hovered.bg_fill = widget_hovered_bg;
-            style.visuals.widgets.hovered.fg_stroke =
-                egui::Stroke::new(2.0, text_color_dark);
+            style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(2.0, text_color_dark);
             style.visuals.widgets.hovered.weak_bg_fill = widget_hovered_bg;
 
             style.visuals.widgets.active.bg_fill = widget_active_bg;
-            style.visuals.widgets.active.fg_stroke =
-                egui::Stroke::new(2.0, text_color_dark);
+            style.visuals.widgets.active.fg_stroke = egui::Stroke::new(2.0, text_color_dark);
             style.visuals.widgets.active.weak_bg_fill = widget_active_bg;
 
             style.visuals.widgets.noninteractive.bg_fill = bg_color;
@@ -163,9 +164,7 @@ impl eframe::App for YoukaiApp {
                             Ok(_) => {
                                 self.toasts.info(format!(
                                     "Exported to {}",
-                                    path.file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("file")
+                                    path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
                                 ));
                             }
                             Err(e) => {
@@ -187,14 +186,19 @@ impl eframe::App for YoukaiApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let rect = ui.max_rect();
-            ui.painter().rect_filled(rect, egui::Rounding::ZERO, Color32::from_rgb(0, 0, 0));
+            ui.painter()
+                .rect_filled(rect, egui::Rounding::ZERO, Color32::from_rgb(0, 0, 0));
 
             ui.vertical(|ui| {
                 clicked_exit = self.title_bar(ui);
                 ui.add_space(10.);
 
                 let power_tools_shortcut = KeyboardShortcut {
-                    modifiers: Modifiers { command: true, shift: true, ..Default::default() },
+                    modifiers: Modifiers {
+                        command: true,
+                        shift: true,
+                        ..Default::default()
+                    },
                     logical_key: Key::P,
                 };
                 ui.ctx().input_mut(|i| {
@@ -699,17 +703,26 @@ impl YoukaiApp {
                 RichText::new("debug overlays").monospace().size(9.5),
             );
         });
-
     }
 
     fn params_done(&mut self, ui: &mut egui::Ui) {
         // Clone out what we need before borrowing ui
-        let (output, run_dir, review_path, issues) =
-            if let ScanState::Done { output, run_dir, review_path, summary } = &self.scan_state {
-                (output.clone(), run_dir.clone(), review_path.clone(), summary.issues)
-            } else {
-                return;
-            };
+        let (output, run_dir, review_path, issues) = if let ScanState::Done {
+            output,
+            run_dir,
+            review_path,
+            summary,
+        } = &self.scan_state
+        {
+            (
+                output.clone(),
+                run_dir.clone(),
+                review_path.clone(),
+                summary.issues,
+            )
+        } else {
+            return;
+        };
 
         ui.label(
             RichText::new("// EXTRACTION COMPLETE")
@@ -723,10 +736,8 @@ impl YoukaiApp {
         // Copy to clipboard
         if ui
             .add(
-                Button::new(
-                    RichText::new(" COPY TO CLIPBOARD ").monospace().size(9.5),
-                )
-                .min_size(egui::vec2(ui.available_width() - 4.0, 0.0)),
+                Button::new(RichText::new(" COPY TO CLIPBOARD ").monospace().size(9.5))
+                    .min_size(egui::vec2(ui.available_width() - 4.0, 0.0)),
             )
             .clicked()
         {
@@ -736,8 +747,7 @@ impl YoukaiApp {
                     self.toasts.info("Copied to clipboard.");
                 }
                 Err(e) => {
-                    self.toasts
-                        .error(format!("Read failed: {e}"));
+                    self.toasts.error(format!("Read failed: {e}"));
                 }
             }
         }
@@ -791,10 +801,7 @@ impl YoukaiApp {
                                 .size(9.5),
                         )
                         .fill(Color32::from_rgb(0x28, 0x10, 0x00))
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            Color32::from_rgb(0xff, 0x60, 0x00),
-                        ))
+                        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(0xff, 0x60, 0x00)))
                         .min_size(egui::vec2(ui.available_width() - 4.0, 0.0)),
                     )
                     .clicked()
@@ -822,12 +829,11 @@ impl YoukaiApp {
     }
 
     fn params_failed(&mut self, ui: &mut egui::Ui) {
-        let (message, run_dir) =
-            if let ScanState::Failed { message, run_dir } = &self.scan_state {
-                (message.clone(), run_dir.clone())
-            } else {
-                return;
-            };
+        let (message, run_dir) = if let ScanState::Failed { message, run_dir } = &self.scan_state {
+            (message.clone(), run_dir.clone())
+        } else {
+            return;
+        };
 
         ui.label(
             RichText::new("// EXTRACTION FAILED")
@@ -838,14 +844,16 @@ impl YoukaiApp {
         ui.separator();
         ui.add_space(4.0);
 
-        egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
-            ui.label(
-                RichText::new(&message)
-                    .monospace()
-                    .size(8.5)
-                    .color(Color32::from_rgb(0xff, 0x60, 0x60)),
-            );
-        });
+        egui::ScrollArea::vertical()
+            .max_height(140.0)
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new(&message)
+                        .monospace()
+                        .size(8.5)
+                        .color(Color32::from_rgb(0xff, 0x60, 0x60)),
+                );
+            });
 
         ui.add_space(6.0);
 
@@ -885,7 +893,12 @@ impl YoukaiApp {
 
         match &self.scan_state {
             ScanState::Idle => ("--".to_string(), dim),
-            ScanState::Running { phase: cur_phase, scanned, total, counts } => {
+            ScanState::Running {
+                phase: cur_phase,
+                scanned,
+                total,
+                counts,
+            } => {
                 let done = match phase {
                     "engines" => counts.engines.as_ref().map(|r| r.count),
                     "discs" => counts.discs.as_ref().map(|r| r.count),

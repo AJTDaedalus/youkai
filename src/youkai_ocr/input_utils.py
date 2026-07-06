@@ -3,6 +3,7 @@
 All scanners use natural_click() and jitter() from here instead of
 teleporting the cursor or using fixed delays.
 """
+
 from __future__ import annotations
 
 import math
@@ -36,21 +37,21 @@ def _bezier_path(
     # Control point: midpoint + random perpendicular offset
     side = random.choice((-1, 1))
     perp_x = (-dy / dist) * dist * curve_mag * side
-    perp_y = ( dx / dist) * dist * curve_mag * side
+    perp_y = (dx / dist) * dist * curve_mag * side
     cx = (x0 + x1) / 2 + perp_x
     cy = (y0 + y1) / 2 + perp_y
 
     path: list[tuple[int, int]] = []
     for i in range(steps + 1):
         t = i / steps
-        bx = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t ** 2 * x1
-        by = (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t ** 2 * y1
+        bx = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * cx + t**2 * x1
+        by = (1 - t) ** 2 * y0 + 2 * (1 - t) * t * cy + t**2 * y1
         path.append((int(bx), int(by)))
     return path
 
 
 def natural_click(
-    mouse: "Controller",
+    mouse: Controller,
     target_x: int,
     target_y: int,
     jitter_px: int = 3,
