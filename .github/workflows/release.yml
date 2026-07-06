@@ -65,6 +65,10 @@ jobs:
           path: dist/youkai-ocr/tesseract
           key: tesseract-w64-v1-${{ hashFiles('packaging/get_tesseract.ps1') }}
 
+      - name: Install Tesseract (elevated, avoids NSIS UAC detach)
+        shell: pwsh
+        run: choco install tesseract --no-progress -y
+
       - name: Build portable bundle
         shell: pwsh
         run: |
