@@ -242,6 +242,35 @@ def test_visits_each_owned_once_in_order_skipping_grayout():
     assert sim.escapes == 5                      # exactly one Escape per OWNED agent (equipment)
 
 
+def test_ring_close_survives_failed_anchor_read():
+    # Regression: a blank/unreadable name OCR on the very first frame used to leave
+    # start_name permanently "" (only ever set when visited==1), disabling ring-close
+    # for the rest of the scan and looping forever on a circular strip (AGENT_MAX, the
+    # old hard-cap backstop, was removed in 747490f). The anchor must retry on every
+    # visit until a name is actually read, not just the first one.
+    class _FlakyAnchorSim(_StripSim):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self._ring_key_calls = 0
+
+        def _ring_close_key(self, frame) -> str:
+            self._ring_key_calls += 1
+            if self._ring_key_calls == 1:
+                return ""   # simulate OCR miss on the entry frame
+            return str(self.idx)
+
+    # The anchor lands on the first position it can actually read (idx=3, one visit
+    # late) rather than the true entry position (idx=2) — so this scan takes one extra
+    # lap and idx=2 gets yielded twice before the ring closes back at idx=3. That's the
+    # known cost of "retry until it lands": the important thing is it terminates at all,
+    # where before this fix it would have spun forever (start_name stuck at "").
+    sim = _FlakyAnchorSim(n_owned=5, start_idx=2)
+    seq = _run(sim)
+    assert seq == [2, 3, 4, 0, 1, 2]             # walks a full extra lap before closing
+    assert sim.idx == 3                          # closes back at the position it anchored on
+    assert sim.escapes == 6
+
+
 def test_skips_interleaved_grayout():
     # H15/H16: ownership is NOT assumed contiguous — grayed agents are skipped, not a stop.
     sim = _StripSim(n_owned=3, n_total=6, start_idx=0, owned_idxs={0, 2, 5})

@@ -1581,10 +1581,10 @@ class AgentNavigator:
             # Same-agent pHash drifts 19–111 bits between visits (idle animation); name OCR is
             # deterministic (offline calibration: all 7 same-agent pairs returned identical keys).
             current_name = self._ring_close_key(base_frame)
-            if visited == 1:
+            if not start_name:
                 if current_name:
-                    start_name = current_name   # anchor on entry position
-            elif start_name and current_name == start_name:
+                    start_name = current_name   # anchor on entry position (retried until it lands)
+            elif current_name == start_name:
                 _log.info("agent_scan_done — ring closed (returned to '%s') after %d owned "
                           "(%d visited)", start_name, agent_idx, visited)
                 return
