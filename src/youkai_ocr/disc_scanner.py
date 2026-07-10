@@ -135,6 +135,20 @@ def _value_plausible(stat_key: str, val: float) -> bool:
 # Minimum confidence for accepting a field match (below → emit to issues).
 _LOW_CONF_THRESHOLD = 70.0
 
+# conf carries two kinds of value under a shared namespace: 0-100 confidence
+# scores AND raw OCR evidence for the repair pass (*_roll_suffix, *_pct_seen,
+# main_stat_value — T4/T5/T8). Only the former may feed the low-confidence
+# filter; a bool like pct_seen=False or a small float like roll_suffix=3.0
+# otherwise reads as "< 70" and mislabels every clean disc low_confidence.
+# Allowlist the score keys explicitly so new evidence keys can never leak in.
+_CONF_SCORE_KEYS = frozenset({"set", "slot", "rarity", "level", "lock", "main_stat"})
+_SUBSTAT_CONF_KEY_RE = re.compile(r"^substat_\d+$")  # 'substat_2', not 'substat_2_pct_seen'
+
+
+def _is_conf_score_key(key: str) -> bool:
+    return key in _CONF_SCORE_KEYS or _SUBSTAT_CONF_KEY_RE.match(key) is not None
+
+
 CaptureFunc = Callable[[], Image.Image]
 
 # disc_rules.Violation.field → the conf dict's confidence-key namespace (T9):
@@ -603,7 +617,10 @@ def scan_discs(
                     entry["repairs"] = repairs
                 issues.append(entry)
                 continue
-            low = {k: v for k, v in conf.items() if v < _LOW_CONF_THRESHOLD}
+            low = {
+                k: v for k, v in conf.items()
+                if _is_conf_score_key(k) and v < _LOW_CONF_THRESHOLD
+            }
             if low or repairs:
                 entry = {
                     "cell": cell_idx,

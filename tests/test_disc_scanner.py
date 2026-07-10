@@ -904,3 +904,51 @@ def test_scan_discs_issue_carries_both_low_fields_and_repairs(monkeypatch):
     assert issues[0]["status"] == "low_confidence"
     assert issues[0]["fields"] == {"substat_2": 30.0}
     assert issues[0]["repairs"] == repair_record
+
+
+def test_scan_discs_evidence_keys_do_not_flag_clean_disc(monkeypatch):
+    """Regression: raw OCR evidence (pct_seen bools, roll_suffix, main_stat_value)
+    shares the conf dict with 0-100 confidence scores. It must NOT feed the
+    low-confidence filter — a bool `False`/`True` is `< 70` and a small float
+    like roll_suffix=3.0 is `< 70`, so a clean disc whose every real confidence
+    is high was silently labeled low_confidence and its evidence dumped into
+    `fields`. A fully clean disc must produce no issue entry at all."""
+    from threading import Event
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k): pass
+        def scan(self, total):
+            yield 0, 0, "frame0"
+
+    class FakeListener:
+        def stop(self): pass
+
+    class Stub:
+        def to_dict(self): return {"setKey": "AstralVoice"}
+
+    # Every confidence score is high (clean disc); only evidence keys are "low".
+    clean_conf = {
+        "set": 99.0, "slot": 100.0, "rarity": 100.0, "level": 100.0,
+        "lock": 80.0, "main_stat": 100.0,
+        "substat_1": 100.0, "substat_2": 100.0, "substat_3": 100.0, "substat_4": 100.0,
+        # evidence — must be ignored by the low-confidence filter:
+        "main_stat_value": 316.0, "main_stat_pct_seen": False,
+        "substat_1_roll_suffix": 3.0, "substat_1_pct_seen": False,
+        "substat_2_pct_seen": True, "substat_3_pct_seen": False, "substat_4_pct_seen": True,
+    }
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        return Stub(), dict(clean_conf)
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 1)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+
+    assert len(discs) == 1
+    assert issues == []   # a clean disc must not be flagged from evidence keys alone
