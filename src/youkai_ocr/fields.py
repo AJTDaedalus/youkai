@@ -4,11 +4,11 @@ Loads region specs from navigation.yaml and crops them out of a calibrated
 game frame. Preprocessing hints are passed through but not executed here —
 that is B2/B3's job.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
 
 import yaml
 from PIL import Image
@@ -84,7 +84,7 @@ def _flatten(raw: dict, prefix: str, out: dict[str, FieldSpec]) -> None:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def load_panel(nav_path: Union[str, Path], *path: str) -> PanelSpec:
+def load_panel(nav_path: str | Path, *path: str) -> PanelSpec:
     """Load a panel's fields from navigation.yaml.
 
     ``path`` is a sequence of YAML keys that navigate to a node containing a

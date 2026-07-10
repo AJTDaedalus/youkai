@@ -5,9 +5,11 @@ T1: data-load part. T6: validator (`validate_disc` + supporting pure functions).
 See docs/DESIGN_disc_validation.md 'Expected-value tables' / 'Architecture' and
 docs/TASKS_disc_validation.md T1/T6 for the source values and acceptance criteria.
 """
+
 from __future__ import annotations
 
 import json
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -35,11 +37,10 @@ def _stats_json() -> dict:
 
 # ── Key-set reconciliation against stats.json (the acceptance gate) ──────────
 
+
 def test_main_stat_keys_match_stats_json_all_slots():
     stats = _stats_json()
-    expected_keys = {
-        key for slot in stats["main_stats_by_slot"].values() for key in slot.values()
-    }
+    expected_keys = {key for slot in stats["main_stats_by_slot"].values() for key in slot.values()}
     dv = load_disc_values()
     assert set(dv.main_stat_base.keys()) == expected_keys
 
@@ -52,6 +53,7 @@ def test_substat_keys_match_stats_json():
 
 
 # ── Shape ──────────────────────────────────────────────────────────────────────
+
 
 def test_rarities_present_for_s_a_b():
     dv = load_disc_values()
@@ -71,6 +73,7 @@ def test_every_substat_has_all_three_rarities():
 
 
 # ── Spot values (DESIGN Expected-value tables, cross-checked against archive) ─
+
 
 def test_s_rank_atk_main_base_and_growth():
     dv = load_disc_values()
@@ -104,12 +107,22 @@ def test_a_rank_hp_atk_substat_base_matches_archive_not_stale_stats_json():
 
 # ── expected_main_value / substat_base ────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     ("rarity", "level", "expected"),
     [
-        (4, 0, 79), (4, 3, 126), (4, 4, 142), (4, 15, 316),   # S atk (verified vs archive, DESIGN)
-        (3, 0, 53), (3, 3, 92), (3, 4, 106), (3, 12, 212),    # A atk
-        (2, 0, 26), (2, 3, 52), (2, 4, 60), (2, 9, 104),      # B atk
+        (4, 0, 79),
+        (4, 3, 126),
+        (4, 4, 142),
+        (4, 15, 316),  # S atk (verified vs archive, DESIGN)
+        (3, 0, 53),
+        (3, 3, 92),
+        (3, 4, 106),
+        (3, 12, 212),  # A atk
+        (2, 0, 26),
+        (2, 3, 52),
+        (2, 4, 60),
+        (2, 9, 104),  # B atk
     ],
 )
 def test_expected_main_value_flat_atk(rarity, level, expected):
@@ -128,6 +141,7 @@ def test_substat_base_accessor():
 
 # ── validate_disc: clean discs (zero violations) across rarity/level tiers ───
 
+
 def _disc(rarity, slot, level, main_key, subs):
     return ZodDisc(
         set_key="ChaosJazz",
@@ -145,15 +159,31 @@ _CLEAN_CASES = [
     # S-rank (rarity=4, max_level=15, n0=(3,4), cadence 3, cap 6). Substat bases:
     # hp_=3, atk_=3, def_=4.8, crit_=2.4.
     (4, 0, [("hp_", 3), ("atk_", 3), ("def_", 4.8)]),  # n0=3, u=0: all k=1
-    (4, 3, [("hp_", 3), ("atk_", 3), ("def_", 4.8), ("crit_", 2.4)]),  # n0=3,u=1: new 4th line (count<4)
-    (4, 4, [("hp_", 3), ("atk_", 3), ("def_", 4.8), ("crit_", 2.4)]),  # same cadence bucket as level 3
-    (4, 15, [("hp_", 9), ("atk_", 6), ("def_", 9.6), ("crit_", 4.8)]),  # n0=4,u=5: k=[3,2,2,2], sum=9
+    (
+        4,
+        3,
+        [("hp_", 3), ("atk_", 3), ("def_", 4.8), ("crit_", 2.4)],
+    ),  # n0=3,u=1: new 4th line (count<4)
+    (
+        4,
+        4,
+        [("hp_", 3), ("atk_", 3), ("def_", 4.8), ("crit_", 2.4)],
+    ),  # same cadence bucket as level 3
+    (
+        4,
+        15,
+        [("hp_", 9), ("atk_", 6), ("def_", 9.6), ("crit_", 4.8)],
+    ),  # n0=4,u=5: k=[3,2,2,2], sum=9
     # A-rank (rarity=3, max_level=12, n0=(2,3), cadence 3, cap 4). Substat bases:
     # hp_=2, atk_=2, def_=3.2, crit_dmg_=3.2.
     (3, 0, [("hp_", 2), ("atk_", 2)]),  # n0=2,u=0
     (3, 3, [("hp_", 2), ("atk_", 2), ("def_", 3.2)]),  # n0=2,u=1: new 3rd line
     (3, 4, [("hp_", 2), ("atk_", 2), ("def_", 3.2)]),
-    (3, 12, [("hp_", 8), ("atk_", 2), ("def_", 3.2), ("crit_dmg_", 3.2)]),  # n0=3,u=4: k=[4,1,1,1], sum=7
+    (
+        3,
+        12,
+        [("hp_", 8), ("atk_", 2), ("def_", 3.2), ("crit_dmg_", 3.2)],
+    ),  # n0=3,u=4: k=[4,1,1,1], sum=7
     # B-rank (rarity=2, max_level=9, n0=(1,2), cadence 3, cap 2). Substat bases:
     # hp_=1, atk_=1, def_=1.6, crit_=0.8.
     (2, 0, [("hp_", 1)]),  # n0=1, u=0
@@ -172,11 +202,14 @@ def test_validate_disc_clean_discs_have_no_violations(rarity, level, subs):
 
 
 def test_validate_disc_clean_disc_with_no_evidence_still_clean():
-    disc = _disc(4, slot="4", level=0, main_key="crit_", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)])
+    disc = _disc(
+        4, slot="4", level=0, main_key="crit_", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)]
+    )
     assert validate_disc(disc) == []
 
 
 # ── validate_disc: real error cases from DESIGN Findings (E1-E5) ────────────
+
 
 def test_rarity_range_violation():
     disc = _disc(5, slot="4", level=0, main_key="crit_", subs=[])
@@ -211,7 +244,9 @@ def test_main_key_slot_violation():
 
 
 def test_main_value_mismatch_flat():
-    disc = _disc(4, slot="2", level=4, main_key="atk", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)])
+    disc = _disc(
+        4, slot="2", level=4, main_key="atk", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)]
+    )
     evidence = Evidence(main_value_raw=999)  # true value is 142
     violations = validate_disc(disc, evidence)
     mismatches = [v for v in violations if v.code == "main_value_mismatch"]
@@ -220,7 +255,9 @@ def test_main_value_mismatch_flat():
 
 
 def test_main_value_mismatch_percent():
-    disc = _disc(4, slot="4", level=3, main_key="def_", subs=[("hp_", 3), ("atk_", 3), ("crit_", 2.4)])
+    disc = _disc(
+        4, slot="4", level=3, main_key="def_", subs=[("hp_", 3), ("atk_", 3), ("crit_", 2.4)]
+    )
     evidence = Evidence(main_value_raw=999.9)  # true value is 19.2
     violations = validate_disc(disc, evidence)
     mismatches = [v for v in violations if v.code == "main_value_mismatch"]
@@ -229,7 +266,9 @@ def test_main_value_mismatch_percent():
 
 
 def test_main_value_no_evidence_skips_check():
-    disc = _disc(4, slot="2", level=4, main_key="atk", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)])
+    disc = _disc(
+        4, slot="2", level=4, main_key="atk", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)]
+    )
     violations = validate_disc(disc, evidence=None)
     assert not any(v.code == "main_value_mismatch" for v in violations)
 
@@ -269,7 +308,10 @@ def test_sub_value_zero_unreadable_line_flagged():
 def test_dup_substat_violation():
     """E5: duplicate substat key."""
     disc = _disc(
-        4, slot="4", level=0, main_key="hp_",
+        4,
+        slot="4",
+        level=0,
+        main_key="hp_",
         subs=[("pen", 9), ("pen", 9), ("crit_", 2.4)],
     )
     violations = validate_disc(disc)
@@ -302,13 +344,18 @@ def test_sub_rolls_exceed_max_per_rarity_cap():
     """B-rank per-line cap is 2 rolls even at max level (u=3 would otherwise allow 4)."""
     disc = _disc(2, slot="4", level=9, main_key="hp_", subs=[("crit_", 2.4)])  # k=3, cap min(4,2)=2
     violations = validate_disc(disc)
-    assert any(v.code == "sub_rolls_exceed_max" and v.observed == 3 and v.expected == 2 for v in violations)
+    assert any(
+        v.code == "sub_rolls_exceed_max" and v.observed == 3 and v.expected == 2 for v in violations
+    )
 
 
 def test_roll_budget_violation_when_all_on_lattice():
     """4 lines each at k=1, level 15 (u=5): sum-u = 4-5 = -1, outside S n0_range (3,4)."""
     disc = _disc(
-        4, slot="4", level=15, main_key="hp_",
+        4,
+        slot="4",
+        level=15,
+        main_key="hp_",
         subs=[("atk_", 3), ("def_", 4.8), ("crit_", 2.4), ("crit_dmg_", 4.8)],
     )
     violations = validate_disc(disc)
@@ -318,8 +365,16 @@ def test_roll_budget_violation_when_all_on_lattice():
 def test_roll_budget_skipped_when_a_line_is_off_lattice():
     """roll_budget must not fire alongside an unresolved sub_not_on_lattice line."""
     disc = _disc(
-        4, slot="4", level=15, main_key="hp_",
-        subs=[("atk_", 3), ("def_", 4.8), ("crit_", 2.4), ("crit_dmg_", 4.4)],  # last line off-lattice
+        4,
+        slot="4",
+        level=15,
+        main_key="hp_",
+        subs=[
+            ("atk_", 3),
+            ("def_", 4.8),
+            ("crit_", 2.4),
+            ("crit_dmg_", 4.4),
+        ],  # last line off-lattice
     )
     violations = validate_disc(disc)
     codes = [v.code for v in violations]
@@ -336,7 +391,10 @@ def test_sub_count_too_few_visible_lines():
 
 def test_sub_count_too_many_visible_lines():
     disc = _disc(
-        2, slot="4", level=0, main_key="hp_",
+        2,
+        slot="4",
+        level=0,
+        main_key="hp_",
         subs=[("atk_", 1), ("def_", 1.6), ("crit_", 0.8)],  # B n0=(1,2), u=0 -> expected (1,2)
     )
     violations = validate_disc(disc)
@@ -357,14 +415,20 @@ def test_module_imports_no_ocr_or_capture_layers():
     import youkai_ocr.disc_rules as m
 
     src = Path(m.__file__).read_text()
-    for banned in ("import disc_scanner", "from youkai_ocr.disc_scanner", "PIL", "tesseract", "pynput"):
+    for banned in (
+        "import disc_scanner",
+        "from youkai_ocr.disc_scanner",
+        "PIL",
+        "tesseract",
+        "pynput",
+    ):
         assert banned not in src
 
 
 def test_violation_is_frozen_dataclass_with_expected_fields():
     v = Violation(field="x", code="y", observed=1, expected=2)
     assert v.severity == "error"
-    with pytest.raises(Exception):
+    with pytest.raises(FrozenInstanceError):
         v.field = "z"  # type: ignore[misc]
 
 
@@ -486,7 +550,10 @@ def test_repair_roll_budget_forcing_resolves_unique_assignment():
     (44 is edit-distance-1 from both k=5->45 and k=6->54); only k=5 keeps the
     roll budget (other lines sum k=4, u=5) in the S n0_range (3,4)."""
     disc = _disc(
-        4, slot="4", level=15, main_key="crit_dmg_",
+        4,
+        slot="4",
+        level=15,
+        main_key="crit_dmg_",
         subs=[("hp_", 3.0), ("atk_", 3.0), ("def_", 9.6), ("anomProf", 44.0)],
     )
     result = repair_disc(disc, evidence=None)
@@ -516,7 +583,9 @@ def test_repair_roll_suffix_out_of_range_falls_through_to_lattice_neighbor():
 
 
 def test_repair_result_is_frozen_dataclass_with_expected_shape():
-    disc = _disc(4, slot="4", level=0, main_key="anomProf", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)])
+    disc = _disc(
+        4, slot="4", level=0, main_key="anomProf", subs=[("hp_", 3), ("atk_", 3), ("def_", 4.8)]
+    )
     result = repair_disc(disc, evidence=None)
     assert isinstance(result, RepairResult)
     assert result.repairs == []

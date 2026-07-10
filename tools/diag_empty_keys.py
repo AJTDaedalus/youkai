@@ -6,13 +6,13 @@ Run from the repo root:
 For each disc with an empty substat key, prints the failure mode and optionally
 saves the name-region crop to /tmp/diag_crops/ for visual inspection.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
 from collections import Counter
-from dataclasses import asdict
 from pathlib import Path
 
 from PIL import Image
@@ -60,6 +60,7 @@ def diagnose_name_region(
 
     # Brightness stats: median and 90th percentile of grayscale to classify dim vs empty
     import numpy as np
+
     arr = np.array(crop.convert("L"))
     median_luma = float(np.median(arr))
     p90_luma = float(np.percentile(arr, 90))
@@ -84,7 +85,9 @@ def diagnose_name_region(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=0, help="Max discs to scan (0=all)")
-    parser.add_argument("--save-crops", action="store_true", help="Save name crops to /tmp/diag_crops/")
+    parser.add_argument(
+        "--save-crops", action="store_true", help="Save name crops to /tmp/diag_crops/"
+    )
     args = parser.parse_args()
 
     recognizer = make_recognizer("tesseract")
@@ -136,28 +139,34 @@ def main() -> None:
                     mode = "dict_gap"
 
                 failure_modes[mode] += 1
-                empty_key_cases.append({
-                    "disc": disc_dir.name,
-                    "substat_idx": i,
-                    "value": sub.value,
-                    "mode": mode,
-                    **info,
-                })
+                empty_key_cases.append(
+                    {
+                        "disc": disc_dir.name,
+                        "substat_idx": i,
+                        "value": sub.value,
+                        "mode": mode,
+                        **info,
+                    }
+                )
                 print(
                     f"  EMPTY_KEY {disc_dir.name} sub{i}: "
                     f"mode={mode!r} bright={info['bright_text']!r} "
                     f"dim={info['dim_text']!r} "
-                    f"luma(med={info['median_luma']} p90={info['p90_luma']} max={info['max_luma']}) "
+                    f"luma(med={info['median_luma']} p90={info['p90_luma']}"
+                    f" max={info['max_luma']}) "
                     f"val={sub.value}"
                 )
 
         if total % 200 == 0:
-            print(f"  ... {total}/{len(disc_dirs)} scanned, {len(empty_key_cases)} empty keys so far", flush=True)
+            print(
+                f"  ... {total}/{len(disc_dirs)} scanned, {len(empty_key_cases)} empty keys so far",
+                flush=True,
+            )
 
-    print(f"\n=== SUMMARY ===")
+    print("\n=== SUMMARY ===")
     print(f"Total discs scanned: {total}")
     print(f"Total empty-key substats: {len(empty_key_cases)}")
-    print(f"Empty-key rate: {len(empty_key_cases)/total*100:.2f}% of discs have ≥1")
+    print(f"Empty-key rate: {len(empty_key_cases) / total * 100:.2f}% of discs have ≥1")
 
     counted_discs = len({c["disc"] for c in empty_key_cases})
     print(f"Discs with ≥1 empty key: {counted_discs}")
@@ -172,8 +181,10 @@ def main() -> None:
     for case in empty_key_cases:
         if case["mode"] not in seen_modes:
             seen_modes.add(case["mode"])
-            print(f"  [{case['mode']}] {case['disc']} sub{case['substat_idx']}: "
-                  f"bright={case['bright_text']!r} dim={case['dim_text']!r} val={case['value']}")
+            print(
+                f"  [{case['mode']}] {case['disc']} sub{case['substat_idx']}: "
+                f"bright={case['bright_text']!r} dim={case['dim_text']!r} val={case['value']}"
+            )
 
     # Save full report
     report = {

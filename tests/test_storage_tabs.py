@@ -6,6 +6,7 @@ from reference screenshots without touching the live game.
 ref_1 = Drive Disc Storage (disc tab active → index 1)
 ref_2 = W-Engine Storage   (engine tab active → index 0)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,13 +33,12 @@ def _load_ref(name: str) -> Image.Image:
 
 # ── Drive Disc Storage (ref_1) ────────────────────────────────────────────────
 
+
 def test_disc_tab_active_on_ref1():
     """Drive Disc Storage → disc tab (index 1) must be active."""
     frame = _load_ref("reference_1_disc_menu.png")
     result = active_storage_tab(frame, _CALIB)
-    assert result == 1, (
-        f"Expected disc tab (index 1) active on ref_1, got index {result}"
-    )
+    assert result == 1, f"Expected disc tab (index 1) active on ref_1, got index {result}"
 
 
 def test_disc_glow_luma_above_threshold_on_ref1():
@@ -61,13 +61,12 @@ def test_disc_glow_luma_above_threshold_on_ref1():
 
 # ── W-Engine Storage (ref_2) ──────────────────────────────────────────────────
 
+
 def test_engine_tab_active_on_ref2():
     """W-Engine Storage → engine tab (index 0) must be active."""
     frame = _load_ref("reference_2_wengine_inventory.png")
     result = active_storage_tab(frame, _CALIB)
-    assert result == 0, (
-        f"Expected engine tab (index 0) active on ref_2, got index {result}"
-    )
+    assert result == 0, f"Expected engine tab (index 0) active on ref_2, got index {result}"
 
 
 def test_engine_glow_luma_above_threshold_on_ref2():
@@ -90,6 +89,7 @@ def test_engine_glow_luma_above_threshold_on_ref2():
 
 # ── Cross-check: inactive tabs must be dark ───────────────────────────────────
 
+
 def test_engine_glow_dark_on_ref1():
     """Engine glow bbox must be well below disc glow bbox on ref_1 (engine inactive)."""
     import numpy as np
@@ -101,7 +101,7 @@ def test_engine_glow_dark_on_ref1():
         r = arr[y1:y2, 1413:1430]
         return float(0.299 * r[..., 0].mean() + 0.587 * r[..., 1].mean() + 0.114 * r[..., 2].mean())
 
-    disc_luma   = mean_luma(304, 325)
+    disc_luma = mean_luma(304, 325)
     engine_luma = mean_luma(135, 203)
     assert disc_luma > engine_luma, (
         f"Disc luma ({disc_luma:.1f}) should exceed engine luma ({engine_luma:.1f}) on ref_1"
@@ -119,7 +119,7 @@ def test_disc_glow_dark_on_ref2():
         r = arr[y1:y2, 1413:1430]
         return float(0.299 * r[..., 0].mean() + 0.587 * r[..., 1].mean() + 0.114 * r[..., 2].mean())
 
-    disc_luma   = mean_luma(304, 325)
+    disc_luma = mean_luma(304, 325)
     engine_luma = mean_luma(135, 203)
     assert engine_luma > disc_luma, (
         f"Engine luma ({engine_luma:.1f}) should exceed disc luma ({disc_luma:.1f}) on ref_2"

@@ -1,5 +1,9 @@
 # Youkai
 
+[![CI](https://github.com/AJTDaedalus/youkai/actions/workflows/ci.yml/badge.svg)](https://github.com/AJTDaedalus/youkai/actions/workflows/ci.yml)
+[![Release](https://github.com/AJTDaedalus/youkai/actions/workflows/release.yml/badge.svg)](https://github.com/AJTDaedalus/youkai/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/AJTDaedalus/youkai)](https://github.com/AJTDaedalus/youkai/releases/latest)
+
 ZZZ inventory OCR scanner. Reads Drive Discs, W-Engines, and Agent stats directly from the game window and exports them as [ZOD](https://frzyc.github.io/zenless-optimizer/)-format JSON, importable into ZZZ-Optimizer and similar tools.
 
 ## Quick start
@@ -131,6 +135,10 @@ Youkai identifies content by OCR and by sampling rendered colors (rarity, badge 
 - Image sharpening such as **Radeon Image Sharpening** or **NVIDIA Image Sharpening**
 
 (See also the display requirements above: windowed, 16:9, 100% scale.)
+
+## Disclaimer
+
+Youkai is an unofficial, fan-made tool and is not affiliated with, endorsed, sponsored, or approved by HoYoverse (COGNOSPHERE PTE. LTD.), miHoYo, or any of their affiliates. See [DISCLAIMER.md](DISCLAIMER.md) for the full text.
 
 ## License
 

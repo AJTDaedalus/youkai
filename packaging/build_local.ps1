@@ -99,9 +99,10 @@ if (Test-Path $RepoOut) {
 Copy-Item $LocalOut $RepoOut -Recurse
 
 # ── 9. Zip the portable folder for release ───────────────────────────────────
-# Stage license + notices INTO the portable folder so they ship inside the zip (see D-LICENSE).
+# Stage license + notices + disclaimer INTO the portable folder so they ship inside the zip (see D-LICENSE, D-CICD-3).
 Copy-Item (Join-Path $RepoRoot 'LICENSE') (Join-Path $RepoOut 'LICENSE')
 Copy-Item (Join-Path $RepoRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $RepoOut 'THIRD_PARTY_NOTICES.md')
+Copy-Item (Join-Path $RepoRoot 'DISCLAIMER.md') (Join-Path $RepoOut 'DISCLAIMER.md')
 $ZipPath = Join-Path $RepoRoot "youkai-portable.zip"
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 Compress-Archive -Path (Join-Path $RepoOut '*') -DestinationPath $ZipPath

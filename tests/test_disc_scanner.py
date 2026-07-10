@@ -4,6 +4,7 @@ C1/C2 (live game interaction) are not tested here — those require the game.
 This file covers: export_discs round-trip, GridParams geometry, and the
 _crop helper math.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,8 +19,8 @@ from youkai_ocr.disc_scanner import _crop, export_discs
 from youkai_ocr.grid import DEFAULT_GRID
 from youkai_ocr.zod import ZodDisc, ZodSubstat
 
-
 # ── GridParams ────────────────────────────────────────────────────────────────
+
 
 def test_cell_center_origin():
     g = DEFAULT_GRID
@@ -42,8 +43,8 @@ def test_cell_center_row_pitch():
     assert cx1 == cx0
 
 
-
 # ── _crop helper ──────────────────────────────────────────────────────────────
+
 
 def test_crop_identity():
     # At 1:1 scale (1920×1080), crop should be exact.
@@ -62,6 +63,7 @@ def test_crop_scaled():
 
 
 # ── export_discs ──────────────────────────────────────────────────────────────
+
 
 def _make_disc(slot: int = 1, set_key: str = "AstralVoice") -> ZodDisc:
     return ZodDisc(
@@ -124,12 +126,15 @@ def test_export_creates_parent_dirs():
 
 # ── Storage count reader ──────────────────────────────────────────────────────
 
+
 def test_read_disc_count_from_real_header():
     from youkai_ocr.capture import calibrate
-    from youkai_ocr.recognize import make_recognizer
     from youkai_ocr.disc_scanner import read_disc_count
+    from youkai_ocr.recognize import make_recognizer
 
-    fixture = Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
+    fixture = (
+        Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
+    )
     if not fixture.exists():
         pytest.skip("fixture missing")
     im = Image.open(fixture)
@@ -141,11 +146,13 @@ def test_read_disc_count_from_real_header():
 
 # ── Parallel OCR pipeline ─────────────────────────────────────────────────────
 
+
 def test_scan_discs_parallel_preserves_order(monkeypatch):
     """Workers finish OCR out of order; results must still come back in scan order."""
     import random
     import time as _time
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
@@ -171,7 +178,7 @@ def test_scan_discs_parallel_preserves_order(monkeypatch):
             return {"idx": self.idx}
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
-        _time.sleep(random.uniform(0, 0.01))   # scramble completion order
+        _time.sleep(random.uniform(0, 0.01))  # scramble completion order
         return Stub(cell_idx), {"set": 99.0}
 
     monkeypatch.setattr(ds, "GridNavigator", FakeNav)
@@ -188,23 +195,30 @@ def test_scan_discs_parallel_preserves_order(monkeypatch):
 def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
     """on_item is called exactly once per disc with monotonically increasing scanned."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     N = 6
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             for i in range(N):
                 yield i, 0, f"frame{i}"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def __init__(self, idx): self.idx = idx
-        def to_dict(self): return {}
+        def __init__(self, idx):
+            self.idx = idx
+
+        def to_dict(self):
+            return {}
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
         return Stub(cell_idx), {"set": 99.0}
@@ -217,7 +231,9 @@ def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
 
     calls: list[tuple[int, int | None]] = []
     discs, _ = ds.scan_discs(
-        lambda: "preflight", calib=None, grid=DEFAULT_GRID,
+        lambda: "preflight",
+        calib=None,
+        grid=DEFAULT_GRID,
         on_item=lambda s, t: calls.append((s, t)),
     )
 
@@ -225,28 +241,37 @@ def test_scan_discs_on_item_called_once_per_disc_monotonically(monkeypatch):
     scanned_values = [s for s, _ in calls]
     # Disc scanner uses a thread pool — completion order is non-deterministic,
     # but every value 1..N must appear exactly once.
-    assert sorted(scanned_values) == list(range(1, N + 1)), f"expected {{1..N}}, got: {scanned_values}"
+    assert sorted(scanned_values) == list(range(1, N + 1)), (
+        f"expected {{1..N}}, got: {scanned_values}"
+    )
     assert all(t == N for _, t in calls), "total should equal N for all calls"
 
 
 def test_scan_discs_on_item_omitted_no_error(monkeypatch):
     """on_item=None (default) causes no error."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             for i in range(3):
                 yield i, 0, f"frame{i}"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def __init__(self, idx): self.idx = idx
-        def to_dict(self): return {}
+        def __init__(self, idx):
+            self.idx = idx
+
+        def to_dict(self):
+            return {}
 
     monkeypatch.setattr(ds, "GridNavigator", FakeNav)
     monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
@@ -259,6 +284,7 @@ def test_scan_discs_on_item_omitted_no_error(monkeypatch):
 
 
 # ── Critical-failure reasons (T3: unknown-set floor) ──────────────────────────
+
 
 class _FakeRecognizer:
     """Returns a fixed title on every read; other fields don't matter for these
@@ -334,7 +360,10 @@ def test_scan_equipped_disc_frame_unknown_set_critical_fail():
 
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
     disc, conf = scan_equipped_disc_frame(
-        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=1,
+        frame,
+        _identity_calib(),
+        agent_key="Zhu Yuan",
+        slot_key=1,
         engine=_FakeRecognizer("Future Set Name [1]"),
     )
     assert disc is None
@@ -342,6 +371,7 @@ def test_scan_equipped_disc_frame_unknown_set_critical_fail():
 
 
 # ── Roll-count suffix evidence (T4) ────────────────────────────────────────────
+
 
 class _ScriptedRecognizer:
     """Fixed title/lock text; scripted read_line() returns consumed in call
@@ -383,15 +413,22 @@ def test_extract_disc_captures_roll_suffix_evidence():
 
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
     lines = [
-        "Lv.4",     # level
-        "", "", "",  # main stat name — bright + dim + 2x fallback ladder (T12), all empty
-        "", "",     # main stat value — native + 2x reads (unused here)
-        "DEF +2",   # substat 1 name — bright pass, resolves immediately
-        "30", "30", # substat 1 value — on-lattice (def base 15 x k=2), so T9's
-                    # repair_disc wiring leaves it untouched: this test is about
-                    # roll-suffix evidence capture, not repair behavior.
-        "", "", "", # substat 2 name — bright, dim, upscale: all empty
-        "", "",     # substat 2 value — bright + 2x: both empty -> ends the list
+        "Lv.4",  # level
+        "",
+        "",
+        "",  # main stat name — bright + dim + 2x fallback ladder (T12), all empty
+        "",
+        "",  # main stat value — native + 2x reads (unused here)
+        "DEF +2",  # substat 1 name — bright pass, resolves immediately
+        "30",
+        "30",  # substat 1 value — on-lattice (def base 15 x k=2), so T9's
+        # repair_disc wiring leaves it untouched: this test is about
+        # roll-suffix evidence capture, not repair behavior.
+        "",
+        "",
+        "",  # substat 2 name — bright, dim, upscale: all empty
+        "",
+        "",  # substat 2 value — bright + 2x: both empty -> ends the list
     ]
     recognizer = _ScriptedRecognizer("Astral Voice [1]", lines)
     disc, conf = _extract_disc(frame, _identity_calib(), 0, 0, recognizer, None, 0)
@@ -406,14 +443,7 @@ def test_extract_disc_captures_roll_suffix_evidence():
 def test_equip_parse_stat_block_captures_roll_suffix():
     from youkai_ocr.disc_scanner import _equip_parse_stat_block
 
-    block_text = (
-        "Main Stat\n"
-        "ATK% 12.0%\n"
-        "Sub Stats\n"
-        "DEF +2 44\n"
-        "CRIT Rate 4.8%\n"
-        "Set Effect\n"
-    )
+    block_text = "Main Stat\nATK% 12.0%\nSub Stats\nDEF +2 44\nCRIT Rate 4.8%\nSet Effect\n"
     main_raw, subs_raw = _equip_parse_stat_block(block_text)
     assert main_raw == ("ATK%", "12.0%")
     assert subs_raw[0] == ("DEF +2", "44", 2)
@@ -429,13 +459,18 @@ def test_extract_disc_captures_pct_seen_evidence():
 
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
     lines = [
-        "Lv.4",       # level
-        "",           # main stat name (unused here)
-        "7.5%", "7.5%",  # main stat value — native + 2x, percent seen
-        "DEF +2",     # substat 1 name
-        "14.4%", "14.4%",  # substat 1 value — percent seen
-        "", "", "",   # substat 2 name — bright, dim, upscale: all empty
-        "", "",       # substat 2 value — both empty -> ends the list
+        "Lv.4",  # level
+        "",  # main stat name (unused here)
+        "7.5%",
+        "7.5%",  # main stat value — native + 2x, percent seen
+        "DEF +2",  # substat 1 name
+        "14.4%",
+        "14.4%",  # substat 1 value — percent seen
+        "",
+        "",
+        "",  # substat 2 name — bright, dim, upscale: all empty
+        "",
+        "",  # substat 2 value — both empty -> ends the list
     ]
     recognizer = _ScriptedRecognizer("Astral Voice [1]", lines)
     disc, conf = _extract_disc(frame, _identity_calib(), 0, 0, recognizer, None, 0)
@@ -447,6 +482,7 @@ def test_extract_disc_captures_pct_seen_evidence():
 
 
 # ── Main-stat value evidence (T5) ───────────────────────────────────────────
+
 
 class _EquipStubRecognizer:
     """Distinguishes the title read_text() call from the stat-block read_text()
@@ -481,16 +517,13 @@ def test_scan_equipped_disc_frame_captures_main_stat_value():
     from youkai_ocr.disc_scanner import scan_equipped_disc_frame
 
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
-    block_text = (
-        "Main Stat\n"
-        "ATK 316\n"
-        "Sub Stats\n"
-        "DEF +2 44\n"
-        "Set Effect\n"
-    )
+    block_text = "Main Stat\nATK 316\nSub Stats\nDEF +2 44\nSet Effect\n"
     recognizer = _EquipStubRecognizer("Astral Voice [2]", block_text)
     disc, conf = scan_equipped_disc_frame(
-        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=2,
+        frame,
+        _identity_calib(),
+        agent_key="Zhu Yuan",
+        slot_key=2,
         engine=recognizer,
     )
     assert disc is not None
@@ -501,16 +534,13 @@ def test_scan_equipped_disc_frame_captures_pct_seen():
     from youkai_ocr.disc_scanner import scan_equipped_disc_frame
 
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
-    block_text = (
-        "Main Stat\n"
-        "ATK 7.5%\n"
-        "Sub Stats\n"
-        "DEF +2 14.4%\n"
-        "Set Effect\n"
-    )
+    block_text = "Main Stat\nATK 7.5%\nSub Stats\nDEF +2 14.4%\nSet Effect\n"
     recognizer = _EquipStubRecognizer("Astral Voice [2]", block_text)
     disc, conf = scan_equipped_disc_frame(
-        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=2,
+        frame,
+        _identity_calib(),
+        agent_key="Zhu Yuan",
+        slot_key=2,
         engine=recognizer,
     )
     assert disc is not None
@@ -598,21 +628,38 @@ def _load_repair_case(disc_id: str) -> dict:
         # E2 digit-drop. Landed on rule 3 (roll_budget) pre-T12 because the
         # value bleed also ate this line's "+N"; the fixed parse_roll_suffix
         # recovers it, so rule 1 now resolves it directly.
-        ("disc_0011", "substat[1]",
-         {"key": "crit_dmg_", "value": 4.4}, {"key": "crit_dmg_", "value": 14.4}, "roll_suffix"),
+        (
+            "disc_0011",
+            "substat[1]",
+            {"key": "crit_dmg_", "value": 4.4},
+            {"key": "crit_dmg_", "value": 14.4},
+            "roll_suffix",
+        ),
         # E3 flat/percent key-flip masquerading as sub_equals_main — same
         # pre-T12 rule-3 → rule-1 promotion as disc_0011.
-        ("disc_0293", "substat[3]",
-         {"key": "def", "value": 44.0}, {"key": "def_", "value": 14.4}, "roll_suffix"),
+        (
+            "disc_0293",
+            "substat[3]",
+            {"key": "def", "value": 44.0},
+            {"key": "def_", "value": 14.4},
+            "roll_suffix",
+        ),
         # T12/Cluster-1: the def_ 14.4% value bleeds its leading "1" into the
         # name crop ("DEF +2 1"); the fixed parse_roll_suffix recovers the +2,
         # so rule 1 (not budget forcing) resolves the 3-way lattice tie that
         # left 38 archive discs unrepairable.
-        ("disc_0001", "substat[3]",
-         {"key": "def", "value": 44.0}, {"key": "def_", "value": 14.4}, "roll_suffix"),
+        (
+            "disc_0001",
+            "substat[3]",
+            {"key": "def", "value": 44.0},
+            {"key": "def_", "value": 14.4},
+            "roll_suffix",
+        ),
     ],
 )
-def test_scan_single_frame_repairs_disc_through_real_call_path(disc_id, repaired_field, before, after, rule):
+def test_scan_single_frame_repairs_disc_through_real_call_path(
+    disc_id, repaired_field, before, after, rule
+):
     """_extract_disc must build Evidence from its own conf capture and call
     disc_rules.repair_disc for real — the corrected disc and a `repairs`
     record must come out of scan_single_frame exactly as they would from the
@@ -721,9 +768,9 @@ def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():
 
     pen_sub = disc.substats[1]
     assert pen_sub.key == "pen"
-    assert pen_sub.value == 0.0   # left untouched — never a silent guess
+    assert pen_sub.value == 0.0  # left untouched — never a silent guess
     assert pen_sub.value != next(s["value"] for s in expect["substats"] if s["key"] == "pen")
-    assert conf["substat_2"] < 70.0   # but flagged, not silently wrong
+    assert conf["substat_2"] < 70.0  # but flagged, not silently wrong
 
 
 def test_scan_single_frame_dropped_rows_no_repair_but_residual_violation():
@@ -743,9 +790,9 @@ def test_scan_single_frame_dropped_rows_no_repair_but_residual_violation():
     disc, conf = scan_single_frame(frame, _identity_calib())
 
     assert disc is not None, conf.get("_fail_reason")
-    assert len(disc.substats) == 2   # rows genuinely missing, nothing to repair
+    assert len(disc.substats) == 2  # rows genuinely missing, nothing to repair
     assert not conf.get("_repairs")
-    assert conf["substats"] < 70.0   # aggregate sub_count/roll_budget violation
+    assert conf["substats"] < 70.0  # aggregate sub_count/roll_budget violation
 
 
 def test_scan_equipped_disc_frame_repairs_through_real_call_path():
@@ -758,16 +805,13 @@ def test_scan_equipped_disc_frame_repairs_through_real_call_path():
     from youkai_ocr.disc_scanner import scan_equipped_disc_frame
 
     frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
-    block_text = (
-        "Main Stat\n"
-        "ATK 316\n"
-        "Sub Stats\n"
-        "DEF +2 44%\n"
-        "Set Effect\n"
-    )
+    block_text = "Main Stat\nATK 316\nSub Stats\nDEF +2 44%\nSet Effect\n"
     recognizer = _EquipStubRecognizer("Astral Voice [2]", block_text)
     disc, conf = scan_equipped_disc_frame(
-        frame, _identity_calib(), agent_key="Zhu Yuan", slot_key=2,
+        frame,
+        _identity_calib(),
+        agent_key="Zhu Yuan",
+        slot_key=2,
         engine=recognizer,
     )
 
@@ -776,37 +820,51 @@ def test_scan_equipped_disc_frame_repairs_through_real_call_path():
     assert disc.substats[0].value == 14.4
 
     repairs = conf.get("_repairs") or []
-    assert repairs == [{
-        "field": "substat[0]",
-        "before": {"key": "def", "value": 44.0},
-        "after": {"key": "def_", "value": 14.4},
-        "rule": "roll_suffix",
-    }]
+    assert repairs == [
+        {
+            "field": "substat[0]",
+            "before": {"key": "def", "value": 44.0},
+            "after": {"key": "def_", "value": 14.4},
+            "rule": "roll_suffix",
+        }
+    ]
 
 
 # ── T9: scan_discs issue aggregation (repairs surfaced in the issues list) ────
+
 
 def test_scan_discs_issue_carries_repairs_when_no_other_low_fields(monkeypatch):
     """A disc that's fully auto-repaired (no residual low-confidence field)
     must still get an issue entry recording the repair — repairs are review-
     worthy even when nothing else about the disc looks untrustworthy."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             yield 0, 0, "frame0"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def to_dict(self): return {"setKey": "AstralVoice"}
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
 
-    repair_record = [{"field": "substat[0]", "before": {"key": "def", "value": 44.0},
-                       "after": {"key": "def_", "value": 14.4}, "rule": "roll_suffix"}]
+    repair_record = [
+        {
+            "field": "substat[0]",
+            "before": {"key": "def", "value": 44.0},
+            "after": {"key": "def_", "value": 14.4},
+            "rule": "roll_suffix",
+        }
+    ]
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
         return Stub(), {"set": 99.0, "_repairs": repair_record}
@@ -832,22 +890,34 @@ def test_scan_discs_excludes_failed_validation_disc_from_export(monkeypatch):
     therefore the export) and surface as a failed_validation issue carrying
     the disc payload + violations for the user's failure report."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             yield 0, 0, "frame0"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def to_dict(self): return {"setKey": "AstralVoice"}
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
 
-    violations = [{"field": "substat[1]", "code": "sub_not_on_lattice",
-                   "observed": 0.0, "expected": None, "severity": "error"}]
+    violations = [
+        {
+            "field": "substat[1]",
+            "code": "sub_not_on_lattice",
+            "observed": 0.0,
+            "expected": None,
+            "severity": "error",
+        }
+    ]
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
         return Stub(), {"set": 99.0, "substat_2": 30.0, "_violations": list(violations)}
@@ -860,7 +930,7 @@ def test_scan_discs_excludes_failed_validation_disc_from_export(monkeypatch):
 
     discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
 
-    assert discs == []   # excluded from export
+    assert discs == []  # excluded from export
     assert len(issues) == 1
     assert issues[0]["status"] == "failed_validation"
     assert issues[0]["violations"] == violations
@@ -872,22 +942,33 @@ def test_scan_discs_issue_carries_both_low_fields_and_repairs(monkeypatch):
     must surface both in the same issue entry — status stays low_confidence
     (the stronger signal) but the repairs list is not dropped."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             yield 0, 0, "frame0"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def to_dict(self): return {"setKey": "AstralVoice"}
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
 
-    repair_record = [{"field": "substat[0]", "before": {"key": "def", "value": 44.0},
-                       "after": {"key": "def_", "value": 14.4}, "rule": "roll_suffix"}]
+    repair_record = [
+        {
+            "field": "substat[0]",
+            "before": {"key": "def", "value": 44.0},
+            "after": {"key": "def_", "value": 14.4},
+            "rule": "roll_suffix",
+        }
+    ]
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
         return Stub(), {"set": 99.0, "substat_2": 30.0, "_repairs": repair_record}
@@ -914,29 +995,45 @@ def test_scan_discs_evidence_keys_do_not_flag_clean_disc(monkeypatch):
     is high was silently labeled low_confidence and its evidence dumped into
     `fields`. A fully clean disc must produce no issue entry at all."""
     from threading import Event
+
     import youkai_ocr.disc_scanner as ds
     from youkai_ocr.grid import DEFAULT_GRID
 
     class FakeNav:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self, total):
             yield 0, 0, "frame0"
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class Stub:
-        def to_dict(self): return {"setKey": "AstralVoice"}
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
 
     # Every confidence score is high (clean disc); only evidence keys are "low".
     clean_conf = {
-        "set": 99.0, "slot": 100.0, "rarity": 100.0, "level": 100.0,
-        "lock": 80.0, "main_stat": 100.0,
-        "substat_1": 100.0, "substat_2": 100.0, "substat_3": 100.0, "substat_4": 100.0,
+        "set": 99.0,
+        "slot": 100.0,
+        "rarity": 100.0,
+        "level": 100.0,
+        "lock": 80.0,
+        "main_stat": 100.0,
+        "substat_1": 100.0,
+        "substat_2": 100.0,
+        "substat_3": 100.0,
+        "substat_4": 100.0,
         # evidence — must be ignored by the low-confidence filter:
-        "main_stat_value": 316.0, "main_stat_pct_seen": False,
-        "substat_1_roll_suffix": 3.0, "substat_1_pct_seen": False,
-        "substat_2_pct_seen": True, "substat_3_pct_seen": False, "substat_4_pct_seen": True,
+        "main_stat_value": 316.0,
+        "main_stat_pct_seen": False,
+        "substat_1_roll_suffix": 3.0,
+        "substat_1_pct_seen": False,
+        "substat_2_pct_seen": True,
+        "substat_3_pct_seen": False,
+        "substat_4_pct_seen": True,
     }
 
     def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
@@ -951,4 +1048,4 @@ def test_scan_discs_evidence_keys_do_not_flag_clean_disc(monkeypatch):
     discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
 
     assert len(discs) == 1
-    assert issues == []   # a clean disc must not be flagged from evidence keys alone
+    assert issues == []  # a clean disc must not be flagged from evidence keys alone

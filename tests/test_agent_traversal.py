@@ -9,6 +9,7 @@ updates rendered state so the real predicates (_on_detail_page, _tab_active,
 _chevron_color_fracs, _equip_tab_rendered, _slot_panel_rendered, _strip_id) all fire
 correctly.  scan() anchors on the start position and stops when the ring closes.
 """
+
 from __future__ import annotations
 
 import threading
@@ -19,30 +20,30 @@ from PIL import Image
 
 from youkai_ocr import agent_scanner as A
 from youkai_ocr.agent_scanner import (
-    _PHASH_SIZE,
-    _portrait_phash,
-    AgentNavigator,
-    _strip_id,
-    _chevron_color_fracs,
-    _classify_owned,
-    _OWN_CHEVRON_BBOX,
-    _phash_hamming,
-    _MENU_BASE_BUTTON,
-    _STRIP_NEXT,
-    _STRIP_PREV,
-    _TAB_BASE_STATS,
-    _TAB_SKILLS,
-    _TAB_EQUIPMENT,
-    _TAB_EQUIP_IDX,
-    _tab_active,
-    _TAB_ACTIVE_BBOXES,
     _ALL_SLOT_CENTERS,
+    _CHARACTER_RENDER_BBOX,
     _EQUIP_GATE_CENTER,
     _EQUIP_GATE_RADIUS,
     _EQUIP_RING_BBOX,
+    _MENU_BASE_BUTTON,
+    _OWN_CHEVRON_BBOX,
+    _PHASH_SIZE,
     _SLOT_PANEL_BBOX,
-    _CHARACTER_RENDER_BBOX,
+    _STRIP_NEXT,
     _STRIP_PHASH_BBOX,
+    _STRIP_PREV,
+    _TAB_ACTIVE_BBOXES,
+    _TAB_BASE_STATS,
+    _TAB_EQUIP_IDX,
+    _TAB_EQUIPMENT,
+    _TAB_SKILLS,
+    AgentNavigator,
+    _chevron_color_fracs,
+    _classify_owned,
+    _phash_hamming,
+    _portrait_phash,
+    _strip_id,
+    _tab_active,
 )
 from youkai_ocr.capture import CalibrationResult
 
@@ -59,15 +60,24 @@ def _no_sleep(monkeypatch):
 
 # ── Strip simulator ───────────────────────────────────────────────────────────
 
-_BAR_STEP = 60   # px the strip identity bar shifts per agent index
-_BAR_W    = 40
+_BAR_STEP = 60  # px the strip identity bar shifts per agent index
+_BAR_W = 40
 
 
 class _StripSim(AgentNavigator):
-    def __init__(self, n_owned: int, n_total: int | None = None, start_idx: int | None = None,
-                 owned_idxs: set[int] | None = None):
-        super().__init__(capture_fn=None, calib=_identity_calib(),
-                         kill_event=threading.Event(), suppress_flag=[False])
+    def __init__(
+        self,
+        n_owned: int,
+        n_total: int | None = None,
+        start_idx: int | None = None,
+        owned_idxs: set[int] | None = None,
+    ):
+        super().__init__(
+            capture_fn=None,
+            calib=_identity_calib(),
+            kill_event=threading.Event(),
+            suppress_flag=[False],
+        )
         self.n_owned = n_owned
         self.n_total = n_total if n_total is not None else n_owned + 3
         # Default: owned is the contiguous prefix [0, n_owned).  Pass owned_idxs to
@@ -77,8 +87,8 @@ class _StripSim(AgentNavigator):
         self.tab = 0
         self.on_detail = False
         self.panel_open = False
-        self.cur_slot = -1        # which hexagon slot's panel is open (H18 slot-switch gate)
-        self.empty_slots: set[int] = set()   # slot indices the action-bar gate reports EMPTY (H21)
+        self.cur_slot = -1  # which hexagon slot's panel is open (H18 slot-switch gate)
+        self.empty_slots: set[int] = set()  # slot indices the action-bar gate reports EMPTY (H21)
         self.escapes = 0
         self.click_log: list[tuple[int, int]] = []
         # AgentNavigator stores capture_fn as the instance attr self._capture,
@@ -106,16 +116,19 @@ class _StripSim(AgentNavigator):
         if act == "enter":
             self.on_detail, self.tab = True, 0
         elif act == "next":
-            self.idx = (self.idx + 1) % self.n_total   # H16: circular strip — wraps
+            self.idx = (self.idx + 1) % self.n_total  # H16: circular strip — wraps
         elif act == "prev":
-            self.idx = (self.idx - 1) % self.n_total   # H16: circular strip — wraps
+            self.idx = (self.idx - 1) % self.n_total  # H16: circular strip — wraps
         elif act in ("tab0", "tab1", "tab2"):
             self.tab = int(act[-1])
         elif act == "slot":
             self.panel_open = True
             self.cur_slot = next(
-                (k for k, (sx, sy) in enumerate(_ALL_SLOT_CENTERS)
-                 if self._near(ref_x, ref_y, sx, sy)),
+                (
+                    k
+                    for k, (sx, sy) in enumerate(_ALL_SLOT_CENTERS)
+                    if self._near(ref_x, ref_y, sx, sy)
+                ),
                 self.cur_slot,
             )
 
@@ -125,8 +138,12 @@ class _StripSim(AgentNavigator):
 
     def _match(self, x, y) -> str:
         for (tx, ty), name in (
-            (_MENU_BASE_BUTTON, "enter"), (_STRIP_NEXT, "next"), (_STRIP_PREV, "prev"),
-            (_TAB_BASE_STATS, "tab0"), (_TAB_SKILLS, "tab1"), (_TAB_EQUIPMENT, "tab2"),
+            (_MENU_BASE_BUTTON, "enter"),
+            (_STRIP_NEXT, "next"),
+            (_STRIP_PREV, "prev"),
+            (_TAB_BASE_STATS, "tab0"),
+            (_TAB_SKILLS, "tab1"),
+            (_TAB_EQUIPMENT, "tab2"),
         ):
             if self._near(x, y, *(tx, ty)):
                 return name
@@ -152,29 +169,29 @@ class _StripSim(AgentNavigator):
             # agents — the live reality each full-body render is unique.  The stripe sits in the
             # CHARACTER_RENDER bbox, clear of the ownership chevron, so it never perturbs it.
             ix = x0 + (self.idx % 12) * 53
-            arr[y0:y1, ix:ix + 50] = 255
+            arr[y0:y1, ix : ix + 50] = 255
             tx0, ty0, tx1, ty1 = _TAB_ACTIVE_BBOXES[self.tab]
-            arr[ty0:ty1, tx0:tx1] = (245, 200, 30)        # ZZZ gold → hue≈24
+            arr[ty0:ty1, tx0:tx1] = (245, 200, 30)  # ZZZ gold → hue≈24
             sx0, sy0, sx1, sy1 = _STRIP_PHASH_BBOX
-            arr[sy0:sy1, sx0:sx1] = 20                     # dark strip bg
+            arr[sy0:sy1, sx0:sx1] = 20  # dark strip bg
             bx = sx0 + 20 + self.idx * _BAR_STEP
-            arr[sy0:sy1, bx:bx + _BAR_W] = 255             # identity bar (x encodes idx)
+            arr[sy0:sy1, bx : bx + _BAR_W] = 255  # identity bar (x encodes idx)
             if self.tab == 2:
                 ex, ey = _EQUIP_GATE_CENTER
                 r = _EQUIP_GATE_RADIUS + 4
-                arr[ey - r:ey + r, ex - r:ex + r] = 255    # bright engine hexagon
+                arr[ey - r : ey + r, ex - r : ex + r] = 255  # bright engine hexagon
             if self.panel_open:
                 px0, py0, px1, py1 = _SLOT_PANEL_BBOX
-                arr[py0:py1, px0:px1] = 0                  # dark slot-select panel (stays "rendered")
+                arr[py0:py1, px0:px1] = 0  # dark slot-select panel (stays "rendered")
                 # H18: per-slot title mark so _open_slot's slot-switch gate sees the panel
                 # content change between consecutive slots (kept small → dark_frac stays high).
                 mx = px0 + 10 + max(self.cur_slot, 0) * 40
-                arr[py0:py1, mx:mx + 30] = 255
+                arr[py0:py1, mx : mx + 30] = 255
                 # H19: per-slot BODY signature (models real disc detail — main stat/substats differ
                 # between discs even of the same SET).  _open_slot now gates on _SLOT_DETAIL_BBOX
                 # (title + body), so a distinct band per slot is what lets the switch test fire.
                 by = py1 + 20 + max(self.cur_slot, 0) * 50
-                arr[by:by + 40, px0 + 20:px1 - 20] = 200
+                arr[by : by + 40, px0 + 20 : px1 - 20] = 200
         return Image.fromarray(arr, "RGB")
 
 
@@ -188,6 +205,7 @@ def _run(sim: _StripSim) -> list[int]:
 
 
 # ── pHash / predicate unit tests ───────────────────────────────────────────────
+
 
 def test_phash_stable_and_length():
     frame = Image.new("RGB", (1920, 1080), color=(128, 64, 200))
@@ -220,26 +238,27 @@ def test_chevron_signal_separates_owned_unowned():
 
 def test_classify_owned_rules():
     # level >= 2 ⇒ owned regardless of chevron (covers white-pill ascension breakpoints).
-    assert _classify_owned(50, 0.0, 0.20)          # owned Lv.50/50 with a WHITE ">>" (agent_023)
-    assert _classify_owned(60, 0.0, 0.0)           # owned, maxed ("MAX" pill — no green/white)
+    assert _classify_owned(50, 0.0, 0.20)  # owned Lv.50/50 with a WHITE ">>" (agent_023)
+    assert _classify_owned(60, 0.0, 0.0)  # owned, maxed ("MAX" pill — no green/white)
     # Lv.1 / unreadable (0) ⇒ chevron decides.
-    assert _classify_owned(1, 0.16, 0.0)           # fresh owned: green ">>"
-    assert not _classify_owned(0, 0.0, 0.16)       # unowned: blank level + white ">>"
-    assert not _classify_owned(1, 0.0, 0.16)       # unowned: Lv.1 + white ">>"
-    assert _classify_owned(0, 0.0, 0.0)            # ambiguous ⇒ bias to OWNED (capture)
+    assert _classify_owned(1, 0.16, 0.0)  # fresh owned: green ">>"
+    assert not _classify_owned(0, 0.0, 0.16)  # unowned: blank level + white ">>"
+    assert not _classify_owned(1, 0.0, 0.16)  # unowned: Lv.1 + white ">>"
+    assert _classify_owned(0, 0.0, 0.0)  # ambiguous ⇒ bias to OWNED (capture)
 
 
 # ── Traversal dry-runs ─────────────────────────────────────────────────────────
+
 
 def test_visits_each_owned_once_in_order_skipping_grayout():
     # H16: circular strip, anchored on entry.  Start mid-roster at idx=2; the ring walks
     # forward (2,3,4 → grayed 5,6,7 skipped → wrap 0,1) and stops back at the start.
     sim = _StripSim(n_owned=5, start_idx=2)
     seq = _run(sim)
-    assert seq == [2, 3, 4, 0, 1]              # ring order from the start position
-    assert sorted(seq) == [0, 1, 2, 3, 4]      # every owned agent visited exactly once
-    assert sim.idx == 2                          # ring closed: returned to the start
-    assert sim.escapes == 5                      # exactly one Escape per OWNED agent (equipment)
+    assert seq == [2, 3, 4, 0, 1]  # ring order from the start position
+    assert sorted(seq) == [0, 1, 2, 3, 4]  # every owned agent visited exactly once
+    assert sim.idx == 2  # ring closed: returned to the start
+    assert sim.escapes == 5  # exactly one Escape per OWNED agent (equipment)
 
 
 def test_ring_close_survives_failed_anchor_read():
@@ -256,7 +275,7 @@ def test_ring_close_survives_failed_anchor_read():
         def _ring_close_key(self, frame) -> str:
             self._ring_key_calls += 1
             if self._ring_key_calls == 1:
-                return ""   # simulate OCR miss on the entry frame
+                return ""  # simulate OCR miss on the entry frame
             return str(self.idx)
 
     # The anchor lands on the first position it can actually read (idx=3, one visit
@@ -266,8 +285,8 @@ def test_ring_close_survives_failed_anchor_read():
     # where before this fix it would have spun forever (start_name stuck at "").
     sim = _FlakyAnchorSim(n_owned=5, start_idx=2)
     seq = _run(sim)
-    assert seq == [2, 3, 4, 0, 1, 2]             # walks a full extra lap before closing
-    assert sim.idx == 3                          # closes back at the position it anchored on
+    assert seq == [2, 3, 4, 0, 1, 2]  # walks a full extra lap before closing
+    assert sim.idx == 3  # closes back at the position it anchored on
     assert sim.escapes == 6
 
 
@@ -275,8 +294,8 @@ def test_skips_interleaved_grayout():
     # H15/H16: ownership is NOT assumed contiguous — grayed agents are skipped, not a stop.
     sim = _StripSim(n_owned=3, n_total=6, start_idx=0, owned_idxs={0, 2, 5})
     seq = _run(sim)
-    assert seq == [0, 2, 5]                    # owned at any position are all visited
-    assert sim.idx == 0                          # ring closed back at the start
+    assert seq == [0, 2, 5]  # owned at any position are all visited
+    assert sim.idx == 0  # ring closed back at the start
     assert sim.escapes == 3
 
 
@@ -296,7 +315,6 @@ def test_single_agent_total_advance_no_op():
     assert sim.escapes == 1
 
 
-
 def test_kill_event_stops_traversal():
     sim = _StripSim(n_owned=5, start_idx=0)
     sim._kill.set()
@@ -306,10 +324,13 @@ def test_kill_event_stops_traversal():
 def test_equipment_reads_seven_slots_no_inter_slot_escape():
     sim = _StripSim(n_owned=1, start_idx=0)
     list(sim.scan())
-    slot_clicks = [c for c in sim.click_log if any(
-        abs(c[0] - sx) <= 4 and abs(c[1] - sy) <= 4 for sx, sy in _ALL_SLOT_CENTERS)]
-    assert len(slot_clicks) == 7               # all 7 slots clicked
-    assert sim.escapes == 1                    # one Escape total, not one-per-slot
+    slot_clicks = [
+        c
+        for c in sim.click_log
+        if any(abs(c[0] - sx) <= 4 and abs(c[1] - sy) <= 4 for sx, sy in _ALL_SLOT_CENTERS)
+    ]
+    assert len(slot_clicks) == 7  # all 7 slots clicked
+    assert sim.escapes == 1  # one Escape total, not one-per-slot
 
 
 def test_capture_tab_reclicks_dropped_tab_click():
@@ -326,17 +347,17 @@ def test_capture_tab_reclicks_dropped_tab_click():
             # Swallow the first `drop` clicks that target the Equipment tab.
             if self._near(ref_x, ref_y, *_TAB_EQUIPMENT) and self._drop_remaining > 0:
                 self._drop_remaining -= 1
-                self.click_log.append((ref_x, ref_y))   # the click happened, game ignored it
+                self.click_log.append((ref_x, ref_y))  # the click happened, game ignored it
                 return
             super()._click(ref_x, ref_y)
 
     sim = _DropFirstTab2(n_owned=1, start_idx=0, drop=2)
     sim.on_detail = True
     frame = sim._capture_tab(_TAB_EQUIP_IDX)
-    assert _tab_active(frame, _identity_calib(), _TAB_EQUIP_IDX)   # recovered onto Equipment
+    assert _tab_active(frame, _identity_calib(), _TAB_EQUIP_IDX)  # recovered onto Equipment
     assert sim.tab == 2
     tab2_clicks = [c for c in sim.click_log if sim._near(c[0], c[1], *_TAB_EQUIPMENT)]
-    assert len(tab2_clicks) >= 3       # initial drop ×2 + at least one recovering re-click
+    assert len(tab2_clicks) >= 3  # initial drop ×2 + at least one recovering re-click
 
 
 def test_open_slot_reclicks_dropped_second_slot():
@@ -346,6 +367,7 @@ def test_open_slot_reclicks_dropped_second_slot():
     # the slot until its panel actually opens/switches.
     class _DropSlot1(_StripSim):
         """Swallow the first `drop` clicks aimed at hexagon slot index 1 (the 2nd slot)."""
+
         def __init__(self, *a, drop=2, **k):
             super().__init__(*a, **k)
             self._drop_remaining = drop
@@ -354,7 +376,7 @@ def test_open_slot_reclicks_dropped_second_slot():
             sx, sy = _ALL_SLOT_CENTERS[1]
             if self._near(ref_x, ref_y, sx, sy) and self._drop_remaining > 0:
                 self._drop_remaining -= 1
-                self.click_log.append((ref_x, ref_y))   # the click happened; the game ignored it
+                self.click_log.append((ref_x, ref_y))  # the click happened; the game ignored it
                 return
             super()._click(ref_x, ref_y)
 
@@ -364,12 +386,13 @@ def test_open_slot_reclicks_dropped_second_slot():
     # is distinct, so a dropped 2nd-slot click that was NOT recovered would leave only 6 unique.
     sx1, sy1 = _ALL_SLOT_CENTERS[1]
     slot1_clicks = [c for c in sim.click_log if sim._near(c[0], c[1], sx1, sy1)]
-    assert len(slot1_clicks) >= 3              # 2 dropped + ≥1 recovering re-click
-    assert sim.escapes == 1                    # still exactly one Escape (the slot loop completed)
+    assert len(slot1_clicks) >= 3  # 2 dropped + ≥1 recovering re-click
+    assert sim.escapes == 1  # still exactly one Escape (the slot loop completed)
 
 
 def test_open_slot_same_set_adjacent_slots_no_reclick_no_skip():
-    # H19 ("disc N skipped" + "errors from clicking repeatedly"): two adjacent slots holding the SAME
+    # H19 ("disc N skipped" + "errors from clicking repeatedly"): two adjacent slots holding the
+    # SAME
     # disc set have near-identical TITLES.  The old title-only switch test could neither tell them
     # apart (endless re-clicks → the disc-4 "hang") nor avoid banking a duplicate (a skipped slot).
     # Gating on the detail BODY (substats differ) fixes both: each slot is opened with exactly ONE
@@ -380,18 +403,22 @@ def test_open_slot_same_set_adjacent_slots_no_reclick_no_skip():
             if self.on_detail and self.panel_open:
                 arr = np.array(img)
                 px0, py0, px1, py1 = _SLOT_PANEL_BBOX
-                # Title region identical for every slot (same set) — wipe the per-slot title mark and
+                # Title region identical for every slot (same set) — wipe the per-slot title mark
+                # and
                 # paint a FIXED glyph.  The body band (drawn by super()) still differs per slot.
                 arr[py0:py1, px0:px1] = 0
-                arr[py0:py1, px0 + 10:px0 + 40] = 255
+                arr[py0:py1, px0 + 10 : px0 + 40] = 255
                 return Image.fromarray(arr, "RGB")
             return img
 
     sim = _SameSet(n_owned=1, start_idx=0)
     list(sim.scan())
-    slot_clicks = [c for c in sim.click_log if any(
-        sim._near(c[0], c[1], sx, sy) for sx, sy in _ALL_SLOT_CENTERS)]
-    assert len(slot_clicks) == 7    # exactly one click per slot — no spurious same-set re-clicks
+    slot_clicks = [
+        c
+        for c in sim.click_log
+        if any(sim._near(c[0], c[1], sx, sy) for sx, sy in _ALL_SLOT_CENTERS)
+    ]
+    assert len(slot_clicks) == 7  # exactly one click per slot — no spurious same-set re-clicks
     assert sim.escapes == 1
 
 
@@ -400,9 +427,9 @@ def test_advance_does_not_skip_on_weak_strip_signal():
     # thin strip-band pHash barely changes.  If _advance keyed on the strip band it would
     # mis-read a real move as "no move", re-click, and SKIP an agent.  Keyed on the big
     # character render, one click per advance suffices → every owned agent visited exactly once.
-    sim = _StripSim(n_owned=6, n_total=6, start_idx=0)   # all owned, circular ring of 6
+    sim = _StripSim(n_owned=6, n_total=6, start_idx=0)  # all owned, circular ring of 6
     seq = _run(sim)
-    assert seq == [0, 1, 2, 3, 4, 5]           # no skips, no duplicates
+    assert seq == [0, 1, 2, 3, 4, 5]  # no skips, no duplicates
     # exactly one ">" click per advance (6 advances around the ring) — no spurious re-clicks
     next_clicks = [c for c in sim.click_log if sim._near(c[0], c[1], *_STRIP_NEXT)]
     assert len(next_clicks) == 6
@@ -429,14 +456,14 @@ def test_trial_agent_equipment_unavailable_is_skipped_not_hung():
                 # engine alone would still read "rendered" off the discs (D35).
                 arr = np.array(img)
                 rx0, ry0, rx1, ry1 = _EQUIP_RING_BBOX
-                arr[ry0:ry1, rx0:rx1] = 30                # dark (preview modal, no hexagon)
+                arr[ry0:ry1, rx0:rx1] = 30  # dark (preview modal, no hexagon)
                 return Image.fromarray(arr, "RGB")
             return img
 
     sim = _TrialAt(n_owned=3, n_total=3, start_idx=0, trial_idx=1)
     seq = _run(sim)
-    assert seq == [0, 2]                       # the trial agent (idx 1) is skipped, others kept
-    assert sim.escapes == 3                     # 2 equipment Escapes + 1 modal-dismiss for the trial
+    assert seq == [0, 2]  # the trial agent (idx 1) is skipped, others kept
+    assert sim.escapes == 3  # 2 equipment Escapes + 1 modal-dismiss for the trial
 
 
 def test_read_equipment_all_empty_clicks_every_slot_records_none():
@@ -446,14 +473,18 @@ def test_read_equipment_all_empty_clicks_every_slot_records_none():
     # Escape restores the strip bar (a panel WAS opened — unlike the old no-click path).
     sim = _StripSim(n_owned=1, start_idx=0)
     sim.on_detail = True
-    sim.empty_slots = set(range(7))                    # action-bar reports every slot empty
+    sim.empty_slots = set(range(7))  # action-bar reports every slot empty
     frames = sim._read_equipment()
-    assert frames is not A._EQUIP_UNAVAILABLE          # render-gate passes (bright engine hexagon)
-    assert frames == [None] * 7                         # nothing equipped → nothing recorded
-    slot_idxs = {k for c in sim.click_log
-                 for k, (sx, sy) in enumerate(_ALL_SLOT_CENTERS) if sim._near(c[0], c[1], sx, sy)}
-    assert slot_idxs == set(range(7))                  # every slot visited (incl. the engine)
-    assert sim.escapes == 1                            # one Escape after the select view
+    assert frames is not A._EQUIP_UNAVAILABLE  # render-gate passes (bright engine hexagon)
+    assert frames == [None] * 7  # nothing equipped → nothing recorded
+    slot_idxs = {
+        k
+        for c in sim.click_log
+        for k, (sx, sy) in enumerate(_ALL_SLOT_CENTERS)
+        if sim._near(c[0], c[1], sx, sy)
+    }
+    assert slot_idxs == set(range(7))  # every slot visited (incl. the engine)
+    assert sim.escapes == 1  # one Escape after the select view
 
 
 def test_read_equipment_records_only_equipped_slots_via_action_bar():
@@ -468,9 +499,13 @@ def test_read_equipment_records_only_equipped_slots_via_action_bar():
     assert len(frames) == 7
     assert frames[2] is None and frames[6] is None
     assert all(frames[i] is not None for i in (0, 1, 3, 4, 5))
-    slot_idxs = {k for c in sim.click_log
-                 for k, (sx, sy) in enumerate(_ALL_SLOT_CENTERS) if sim._near(c[0], c[1], sx, sy)}
-    assert slot_idxs == set(range(7))                  # the engine (slot 6) IS clicked now
+    slot_idxs = {
+        k
+        for c in sim.click_log
+        for k, (sx, sy) in enumerate(_ALL_SLOT_CENTERS)
+        if sim._near(c[0], c[1], sx, sy)
+    }
+    assert slot_idxs == set(range(7))  # the engine (slot 6) IS clicked now
     assert sim.escapes == 1
 
 

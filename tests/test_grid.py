@@ -1,4 +1,5 @@
 """Tests for grid navigation — scrollbar-thumb scroll-to-top detection."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,15 +11,17 @@ from PIL import Image
 from youkai_ocr.capture import calibrate
 from youkai_ocr.grid import (
     DEFAULT_GRID,
-    GridNavigator,
     SCROLLBAR_GROOVE_BBOX,
     SCROLLBAR_TOP_Y,
+    GridNavigator,
     _scrollbar_thumb_top,
 )
 
 # A real capture confirmed (by inspection + user) to be at the top of the
 # Drive Disc inventory: the thumb sits just below the up-arrow.
-AT_TOP_FIXTURE = Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
+AT_TOP_FIXTURE = (
+    Path(__file__).resolve().parents[1] / "archive" / "live_20260605" / "preflight_discs.png"
+)
 
 
 @pytest.fixture
@@ -52,9 +55,9 @@ def test_thumb_lower_when_scrolled_down(at_top_frame):
     calib = calibrate(at_top_frame)
     arr = np.asarray(at_top_frame.convert("RGB")).copy()
     x0, y0, x1, y1 = calib.scale_bbox(SCROLLBAR_GROOVE_BBOX)
-    arr[y0:y1, x0:x1] = 0                       # clear existing thumb
+    arr[y0:y1, x0:x1] = 0  # clear existing thumb
     mid = (y0 + y1) // 2
-    arr[mid:mid + 12, x0:x1] = 200              # paint a thumb mid-track
+    arr[mid : mid + 12, x0:x1] = 200  # paint a thumb mid-track
     scrolled = Image.fromarray(arr)
     top = _scrollbar_thumb_top(scrolled, calib)
     assert top is not None
@@ -68,6 +71,7 @@ def test_thumb_lower_when_scrolled_down(at_top_frame):
 # middle rows never scroll.  Each disc's panel is a deterministic pattern so the
 # tolerant fingerprint comparison distinguishes discs; disc id is encoded at
 # pixel (0,0) for the test to decode the yielded frame.
+
 
 class _SimZZZ:
     def __init__(self, n_discs: int, cols: int = 9, visible: int = 4):
@@ -86,7 +90,7 @@ class _SimZZZ:
         col = round((x - DEFAULT_GRID.cell_0_0_center[0]) / DEFAULT_GRID.col_pitch)
         srow = round((y - DEFAULT_GRID.cell_0_0_center[1]) / DEFAULT_GRID.row_pitch)
         did = self._disc_id(self.scroll_top + srow, col)
-        if did is not None:                       # empty cell → selection unchanged
+        if did is not None:  # empty cell → selection unchanged
             self.selected = did
         if srow == 0 and self.scroll_top > 0:
             self.scroll_top -= 1
@@ -100,9 +104,10 @@ class _SimZZZ:
         # Draw a scrollbar thumb in the groove whose top edge tracks scroll_top,
         # so _scroll_down can confirm a scroll via _scrollbar_thumb_top.
         from youkai_ocr.grid import SCROLLBAR_TOP_Y
+
         per_row = 5  # px the thumb drops per scrolled row (well above STALL noise)
         top = int(SCROLLBAR_TOP_Y - 8 + self.scroll_top * per_row)
-        a[top:top + 11, 1362:1370] = 200
+        a[top : top + 11, 1362:1370] = 200
         return Image.fromarray(a, "RGB")
 
 
@@ -124,22 +129,22 @@ def _run_sim(n_discs: int, monkeypatch, total=...) -> list[int]:
 
 
 def test_scan_reads_every_disc_in_order_full_last_row(monkeypatch):
-    n = 8 * 9   # 8 full rows
+    n = 8 * 9  # 8 full rows
     assert _run_sim(n, monkeypatch) == list(range(n))
 
 
 def test_scan_reads_every_disc_in_order_partial_last_row(monkeypatch):
-    n = 8 * 9 - 4   # last row has 5 discs, 4 trailing empty cells
+    n = 8 * 9 - 4  # last row has 5 discs, 4 trailing empty cells
     assert _run_sim(n, monkeypatch) == list(range(n))
 
 
 def test_scan_single_screen_no_scroll(monkeypatch):
-    n = 3 * 9   # fits in the first three rows, no scroll loop needed
+    n = 3 * 9  # fits in the first three rows, no scroll loop needed
     assert _run_sim(n, monkeypatch) == list(range(n))
 
 
 def test_scan_exactly_visible_rows(monkeypatch):
-    n = 4 * 9   # exactly rows_visible rows; last row is the bottom, no scroll
+    n = 4 * 9  # exactly rows_visible rows; last row is the bottom, no scroll
     assert _run_sim(n, monkeypatch) == list(range(n))
 
 

@@ -75,7 +75,10 @@ impl ScanHandle {
                 if let Some(c) = &ctx {
                     c.request_repaint();
                 }
-                return ScanHandle { state, child: Arc::new(Mutex::new(None)) };
+                return ScanHandle {
+                    state,
+                    child: Arc::new(Mutex::new(None)),
+                };
             }
         };
 
@@ -165,16 +168,43 @@ fn resolve_command() -> (String, Vec<String>) {
     ("python".into(), vec!["-m".into(), "youkai_ocr".into()])
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum ScanEvent {
-    RunStart { run_dir: String, output: String, phases: Vec<String> },
-    PhaseStart { phase: String, total: Option<u32> },
-    Progress { phase: String, scanned: u32, total: Option<u32> },
-    PhaseDone { phase: String, count: u32, issues: u32, elapsed: f64, resumed: bool },
-    Warning { message: String },
-    Done { output: String, run_dir: String, summary: EventSummary, review_path: Option<String> },
-    Error { message: String },
+    RunStart {
+        run_dir: String,
+        output: String,
+        phases: Vec<String>,
+    },
+    PhaseStart {
+        phase: String,
+        total: Option<u32>,
+    },
+    Progress {
+        phase: String,
+        scanned: u32,
+        total: Option<u32>,
+    },
+    PhaseDone {
+        phase: String,
+        count: u32,
+        issues: u32,
+        elapsed: f64,
+        resumed: bool,
+    },
+    Warning {
+        message: String,
+    },
+    Done {
+        output: String,
+        run_dir: String,
+        summary: EventSummary,
+        review_path: Option<String>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -210,7 +240,6 @@ fn reader_thread(
     let mut terminal = false;
     let mut run_dir: Option<String> = None;
     let mut cur_phase: Option<ScanPhase> = None;
-    let mut cur_scanned: u32 = 0;
     let mut cur_total: Option<u32> = None;
     let mut counts = PhaseCounts::empty();
 
@@ -235,7 +264,6 @@ fn reader_thread(
             }
             ScanEvent::PhaseStart { phase, total } => {
                 cur_phase = parse_phase(&phase);
-                cur_scanned = 0;
                 cur_total = total;
                 *state.lock().unwrap() = ScanState::Running {
                     phase: cur_phase.clone(),
@@ -245,18 +273,22 @@ fn reader_thread(
                 };
             }
             ScanEvent::Progress { scanned, total, .. } => {
-                cur_scanned = scanned;
                 if total.is_some() {
                     cur_total = total;
                 }
                 *state.lock().unwrap() = ScanState::Running {
                     phase: cur_phase.clone(),
-                    scanned: cur_scanned,
+                    scanned,
                     total: cur_total,
                     counts: counts.clone(),
                 };
             }
-            ScanEvent::PhaseDone { phase, count, issues, .. } => {
+            ScanEvent::PhaseDone {
+                phase,
+                count,
+                issues,
+                ..
+            } => {
                 match phase.as_str() {
                     "engines" => counts.engines = Some(PhaseResult { count, issues }),
                     "discs" => counts.discs = Some(PhaseResult { count, issues }),
@@ -264,7 +296,6 @@ fn reader_thread(
                     _ => {}
                 }
                 cur_phase = None;
-                cur_scanned = 0;
                 cur_total = None;
                 *state.lock().unwrap() = ScanState::Running {
                     phase: None,
@@ -273,7 +304,12 @@ fn reader_thread(
                     counts: counts.clone(),
                 };
             }
-            ScanEvent::Done { output, run_dir: rd, summary, review_path } => {
+            ScanEvent::Done {
+                output,
+                run_dir: rd,
+                summary,
+                review_path,
+            } => {
                 terminal = true;
                 *state.lock().unwrap() = ScanState::Done {
                     summary: Summary {
@@ -327,10 +363,11 @@ fn reader_thread(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::process::Command;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    use super::*;
 
     fn python3() -> &'static str {
         if Command::new("python3").arg("--version").output().is_ok() {
@@ -347,17 +384,16 @@ mod tests {
             if matches!(s, ScanState::Done { .. } | ScanState::Failed { .. }) {
                 return s;
             }
-            assert!(Instant::now() < deadline, "timed out waiting for terminal state");
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for terminal state"
+            );
             thread::sleep(Duration::from_millis(20));
         }
     }
 
     fn run_script(script: &str) -> ScanHandle {
-        ScanHandle::spawn_with_command(
-            python3(),
-            &["-c".to_string(), script.to_string()],
-            None,
-        )
+        ScanHandle::spawn_with_command(python3(), &["-c".to_string(), script.to_string()], None)
     }
 
     #[test]
@@ -439,7 +475,10 @@ for l in lines:
         let (_, args) = build_command(&config);
         assert!(args.contains(&"scan-all".to_string()));
         assert!(args.contains(&"--porcelain".to_string()));
-        assert!(!args.contains(&"--phases".to_string()), "Full mode must not emit --phases");
+        assert!(
+            !args.contains(&"--phases".to_string()),
+            "Full mode must not emit --phases"
+        );
     }
 
     #[test]
@@ -450,7 +489,10 @@ for l in lines:
             debug_overlays: false,
         };
         let (_, args) = build_command(&config);
-        let phases_idx = args.iter().position(|a| a == "--phases").expect("--phases missing");
+        let phases_idx = args
+            .iter()
+            .position(|a| a == "--phases")
+            .expect("--phases missing");
         assert_eq!(args[phases_idx + 1], "discs");
     }
 

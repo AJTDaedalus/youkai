@@ -1,4 +1,5 @@
 """Tests for B2: text recognition wrapper (preprocessing + interface)."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -7,8 +8,8 @@ from PIL import Image
 
 from youkai_ocr.recognize import (
     TEXT_PROFILES,
-    TextRecognizer,
     TesseractRecognizer,
+    TextRecognizer,
     make_recognizer,
     preprocess,
 )
@@ -221,9 +222,9 @@ def test_make_recognizer_tesseract_raises_runtime_when_missing(monkeypatch):
     import pytesseract
 
     monkeypatch.setattr(
-        pytesseract, "get_tesseract_version", lambda: (_ for _ in ()).throw(
-            pytesseract.pytesseract.TesseractNotFoundError()
-        )
+        pytesseract,
+        "get_tesseract_version",
+        lambda: (_ for _ in ()).throw(pytesseract.pytesseract.TesseractNotFoundError()),
     )
     with pytest.raises(RuntimeError):
         make_recognizer("tesseract")

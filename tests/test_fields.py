@@ -1,4 +1,5 @@
 """Tests for B1: declarative field-crop config."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 from PIL import Image
 
 from youkai_ocr.capture import calibrate
-from youkai_ocr.fields import FieldSpec, PanelSpec, crop_fields, load_panel
+from youkai_ocr.fields import FieldSpec, crop_fields, load_panel
 
 NAV_PATH = Path(__file__).parent.parent / "data" / "zzz_1.4" / "navigation.yaml"
 

@@ -3,6 +3,7 @@
 detect_rarity   — rarity badge color → int (4=S, 3=A, 2=B)
 detect_lock_from_text — OCR text of thumbnail level strip → bool
 """
+
 from __future__ import annotations
 
 import re
@@ -16,9 +17,9 @@ from PIL import Image
 # mid-scroll so dark-gold values like (150, 110, 35) must still classify
 # correctly — threshold raised to 130 to cover the full brightness range.
 _RARITY_CENTROIDS: dict[int, np.ndarray] = {
-    4: np.array([228, 165, 54], dtype=float),   # S-rank gold
-    3: np.array([160, 80, 220], dtype=float),   # A-rank purple
-    2: np.array([80, 140, 200], dtype=float),   # B-rank blue
+    4: np.array([228, 165, 54], dtype=float),  # S-rank gold
+    3: np.array([160, 80, 220], dtype=float),  # A-rank purple
+    2: np.array([80, 140, 200], dtype=float),  # B-rank blue
 }
 
 # Maximum Euclidean distance to accept a rarity match.

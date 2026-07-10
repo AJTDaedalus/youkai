@@ -4,6 +4,7 @@ Pure functions only — no OCR/capture imports (see DESIGN_disc_validation.md
 Architecture). Expected-value tables live in data/zzz_1.4/disc_values.json,
 not here, so a new game patch's stat changes are a data-only update.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,6 @@ import math
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Optional
 
 from youkai_ocr.zod import ZodDisc, ZodSubstat
 
@@ -21,7 +21,14 @@ _LATTICE_REL_TOL = 0.02
 
 # hp/atk/def each have a flat and a percent substat variant that OCR can
 # flip (E3). crit_/crit_dmg_/anomProf/pen have no flat<->percent counterpart.
-_FLAT_PERCENT_PAIRS = {"hp": "hp_", "hp_": "hp", "atk": "atk_", "atk_": "atk", "def": "def_", "def_": "def"}
+_FLAT_PERCENT_PAIRS = {
+    "hp": "hp_",
+    "hp_": "hp",
+    "atk": "atk_",
+    "atk_": "atk",
+    "def": "def_",
+    "def_": "def",
+}
 
 
 def _find_data_dir() -> Path:
@@ -130,18 +137,18 @@ def _main_value_matches(observed: float, expected: float, key: str) -> bool:
 class SubstatEvidence:
     """Raw OCR observations for one substat line, kept even when discarded downstream."""
 
-    raw_name_text: Optional[str] = None
+    raw_name_text: str | None = None
     raw_value_texts: tuple[str, ...] = ()
-    roll_suffix: Optional[int] = None
-    pct_seen: Optional[bool] = None
+    roll_suffix: int | None = None
+    pct_seen: bool | None = None
 
 
 @dataclass(frozen=True)
 class Evidence:
     """Raw OCR observations for a disc, beyond what made it into the ZodDisc."""
 
-    main_value_raw: Optional[float] = None
-    substats: tuple[Optional[SubstatEvidence], ...] = field(default_factory=tuple)
+    main_value_raw: float | None = None
+    substats: tuple[SubstatEvidence | None, ...] = field(default_factory=tuple)
 
 
 def evidence_from_conf(conf: dict, num_substats: int) -> Evidence:
@@ -156,7 +163,8 @@ def evidence_from_conf(conf: dict, num_substats: int) -> Evidence:
         SubstatEvidence(
             roll_suffix=(
                 int(conf[f"substat_{i + 1}_roll_suffix"])
-                if f"substat_{i + 1}_roll_suffix" in conf else None
+                if f"substat_{i + 1}_roll_suffix" in conf
+                else None
             ),
             pct_seen=conf.get(f"substat_{i + 1}_pct_seen"),
         )
@@ -177,7 +185,7 @@ class Violation:
     severity: str = "error"
 
 
-def _substat_lattice_k(value: float, base: float) -> Optional[int]:
+def _substat_lattice_k(value: float, base: float) -> int | None:
     """Nearest integer roll count for value/base, or None if off-lattice."""
     k = value / base
     nearest = round(k)
@@ -193,7 +201,7 @@ def _validate_substats(disc: ZodDisc, rules: RarityRules) -> list[Violation]:
     violations: list[Violation] = []
     u = disc.level // rules.upgrade_cadence
 
-    ks: list[Optional[int]] = []
+    ks: list[int | None] = []
     for i, sub in enumerate(disc.substats):
         base_by_rarity = dv.substat_base.get(sub.key)
         base = base_by_rarity.get(disc.rarity) if base_by_rarity is not None else None
@@ -227,7 +235,9 @@ def _validate_substats(disc: ZodDisc, rules: RarityRules) -> list[Violation]:
     expected_count = (min(4, lo + u), min(4, hi + u))
     visible_count = len(disc.substats)
     if not (expected_count[0] <= visible_count <= expected_count[1]):
-        violations.append(Violation("substats", "sub_count", visible_count, expected_count, "error"))
+        violations.append(
+            Violation("substats", "sub_count", visible_count, expected_count, "error")
+        )
 
     seen_keys: set[str] = set()
     for sub in disc.substats:
@@ -263,7 +273,9 @@ def validate_disc(disc: ZodDisc, evidence: Evidence | None = None) -> list[Viola
     legal_main_keys = _load_main_stats_by_slot().get(disc.slot_key)
     if legal_main_keys is None:
         violations.append(
-            Violation("slot_key", "slot_range", disc.slot_key, sorted(_load_main_stats_by_slot()), "error")
+            Violation(
+                "slot_key", "slot_range", disc.slot_key, sorted(_load_main_stats_by_slot()), "error"
+            )
         )
 
     if rules is not None and not (0 <= disc.level <= rules.max_level):
@@ -273,7 +285,13 @@ def validate_disc(disc: ZodDisc, evidence: Evidence | None = None) -> list[Viola
 
     if legal_main_keys is not None and disc.main_stat_key not in legal_main_keys:
         violations.append(
-            Violation("main_stat_key", "main_key_slot", disc.main_stat_key, sorted(legal_main_keys), "error")
+            Violation(
+                "main_stat_key",
+                "main_key_slot",
+                disc.main_stat_key,
+                sorted(legal_main_keys),
+                "error",
+            )
         )
 
     if (
@@ -285,7 +303,13 @@ def validate_disc(disc: ZodDisc, evidence: Evidence | None = None) -> list[Viola
         expected = expected_main_value(disc.rarity, disc.main_stat_key, disc.level)
         if not _main_value_matches(evidence.main_value_raw, expected, disc.main_stat_key):
             violations.append(
-                Violation("main_stat_value", "main_value_mismatch", evidence.main_value_raw, expected, "error")
+                Violation(
+                    "main_stat_value",
+                    "main_value_mismatch",
+                    evidence.main_value_raw,
+                    expected,
+                    "error",
+                )
             )
 
     if rules is not None:
@@ -309,7 +333,7 @@ class RepairResult:
     violations: list[Violation]
 
 
-def _flat_percent_pair(key: str) -> Optional[str]:
+def _flat_percent_pair(key: str) -> str | None:
     return _FLAT_PERCENT_PAIRS.get(key)
 
 
@@ -361,8 +385,8 @@ def _plausible_misread(observed: float, expected: float, key: str) -> bool:
 
 
 def _resolve_candidates(
-    candidates: list[tuple[str, int, float]], pct_seen: Optional[bool], observed: float
-) -> Optional[tuple[str, int, float]]:
+    candidates: list[tuple[str, int, float]], pct_seen: bool | None, observed: float
+) -> tuple[str, int, float] | None:
     """Pick the single plausible (key, k, expected) candidate, or None if ambiguous.
 
     Joint flat/percent + lattice resolution (E3): when both the flat and
@@ -388,7 +412,7 @@ def _resolve_candidates(
 
 def _try_roll_budget_forcing(
     candidates: list[tuple[str, int, float]], other_ks: list[int], u: int, n0_range: tuple[int, int]
-) -> Optional[tuple[str, int, float]]:
+) -> tuple[str, int, float] | None:
     """If exactly one candidate's k makes the roll budget balance, force it."""
     lo, hi = n0_range
     valid = [c for c in candidates if lo <= sum(other_ks) + c[1] - u <= hi]
@@ -433,7 +457,8 @@ def repair_disc(disc: ZodDisc, evidence: Evidence | None = None) -> RepairResult
             continue  # unreadable row (E5) — flag-only, never a repair candidate
 
         candidate_keys = [
-            key for key in [sub.key, _flat_percent_pair(sub.key)]
+            key
+            for key in [sub.key, _flat_percent_pair(sub.key)]
             if key is not None and key != disc.main_stat_key
         ]
 
@@ -441,7 +466,7 @@ def repair_disc(disc: ZodDisc, evidence: Evidence | None = None) -> RepairResult
         roll_suffix = ev_sub.roll_suffix if ev_sub else None
         pct_seen = ev_sub.pct_seen if ev_sub else None
 
-        chosen: Optional[tuple[str, int, float]] = None
+        chosen: tuple[str, int, float] | None = None
         rule_name = ""
 
         # Rule 1: roll-suffix agreement.
@@ -490,7 +515,8 @@ def repair_disc(disc: ZodDisc, evidence: Evidence | None = None) -> RepairResult
     # Rule 3: roll-budget forcing — only when exactly one line remains unresolved
     # (a multi-line simultaneous ambiguity is out of scope; it falls through to flag-only).
     unresolved = [
-        i for i in pending
+        i
+        for i in pending
         if disc.substats[i].value > 0 and i not in resolved and rule2_candidates_by_index.get(i)
     ]
     if len(unresolved) == 1:
@@ -511,4 +537,6 @@ def repair_disc(disc: ZodDisc, evidence: Evidence | None = None) -> RepairResult
             new_substats[i] = ZodSubstat(key=key, value=expected)
 
     repaired_disc = replace(disc, substats=new_substats)
-    return RepairResult(disc=repaired_disc, repairs=repairs, violations=validate_disc(repaired_disc, evidence))
+    return RepairResult(
+        disc=repaired_disc, repairs=repairs, violations=validate_disc(repaired_disc, evidence)
+    )

@@ -4,6 +4,7 @@ Live game interaction (AgentNavigator) is not tested here — that requires the
 game window.  This file covers: portrait detection, core-node detection,
 ascension-dot counting, field extractors, offline assembly, and export.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,10 +32,10 @@ from youkai_ocr.agent_scanner import (
     resolve_locations,
 )
 from youkai_ocr.capture import CalibrationResult
-from youkai_ocr.zod import ZodAgent, ZodDisc, ZodSubstat, ZodTalent, ZodWEngine
-
+from youkai_ocr.zod import ZodAgent, ZodDisc, ZodTalent, ZodWEngine
 
 # ── Fixtures & helpers ────────────────────────────────────────────────────────
+
 
 def _identity_calib() -> CalibrationResult:
     return CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
@@ -69,6 +70,7 @@ class _MockRecognizer:
 
 # ── _crop (mirrors disc/engine tests) ─────────────────────────────────────────
 
+
 def test_crop_identity():
     calib = _identity_calib()
     frame = Image.new("RGB", (1920, 1080), (255, 0, 0))
@@ -84,6 +86,7 @@ def test_crop_scaled():
 
 
 # ── _find_agent_portraits ─────────────────────────────────────────────────────
+
 
 def _make_roster_frame(portrait_x_refs: list[int], portrait_width: int = 40) -> Image.Image:
     """Build a 1920×1080 dark frame with bright portrait blobs at given ref x positions."""
@@ -108,7 +111,7 @@ def test_find_portraits_detects_two():
     frame = _make_roster_frame(expected)
     found = _find_agent_portraits(frame, calib)
     assert len(found) == 2
-    for ex, got in zip(expected, found):
+    for ex, got in zip(expected, found, strict=False):
         assert abs(ex - got) <= 5, f"Expected ≈{ex}, got {got}"
 
 
@@ -149,6 +152,7 @@ def test_find_portraits_scaled_calib():
 
 # ── _detect_core_rank ─────────────────────────────────────────────────────────
 
+
 def _make_skills_frame(lit_nodes: list[int]) -> Image.Image:
     """Frame where nodes at given indices (0-5) have teal centers."""
     frame = _dark_frame()
@@ -185,7 +189,7 @@ def test_detect_core_rank_golden_node_is_lit():
     arr = np.array(frame)
     bbox = _CORE_NODE_BBOXES[0]
     cx, cy = (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
-    arr[cy - 15 : cy + 15, cx - 15 : cx + 15] = [215, 150, 12]   # YeShunguang gold
+    arr[cy - 15 : cy + 15, cx - 15 : cx + 15] = [215, 150, 12]  # YeShunguang gold
     frame = Image.fromarray(arr.astype(np.uint8), "RGB")
     calib = _identity_calib()
     assert _detect_core_rank(frame, calib) == 1
@@ -204,6 +208,7 @@ def test_detect_core_rank_dark_not_lit():
 
 
 # ── _count_ascension_dots ─────────────────────────────────────────────────────
+
 
 def _make_dots_frame(n_dots: int, dot_width: int = 15, dot_gap: int = 20) -> Image.Image:
     """Frame with n_dots bright regions in the ascension dots bbox."""
@@ -233,6 +238,7 @@ def test_count_dots_n(n):
 
 # ── _extract_base_stats ───────────────────────────────────────────────────────
 
+
 def test_extract_base_stats_normal():
     """Agent name + level are read from the mock recognizer and normalised."""
     calib = _identity_calib()
@@ -249,7 +255,7 @@ def test_extract_base_stats_normal():
 def test_extract_base_stats_out_of_range_level():
     calib = _identity_calib()
     frame = _dark_frame()
-    rec = _MockRecognizer("Ellen", "Lv. 99")   # 99 out of range → low confidence
+    rec = _MockRecognizer("Ellen", "Lv. 99")  # 99 out of range → low confidence
     _, level, _, conf = _extract_base_stats(frame, calib, rec)
     assert level == 99
     assert conf["level"] == 30.0
@@ -266,6 +272,7 @@ def test_extract_base_stats_unrecognised_agent():
 
 # ── _extract_skills ───────────────────────────────────────────────────────────
 
+
 def test_extract_skills_normal():
     """Mindscape from recogniser; skill levels from blob classifier (0 on dark frame); core=0."""
     calib = _identity_calib()
@@ -276,9 +283,9 @@ def test_extract_skills_normal():
     mindscape, talent, conf = _extract_skills(frame, calib, rec)
     assert mindscape == 3
     assert conf["mindscape"] == 90.0
-    assert talent.basic   == 0   # dark frame — no badge blobs detectable
-    assert talent.dodge   == 0
-    assert talent.core    == 0   # dark frame → no teal nodes
+    assert talent.basic == 0  # dark frame — no badge blobs detectable
+    assert talent.dodge == 0
+    assert talent.core == 0  # dark frame → no teal nodes
 
 
 def test_extract_skills_lit_nodes():
@@ -301,6 +308,7 @@ def test_extract_skills_missing_mindscape():
 
 
 # ── export_agents ─────────────────────────────────────────────────────────────
+
 
 def _make_agent(key: str = "ZhuYuan") -> ZodAgent:
     return ZodAgent(
@@ -363,19 +371,21 @@ def test_export_creates_parent_dirs():
 
 # ── _ALL_SLOT_CENTERS structure ───────────────────────────────────────────────
 
+
 def test_slot_centers_count():
     assert len(_DISC_SLOT_CENTERS) == 6
-    assert len(_ALL_SLOT_CENTERS) == 7   # 6 disc + 1 engine
+    assert len(_ALL_SLOT_CENTERS) == 7  # 6 disc + 1 engine
 
 
 # ── E4: _extract_equip_frame ──────────────────────────────────────────────────
+
 
 def test_extract_equip_frame_disc_slot():
     """Recogniser returns a disc set name → record with disc_set and slot_key."""
     calib = _identity_calib()
     frame = _dark_frame()
     rec = _MockRecognizer("Shockstar Disco [2]")
-    result = _extract_equip_frame(frame, calib, rec, slot_idx=1)   # H18: idx 1 → slot# 6-1 = 5
+    result = _extract_equip_frame(frame, calib, rec, slot_idx=1)  # H18: idx 1 → slot# 6-1 = 5
     assert result is not None
     assert result["slot_idx"] == 1
     assert result["slot_key"] == "5"
@@ -412,12 +422,13 @@ def test_extract_equip_frame_empty_slot_returns_none():
     """Unrecognised / empty title (low confidence) → None (empty slot)."""
     calib = _identity_calib()
     frame = _dark_frame()
-    rec = _MockRecognizer("")   # OCR returns blank — low confidence
+    rec = _MockRecognizer("")  # OCR returns blank — low confidence
     result = _extract_equip_frame(frame, calib, rec, slot_idx=0)
     assert result is None
 
 
 # ── E4: resolve_locations ─────────────────────────────────────────────────────
+
 
 def _make_disc(set_key: str, slot_key: str, location: str = "") -> ZodDisc:
     return ZodDisc(
@@ -440,8 +451,14 @@ def test_resolve_locations_sets_disc_location():
     discs = [_make_disc("ShockstarDisco", "2")]
     engines: list[ZodWEngine] = []
     records = [
-        {"agent_key": "ZhuYuan", "slot_idx": 1, "disc_set": "ShockstarDisco",
-         "slot_key": "2", "engine_key": None, "confidence": 90.0},
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 1,
+            "disc_set": "ShockstarDisco",
+            "slot_key": "2",
+            "engine_key": None,
+            "confidence": 90.0,
+        },
     ]
     orphans = resolve_locations(records, discs, engines)
     assert orphans == []
@@ -452,8 +469,14 @@ def test_resolve_locations_sets_engine_location():
     discs: list[ZodDisc] = []
     engines = [_make_engine("StarlightEngine")]
     records = [
-        {"agent_key": "ZhuYuan", "slot_idx": 6, "disc_set": None,
-         "slot_key": None, "engine_key": "StarlightEngine", "confidence": 88.0},
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 6,
+            "disc_set": None,
+            "slot_key": None,
+            "engine_key": "StarlightEngine",
+            "confidence": 88.0,
+        },
     ]
     orphans = resolve_locations(records, discs, engines)
     assert orphans == []
@@ -464,14 +487,38 @@ def test_resolve_locations_multiple_agents():
     discs = [_make_disc("ChaoticMetal", "1"), _make_disc("ShockstarDisco", "2")]
     engines = [_make_engine("StarlightEngine"), _make_engine("BigCylinder")]
     records = [
-        {"agent_key": "ZhuYuan", "slot_idx": 0, "disc_set": "ChaoticMetal",
-         "slot_key": "1", "engine_key": None, "confidence": 90.0},
-        {"agent_key": "ZhuYuan", "slot_idx": 6, "disc_set": None,
-         "slot_key": None, "engine_key": "StarlightEngine", "confidence": 90.0},
-        {"agent_key": "Ellen", "slot_idx": 1, "disc_set": "ShockstarDisco",
-         "slot_key": "2", "engine_key": None, "confidence": 90.0},
-        {"agent_key": "Ellen", "slot_idx": 6, "disc_set": None,
-         "slot_key": None, "engine_key": "BigCylinder", "confidence": 90.0},
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 0,
+            "disc_set": "ChaoticMetal",
+            "slot_key": "1",
+            "engine_key": None,
+            "confidence": 90.0,
+        },
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 6,
+            "disc_set": None,
+            "slot_key": None,
+            "engine_key": "StarlightEngine",
+            "confidence": 90.0,
+        },
+        {
+            "agent_key": "Ellen",
+            "slot_idx": 1,
+            "disc_set": "ShockstarDisco",
+            "slot_key": "2",
+            "engine_key": None,
+            "confidence": 90.0,
+        },
+        {
+            "agent_key": "Ellen",
+            "slot_idx": 6,
+            "disc_set": None,
+            "slot_key": None,
+            "engine_key": "BigCylinder",
+            "confidence": 90.0,
+        },
     ]
     orphans = resolve_locations(records, discs, engines)
     assert orphans == []
@@ -486,8 +533,14 @@ def test_resolve_locations_orphan_disc():
     discs: list[ZodDisc] = []
     engines: list[ZodWEngine] = []
     records = [
-        {"agent_key": "ZhuYuan", "slot_idx": 0, "disc_set": "MissingSet",
-         "slot_key": "1", "engine_key": None, "confidence": 90.0},
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 0,
+            "disc_set": "MissingSet",
+            "slot_key": "1",
+            "engine_key": None,
+            "confidence": 90.0,
+        },
     ]
     orphans = resolve_locations(records, discs, engines)
     assert len(orphans) == 1
@@ -501,8 +554,14 @@ def test_resolve_locations_orphan_engine():
     discs: list[ZodDisc] = []
     engines: list[ZodWEngine] = []
     records = [
-        {"agent_key": "ZhuYuan", "slot_idx": 6, "disc_set": None,
-         "slot_key": None, "engine_key": "GhostEngine", "confidence": 85.0},
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 6,
+            "disc_set": None,
+            "slot_key": None,
+            "engine_key": "GhostEngine",
+            "confidence": 85.0,
+        },
     ]
     orphans = resolve_locations(records, discs, engines)
     assert len(orphans) == 1
@@ -515,8 +574,14 @@ def test_resolve_locations_unequipped_slots_ignored():
     discs = [_make_disc("ChaoticMetal", "1")]
     engines: list[ZodWEngine] = []
     records = [
-        {"agent_key": "ZhuYuan", "slot_idx": 0, "disc_set": "ChaoticMetal",
-         "slot_key": "1", "engine_key": None, "confidence": 90.0},
+        {
+            "agent_key": "ZhuYuan",
+            "slot_idx": 0,
+            "disc_set": "ChaoticMetal",
+            "slot_key": "1",
+            "engine_key": None,
+            "confidence": 90.0,
+        },
         # slots 1-5 and engine absent → those slots unequipped, no records for them
     ]
     orphans = resolve_locations(records, discs, engines)
@@ -526,6 +591,7 @@ def test_resolve_locations_unequipped_slots_ignored():
 
 # ── T5: on_item callback ──────────────────────────────────────────────────────
 
+
 def test_scan_agents_on_item_called_once_per_agent_monotonically(monkeypatch):
     """on_item is called exactly once per agent iteration with monotonically increasing scanned."""
     import youkai_ocr.agent_scanner as ag
@@ -533,10 +599,13 @@ def test_scan_agents_on_item_called_once_per_agent_monotonically(monkeypatch):
     N = 4
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class FakeNavigator:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self):
             dummy_frame = Image.new("RGB", (1920, 1080), (80, 80, 80))
             for i in range(N):
@@ -553,20 +622,22 @@ def test_scan_agents_on_item_called_once_per_agent_monotonically(monkeypatch):
     _E = type("E", (), {"is_set": lambda s: False, "set": lambda s: None})()
     monkeypatch.setattr(ag, "AgentNavigator", FakeNavigator)
     monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
-    monkeypatch.setattr(ag, "make_kill_listener",
-                        lambda suppress_flag=None: (_E, FakeListener()))
+    monkeypatch.setattr(ag, "make_kill_listener", lambda suppress_flag=None: (_E, FakeListener()))
     monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
     monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
 
     calls: list[tuple[int, int | None]] = []
     agents, _, _, _ = ag.scan_agents(
-        lambda: Image.new("RGB", (1920, 1080)), calib=calib,
+        lambda: Image.new("RGB", (1920, 1080)),
+        calib=calib,
         on_item=lambda s, t: calls.append((s, t)),
     )
 
     assert len(calls) == N
     scanned_values = [s for s, _ in calls]
-    assert scanned_values == list(range(1, N + 1)), f"not monotonically increasing: {scanned_values}"
+    assert scanned_values == list(range(1, N + 1)), (
+        f"not monotonically increasing: {scanned_values}"
+    )
     assert all(t is None for _, t in calls), "total should always be None for agents"
 
 
@@ -575,10 +646,13 @@ def test_scan_agents_on_item_omitted_no_error(monkeypatch):
     import youkai_ocr.agent_scanner as ag
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class FakeNavigator:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self):
             dummy = Image.new("RGB", (1920, 1080), (80, 80, 80))
             for i in range(2):
@@ -595,13 +669,13 @@ def test_scan_agents_on_item_omitted_no_error(monkeypatch):
     _E = type("E", (), {"is_set": lambda s: False, "set": lambda s: None})()
     monkeypatch.setattr(ag, "AgentNavigator", FakeNavigator)
     monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
-    monkeypatch.setattr(ag, "make_kill_listener",
-                        lambda suppress_flag=None: (_E, FakeListener()))
+    monkeypatch.setattr(ag, "make_kill_listener", lambda suppress_flag=None: (_E, FakeListener()))
     monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
     monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
 
     agents, _, _, _ = ag.scan_agents(
-        lambda: Image.new("RGB", (1920, 1080)), calib=calib,
+        lambda: Image.new("RGB", (1920, 1080)),
+        calib=calib,
     )
     assert len(agents) == 2
 
@@ -614,10 +688,13 @@ def test_scan_agents_empty_key_below_floor_is_critical_fail(monkeypatch):
     import youkai_ocr.agent_scanner as ag
 
     class FakeListener:
-        def stop(self): pass
+        def stop(self):
+            pass
 
     class FakeNavigator:
-        def __init__(self, *a, **k): pass
+        def __init__(self, *a, **k):
+            pass
+
         def scan(self):
             dummy = Image.new("RGB", (1920, 1080), (80, 80, 80))
             yield 0, dummy, dummy, []
@@ -634,13 +711,13 @@ def test_scan_agents_empty_key_below_floor_is_critical_fail(monkeypatch):
     _E = type("E", (), {"is_set": lambda s: False, "set": lambda s: None})()
     monkeypatch.setattr(ag, "AgentNavigator", FakeNavigator)
     monkeypatch.setattr(ag, "make_recognizer", lambda *a, **k: object())
-    monkeypatch.setattr(ag, "make_kill_listener",
-                        lambda suppress_flag=None: (_E, FakeListener()))
+    monkeypatch.setattr(ag, "make_kill_listener", lambda suppress_flag=None: (_E, FakeListener()))
     monkeypatch.setattr(ag, "_extract_base_stats", fake_extract_base)
     monkeypatch.setattr(ag, "_extract_skills", fake_extract_skills)
 
     agents, issues, _, _ = ag.scan_agents(
-        lambda: Image.new("RGB", (1920, 1080)), calib=calib,
+        lambda: Image.new("RGB", (1920, 1080)),
+        calib=calib,
     )
     assert agents == []
     assert any(i["status"] == "critical_fail" for i in issues)

@@ -10,6 +10,7 @@ Non-text profiles (``portrait_circle``, ``color_sample``, ``template_match``,
 The ``TextRecognizer`` Protocol lets callers stay engine-agnostic; swap
 ``TesseractRecognizer`` for a PaddleOCR backend without touching call sites.
 """
+
 from __future__ import annotations
 
 import os
@@ -69,7 +70,7 @@ def _white_text_on_dark_dim(img: Image.Image) -> Image.Image:
     """
     gray = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2GRAY)
     lo, hi = np.percentile(gray, 1), np.percentile(gray, 99)
-    if hi - lo < 8:        # featureless crop — return blank (no text)
+    if hi - lo < 8:  # featureless crop — return blank (no text)
         return Image.fromarray(np.full_like(gray, 255), "L")
     stretched = np.clip((gray.astype(np.float64) - lo) * 255.0 / (hi - lo), 0, 255)
     h, w = stretched.shape
@@ -151,7 +152,7 @@ def resolve_tesseract() -> tuple[str | None, Path | None]:
     # PyInstaller ≤5 onedir: sys._MEIPASS == exe dir.
     # PyInstaller 6+ onedir: sys._MEIPASS == exe_dir/_internal — check both.
     if getattr(sys, "frozen", False):
-        candidates = [Path(getattr(sys, "_MEIPASS")), Path(sys.executable).parent]
+        candidates = [Path(sys._MEIPASS), Path(sys.executable).parent]
     elif sys.argv and sys.argv[0]:
         candidates = [Path(sys.argv[0]).parent]
     else:
@@ -223,28 +224,20 @@ class TesseractRecognizer:
 
     def read_line(self, img: Image.Image, profile: str) -> str:
         processed = preprocess(img, profile)
-        return self._tess.image_to_string(
-            processed, lang=self._lang, config=_LINE_CONFIG
-        ).strip()
+        return self._tess.image_to_string(processed, lang=self._lang, config=_LINE_CONFIG).strip()
 
     def read_digits(self, img: Image.Image, profile: str) -> str:
         processed = preprocess(img, profile)
-        raw = self._tess.image_to_string(
-            processed, lang=self._lang, config=_DIGIT_CONFIG
-        ).strip()
+        raw = self._tess.image_to_string(processed, lang=self._lang, config=_DIGIT_CONFIG).strip()
         return _DIGIT_STRIP.sub("", raw)
 
     def read_slot(self, img: Image.Image, profile: str) -> str:
         processed = preprocess(img, profile)
-        return self._tess.image_to_string(
-            processed, lang=self._lang, config=_SLOT_CONFIG
-        ).strip()
+        return self._tess.image_to_string(processed, lang=self._lang, config=_SLOT_CONFIG).strip()
 
     def read_cinema(self, img: Image.Image) -> str:
         processed = preprocess(img, "brightness_threshold")
-        return self._tess.image_to_string(
-            processed, lang=self._lang, config=_CINEMA_CONFIG
-        ).strip()
+        return self._tess.image_to_string(processed, lang=self._lang, config=_CINEMA_CONFIG).strip()
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
