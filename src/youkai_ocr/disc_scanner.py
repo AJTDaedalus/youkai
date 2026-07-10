@@ -18,6 +18,7 @@ from PIL import Image
 from rapidfuzz import fuzz
 
 from .capture import CalibrationResult
+from .disc_rules import evidence_from_conf, repair_disc
 from .grid import DEFAULT_GRID, GridNavigator, GridParams, make_kill_listener
 from .matchers import detect_lock_from_text, detect_rarity
 from .normalizer import (
@@ -27,6 +28,7 @@ from .normalizer import (
     parse_level,
     parse_numeric,
     parse_panel_slot,
+    parse_roll_suffix,
     parse_slot,
 )
 from .recognize import TextRecognizer, make_recognizer
@@ -145,10 +147,77 @@ def _value_plausible(stat_key: str, val: float) -> bool:
 
 # Minimum confidence for accepting a field match (below → emit to issues).
 _LOW_CONF_THRESHOLD = 70.0
-# Below this set confidence the whole disc is considered a critical failure.
-_CRITICAL_SET_THRESHOLD = 30.0
+
+# conf carries two kinds of value under a shared namespace: 0-100 confidence
+# scores AND raw OCR evidence for the repair pass (*_roll_suffix, *_pct_seen,
+# main_stat_value — T4/T5/T8). Only the former may feed the low-confidence
+# filter; a bool like pct_seen=False or a small float like roll_suffix=3.0
+# otherwise reads as "< 70" and mislabels every clean disc low_confidence.
+# Allowlist the score keys explicitly so new evidence keys can never leak in.
+_CONF_SCORE_KEYS = frozenset({"set", "slot", "rarity", "level", "lock", "main_stat"})
+_SUBSTAT_CONF_KEY_RE = re.compile(r"^substat_\d+$")  # 'substat_2', not 'substat_2_pct_seen'
+
+
+def _is_conf_score_key(key: str) -> bool:
+    return key in _CONF_SCORE_KEYS or _SUBSTAT_CONF_KEY_RE.match(key) is not None
+
 
 CaptureFunc = Callable[[], Image.Image]
+
+# disc_rules.Violation.field → the conf dict's confidence-key namespace (T9):
+# validate_disc names fields after the ZodDisc schema (main_stat_key, slot_key,
+# substat[i], …); conf's confidence keys use the OCR pipeline's own names
+# (main_stat, slot, substat_{i+1}, …). Map one to the other so a violation can
+# push the right field's confidence down.
+_VIOLATION_FIELD_TO_CONF_KEY = {
+    "rarity": "rarity",
+    "level": "level",
+    "slot_key": "slot",
+    "main_stat_key": "main_stat",
+    "main_stat_value": "main_stat",
+}
+_SUBSTAT_VIOLATION_FIELD_RE = re.compile(r"^substat\[(\d+)\]$")
+
+
+def _conf_key_for_violation_field(field: str) -> str:
+    m = _SUBSTAT_VIOLATION_FIELD_RE.match(field)
+    if m:
+        return f"substat_{int(m.group(1)) + 1}"
+    return _VIOLATION_FIELD_TO_CONF_KEY.get(field, field)
+
+
+def _repair_and_fold_violations(disc: ZodDisc, conf: dict) -> ZodDisc:
+    """Repair `disc` via disc_rules, folding the result back into conf/issues.
+
+    A residual violation pushes that field's confidence to <=30 — a violated
+    field must never surface as trustworthy (DESIGN Integration point 1).
+    An applied repair is recorded in conf["_repairs"], residual violations in
+    conf["_violations"] (both popped by the issues emitter, never compared as
+    confidence floats). "_violations" is what lets export assembly exclude a
+    failed disc instead of shipping its known-wrong values (T13).
+    """
+    evidence = evidence_from_conf(conf, len(disc.substats))
+    result = repair_disc(disc, evidence)
+    if result.repairs:
+        conf["_repairs"] = [
+            {"field": r.field, "before": r.before, "after": r.after, "rule": r.rule}
+            for r in result.repairs
+        ]
+    if result.violations:
+        conf["_violations"] = [
+            {
+                "field": v.field,
+                "code": v.code,
+                "observed": v.observed,
+                "expected": v.expected,
+                "severity": v.severity,
+            }
+            for v in result.violations
+        ]
+    for v in result.violations:
+        key = _conf_key_for_violation_field(v.field)
+        conf[key] = min(conf.get(key, 100.0), 30.0)
+    return result.disc
 
 
 # ── Crop helpers ──────────────────────────────────────────────────────────────
@@ -226,16 +295,33 @@ def _extract_disc(
     title_crop = _crop(frame, calib, _abs_bbox(_TITLE_REL, panel_origin))
     title_text = recognizer.read_text(title_crop, "white_text_on_dark").replace("\n", " ").strip()
 
-    panel_crop = _crop(frame, calib, _abs_bbox((0, 0, _PANEL_W, _PANEL_H), panel_origin))
-    slot = parse_slot(title_text)
-    if slot is None:
-        # Tier-3 fallback: long names clip/wrap the title "[N]"; recover it from
-        # the un-clipped panel (G5 / D-slot-panel-fallback). Runs only on miss.
-        slot = parse_slot_from_panel(panel_crop, recognizer)
-    conf["slot"] = 100.0 if slot else 0.0
-
     set_key, set_conf = normalize_disc_set(title_text)
+    if not set_key:
+        # Dim-pass retry (T12): the bright threshold intermittently blanks a
+        # perfectly legible title ("Dawn's Bloom" read as "v Gi s Bloom") —
+        # same failure the substat rows already recover from. Adopt the dim
+        # read only when it clears the set floor; cap conf at 65 so the disc
+        # still surfaces in issues for review (dim-read precedent).
+        dim_text = (
+            recognizer.read_text(title_crop, "white_text_on_dark_dim").replace("\n", " ").strip()
+        )
+        dim_key, dim_conf = normalize_disc_set(dim_text)
+        if dim_key:
+            title_text = dim_text
+            set_key, set_conf = dim_key, min(dim_conf, 65.0)
     conf["set"] = set_conf
+
+    # Slot trust order (T12): clean-bracket title read, then the panel's
+    # dedicated slot widget (G5), then the garble-tolerant title fallback.
+    # The old order let a garbled bracket ("[ 4" misread of "[1]", disc_2070)
+    # confidently beat the panel widget's correct "[1]" read.
+    panel_crop = _crop(frame, calib, _abs_bbox((0, 0, _PANEL_W, _PANEL_H), panel_origin))
+    slot = parse_slot(title_text, allow_garbled=False)
+    if slot is None:
+        slot = parse_slot_from_panel(panel_crop, recognizer)
+    if slot is None:
+        slot = parse_slot(title_text)
+    conf["slot"] = 100.0 if slot else 0.0
 
     # ── Rarity ────────────────────────────────────────────────────────────
     rarity_crop = _crop(frame, calib, _abs_bbox(_RARITY_REL, panel_origin))
@@ -264,9 +350,45 @@ def _extract_disc(
     # ── Main stat ─────────────────────────────────────────────────────────
     main_name_crop = _crop(frame, calib, _abs_bbox(_MAIN_NAME_REL, panel_origin))
     main_name_text = recognizer.read_line(main_name_crop, "white_text_on_dark").strip()
+    main_dim_pass = False
+    if not main_name_text:
+        # Dim-pass / 2× retries (T12): the bright pass intermittently blanks a
+        # legible main-stat name ("Wind DMG Bonus", disc_0576/0618) — mirror
+        # the substat rows' fallback ladder. Cap conf at 65 (dim precedent) so
+        # a fallback-sourced key is surfaced in issues, never fully trusted.
+        main_name_text = recognizer.read_line(main_name_crop, "white_text_on_dark_dim").strip()
+        main_dim_pass = True
+    if not main_name_text:
+        main_name_big = main_name_crop.resize(
+            (main_name_crop.width * 2, main_name_crop.height * 2), Image.LANCZOS
+        )
+        main_name_text = recognizer.read_line(main_name_big, "white_text_on_dark").strip()
 
     main_key, main_conf = normalize_main_stat(main_name_text, slot or 0)
+    if main_dim_pass and main_name_text:
+        main_conf = min(main_conf, 65.0)
     conf["main_stat"] = main_conf
+
+    # Main-stat value (T5 evidence): displayed on every panel, exactly
+    # determined by (rarity, main_key, level) — disc_rules.validate_disc (T6)
+    # uses it as a cross-check on level/rarity/main-key. Same dual-scale vote
+    # as substat values (decimal point loss / digit confusion at either scale).
+    main_val_crop = _crop(frame, calib, _abs_bbox(_MAIN_VAL_REL, panel_origin))
+    main_val_big = main_val_crop.resize(
+        (main_val_crop.width * 2, main_val_crop.height * 2), Image.LANCZOS
+    )
+    mv1 = recognizer.read_line(main_val_crop, "white_text_on_dark").strip()
+    mv2 = recognizer.read_line(main_val_big, "white_text_on_dark").strip()
+    main_v1, main_v2 = parse_numeric(mv1), parse_numeric(mv2)
+    if main_v1 is not None and main_v1 == main_v2:
+        main_value = main_v1
+    elif main_v1 is None and main_v2 is None:
+        main_value = None
+    else:
+        main_value = main_v2 if main_v2 is not None else main_v1
+    if main_value is not None:
+        conf["main_stat_value"] = main_value
+        conf["main_stat_pct_seen"] = "%" in mv1 or "%" in mv2
 
     # ── Substats ──────────────────────────────────────────────────────────
     # Row contract (golden-replay/F2): a real substat row always has a numeric
@@ -304,6 +426,13 @@ def _extract_disc(
         if not name_text and v1 is None and v2 is None:
             break  # genuinely empty row — end of the substat list
         stat_key, stat_conf = normalize_substat(name_text) if name_text else ("", 0.0)
+        # Roll-count evidence (T4): the "+N" _UPGRADE_RE strips before fuzzy-
+        # matching the name is deterministic proof of the line's k-value —
+        # captured here, alongside conf, for disc_rules.repair_disc (T6/T7/T9).
+        roll_suffix = parse_roll_suffix(name_text) if name_text else None
+        if roll_suffix is not None:
+            conf[f"substat_{i + 1}_roll_suffix"] = float(roll_suffix)
+        conf[f"substat_{i + 1}_pct_seen"] = pct_seen
         if dim_pass:
             stat_conf = min(stat_conf, 65.0)  # surfaced in issues for review
 
@@ -351,13 +480,17 @@ def _extract_disc(
         rarity_crop.save(dd / "rarity.png")
         level_crop.save(dd / "level.png")
         main_name_crop.save(dd / "main_name.png")
+        main_val_crop.save(dd / "main_val.png")
 
     # ── Critical failure guard ─────────────────────────────────────────────
-    if not slot or set_conf < _CRITICAL_SET_THRESHOLD:
+    # normalize_disc_set already floors unmapped/uncertain titles to an empty
+    # key (T3); an empty set_key here means the title scored below the floor,
+    # not a slot-parse failure, so the two get distinct reasons.
+    if not slot or not set_key:
         conf["_fail_reason"] = (
             f"no_slot:title={title_text!r}"
             if not slot
-            else f"low_set_conf:{set_conf:.0f}:title={title_text!r}"
+            else f"unknown_set:{set_conf:.0f}:title={title_text!r}"
         )
         return (None, conf)
 
@@ -371,6 +504,7 @@ def _extract_disc(
         lock=lock,
         substats=substats,
     )
+    disc = _repair_and_fold_violations(disc, conf)
     return (disc, conf)
 
 
@@ -492,16 +626,37 @@ def scan_discs(
                 entry["reason"] = conf.pop("_fail_reason")
             issues.append(entry)
         else:
-            low = {k: v for k, v in conf.items() if v < _LOW_CONF_THRESHOLD}
-            if low:
-                issues.append(
-                    {
-                        "cell": cell_idx,
-                        "disc": disc.to_dict(),
-                        "status": "low_confidence",
-                        "fields": low,
-                    }
-                )
+            repairs = conf.pop("_repairs", None)
+            violations = conf.pop("_violations", None)
+            if violations and any(v["severity"] == "error" for v in violations):
+                # T13: a disc with residual error violations after repair holds
+                # at least one known-wrong value — exclude it from the export
+                # entirely and surface it in the failure report instead of
+                # shipping data that would poison downstream optimizers.
+                entry = {
+                    "cell": cell_idx,
+                    "disc": disc.to_dict(),
+                    "status": "failed_validation",
+                    "violations": violations,
+                }
+                if repairs:
+                    entry["repairs"] = repairs
+                issues.append(entry)
+                continue
+            low = {
+                k: v for k, v in conf.items() if _is_conf_score_key(k) and v < _LOW_CONF_THRESHOLD
+            }
+            if low or repairs:
+                entry = {
+                    "cell": cell_idx,
+                    "disc": disc.to_dict(),
+                    "status": "low_confidence" if low else "repaired",
+                }
+                if low:
+                    entry["fields"] = low
+                if repairs:
+                    entry["repairs"] = repairs
+                issues.append(entry)
             discs.append(disc)
 
     return discs, issues
@@ -590,15 +745,20 @@ def _equip_detect_rarity(frame: Image.Image, calib: CalibrationResult) -> tuple[
     return 4, _EQUIP_RARITY_PROBE_YS[0]
 
 
-def _equip_parse_stat_block(block_text: str) -> tuple[str | None, list[tuple[str, str]]]:
+def _equip_parse_stat_block(
+    block_text: str,
+) -> tuple[tuple[str, str] | None, list[tuple[str, str, int | None]]]:
     """Parse a PSM-6 block read of the equip-slot disc info panel.
 
-    Returns (main_stat_raw, [(sub_name_raw, sub_val_raw), ...]).
-    main_stat_raw and each sub_name_raw include the roll-count suffix if present
-    (e.g. "CRIT Rate +3"); normalize_substat handles the stripping internally.
+    Returns (main_stat_raw, [(sub_name_raw, sub_val_raw, roll_suffix), ...]).
+    sub_name_raw includes the roll-count suffix text if present (e.g.
+    "CRIT Rate +3"); normalize_substat handles the stripping internally.
+    roll_suffix is the parsed N from that suffix (T4 evidence), or None if
+    absent/unreadable. Main stats don't carry a roll suffix (only substats
+    upgrade), so main_stat_raw stays a plain (name, val) pair.
     """
-    main_raw: str | None = None
-    subs_raw: list[tuple[str, str]] = []
+    main_raw: tuple[str, str] | None = None
+    subs_raw: list[tuple[str, str, int | None]] = []
     in_subs = False
 
     for raw_line in block_text.split("\n"):
@@ -630,7 +790,7 @@ def _equip_parse_stat_block(block_text: str) -> tuple[str | None, list[tuple[str
             if main_raw is None:
                 main_raw = (name_text, val_text)
         else:
-            subs_raw.append((name_text, val_text))
+            subs_raw.append((name_text, val_text, parse_roll_suffix(name_text)))
 
     return main_raw, subs_raw
 
@@ -709,15 +869,22 @@ def scan_equipped_disc_frame(
         pct_seen = "%" in main_val_text
         if pct_seen and main_key in _FLAT_TO_PERCENT:
             main_key = _FLAT_TO_PERCENT[main_key]
+        main_value = parse_numeric(main_val_text)
+        if main_value is not None:
+            conf["main_stat_value"] = main_value
+            conf["main_stat_pct_seen"] = pct_seen
     else:
         main_key, main_conf = "", 0.0
     conf["main_stat"] = main_conf
 
     # Substats
     substats: list[ZodSubstat] = []
-    for i, (name_text, val_text) in enumerate(subs_raw[:4]):
+    for i, (name_text, val_text, roll_suffix) in enumerate(subs_raw[:4]):
         stat_key, stat_conf = normalize_substat(name_text)
+        if roll_suffix is not None:
+            conf[f"substat_{i + 1}_roll_suffix"] = float(roll_suffix)
         pct_seen = "%" in val_text
+        conf[f"substat_{i + 1}_pct_seen"] = pct_seen
         val = parse_numeric(val_text)
         if val is None:
             val = 0.0
@@ -744,8 +911,8 @@ def scan_equipped_disc_frame(
         title_crop.save(archive_dir / f"equip_disc_s{slot_key}_title.png")
         block_crop.save(archive_dir / f"equip_disc_s{slot_key}_block.png")
 
-    if set_conf < _CRITICAL_SET_THRESHOLD:
-        conf["_fail_reason"] = f"low_set_conf:{set_conf:.0f}:title={title_text!r}"
+    if not set_key:
+        conf["_fail_reason"] = f"unknown_set:{set_conf:.0f}:title={title_text!r}"
         return (None, conf)
 
     disc = ZodDisc(
@@ -758,6 +925,7 @@ def scan_equipped_disc_frame(
         lock=False,
         substats=substats,
     )
+    disc = _repair_and_fold_violations(disc, conf)
     return (disc, conf)
 
 

@@ -75,23 +75,45 @@ _NUMERIC_STRIP = re.compile(r"[^\d.,]")
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+_SET_NAME_SCORE_MIN = 60  # WRatio floor: below this the match is too uncertain
+
 
 def normalize_disc_set(text: str) -> tuple[str, float]:
-    """Fuzzy-map display text (may include '[N]' slot suffix) → (ZOD key, 0-100)."""
+    """Fuzzy-map display text (may include '[N]' slot suffix) → (ZOD key, 0-100).
+
+    Returns ("", score) when the best match scores below _SET_NAME_SCORE_MIN so
+    the caller's critical-fail gate emits unknown_set instead of silently snapping
+    an unmapped set name to the nearest table entry — the "Wuthering Salon read as
+    SwingJazz" failure mode (E1). Mirrors normalize_agent/normalize_engine. Floor
+    calibrated from the June 22 title re-OCR sweep: foreign (truly unknown) set
+    names top out at 46; legit-but-partial titles (2-line "Bunny in Wonderland"
+    OCR'd as just "Wonderland") bottom out at 68.
+    """
     _load()
     clean = _SLOT_RE.sub("", text).strip()
     result = process.extractOne(clean, list(_disc_sets.keys()), scorer=fuzz.WRatio)
     if result is None:
         return ("", 0.0)
     display, score, _ = result
+    if float(score) < _SET_NAME_SCORE_MIN:
+        return ("", float(score))
     return (_disc_sets[display], float(score))
 
 
-def parse_slot(text: str) -> int | None:
-    """Extract slot number from title text like 'Set Name [3]'. Returns None if absent."""
+def parse_slot(text: str, *, allow_garbled: bool = True) -> int | None:
+    """Extract slot number from title text like 'Set Name [3]'. Returns None if absent.
+
+    allow_garbled=False restricts to the primary clean-bracket pattern. The
+    garble-tolerant fallback (`[` + junk chars + digit) can confidently return
+    a *misread* digit — disc_2070's "[1]" OCR'd as "[ 4" (T12) — so callers
+    with a second slot source (the G5 panel widget read) should try strict
+    first, the panel next, and the garbled fallback only as a last resort.
+    """
     m = _SLOT_RE.search(text)
     if m:
         return int(m.group(1))
+    if not allow_garbled:
+        return None
     m = _SLOT_RE_FALLBACK.search(text)
     return int(m.group(1)) if m else None
 
@@ -115,10 +137,43 @@ def parse_panel_slot(*texts: str) -> int | None:
     return None
 
 
+_ROLL_SUFFIX_RE = re.compile(r"\+\s*([\dlI|])(?=\s|$)")
+
+
+def parse_roll_suffix(text: str) -> int | None:
+    """Extract the '+N' roll-upgrade count from substat text, or None if absent.
+
+    `normalize_substat` strips this suffix (`_UPGRADE_RE`) before fuzzy-matching
+    the stat name and discards the digit; this is the counterpart that keeps it,
+    since `base × (N + 1)` is the deterministic evidence the repair policy needs
+    (DESIGN Repair policy rule 1). Tolerates single-character OCR noise (l/I/|
+    misread for the digit "1") since that's a cheap, common Tesseract confusion.
+
+    The suffix is always a single digit (max +5 upgrades on a line), matched at
+    a whitespace/end boundary rather than end-of-string: wide values ("14.4%")
+    straddle the name/value bbox split and bleed leading digits into the name
+    crop ("DEF +2 1" — T12/Cluster 1, 38 archive discs), which an end anchor
+    silently rejects. A digit run merged with bleed ("+21") stays None —
+    refuse rather than guess.
+    """
+    m = _ROLL_SUFFIX_RE.search(text)
+    if not m:
+        return None
+    digit = m.group(1).translate(str.maketrans("lI|", "111"))
+    return int(digit)
+
+
 def normalize_substat(text: str) -> tuple[str, float]:
-    """Map substat OCR text (may have '+N' upgrade suffix) → (ZOD key, 0-100)."""
+    """Map substat OCR text (may have '+N' upgrade suffix) → (ZOD key, 0-100).
+
+    An empty query must return ("", 0.0): rapidfuzz scores every candidate 0
+    for "" and returns the first arbitrarily, silently turning an OCR
+    total-failure into a confident-looking key (T12/Cluster 3).
+    """
     _load()
     clean = _UPGRADE_RE.sub("", text).strip()
+    if not clean:
+        return ("", 0.0)
     if clean in _substats:
         return (_substats[clean], 100.0)
     result = process.extractOne(clean, list(_substats.keys()), scorer=fuzz.WRatio)
@@ -129,13 +184,20 @@ def normalize_substat(text: str) -> tuple[str, float]:
 
 
 def normalize_main_stat(text: str, slot: int) -> tuple[str, float]:
-    """Map main stat OCR text for a given slot number → (ZOD key, 0-100)."""
+    """Map main stat OCR text for a given slot number → (ZOD key, 0-100).
+
+    An empty query must return ("", 0.0) — same rapidfuzz empty-query trap as
+    normalize_substat (disc_0576/0618: an empty main-name read silently became
+    "hp_" at confidence 0.0 — T12/Cluster 3).
+    """
     _load()
     slot_key = str(slot)
     if slot_key not in _main_stats:
         return ("", 0.0)
     candidates = _main_stats[slot_key]
     clean = text.strip()
+    if not clean:
+        return ("", 0.0)
     if clean in candidates:
         return (candidates[clean], 100.0)
     result = process.extractOne(clean, list(candidates.keys()), scorer=fuzz.WRatio)

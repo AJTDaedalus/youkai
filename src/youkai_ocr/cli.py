@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .capture import CalibrationResult
     from .zod import ZodDisc, ZodWEngine
 
+
 # ── Screen assertion error ────────────────────────────────────────────────────
 
 
@@ -541,8 +542,10 @@ def _make_first_item_check(phase: str, *, interactive: bool = True, emitter=None
                 else:
                     print(f"\n  WARNING: {msg}")
                 return
-            n = len(low_fields)
-            print(f"\n  WARNING: first {phase} has low confidence on {n}/{len(conf)} fields:")
+            print(
+                f"\n  WARNING: first {phase} has low confidence "
+                f"on {len(low_fields)}/{len(conf)} fields:"
+            )
             for field, score in sorted(low_fields.items(), key=lambda x: x[1]):
                 print(f"    {field}: {score:.0f}%")
             print("  Inspect the preflight PNG in your archive dir.")
@@ -677,8 +680,8 @@ def _cmd_windows(args: argparse.Namespace) -> None:
     print()
     if matched:
         print(
-            f"{len(matched)} window(s) match the accepted titles;"
-            f" scanner would pick hwnd={chosen['hwnd']}."
+            f"{len(matched)} window(s) match the accepted titles; "
+            f"scanner would pick hwnd={chosen['hwnd']}."
         )
     else:
         print(
@@ -747,8 +750,8 @@ def _cmd_scan_engines(args: argparse.Namespace) -> None:
             frame = frame.crop((x0, y0, x1, y1))
         calib = calibrate(frame)
         print(
-            f"Offline mode — frame: {frame.width}×{frame.height},"
-            f" scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+            f"Offline mode — frame: {frame.width}×{frame.height}, "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
 
         if archive_dir:
@@ -766,8 +769,8 @@ def _cmd_scan_engines(args: argparse.Namespace) -> None:
 
         if eng is None:
             print(
-                "\nCRITICAL FAIL — could not extract engine."
-                " Check bboxes and OCR output in archive."
+                "\nCRITICAL FAIL — could not extract engine. "
+                "Check bboxes and OCR output in archive."
             )
             sys.exit(1)
 
@@ -779,8 +782,8 @@ def _cmd_scan_engines(args: argparse.Namespace) -> None:
         frame = grab_window()
         calib = calibrate(frame)
         print(
-            f"Game window found: {frame.width}×{frame.height},"
-            f" scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+            f"Game window found: {frame.width}×{frame.height}, "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
         capture_fn = grab_window
 
@@ -842,8 +845,8 @@ def _cmd_scan_agents(args: argparse.Namespace) -> None:
 
         calib = calibrate(base_frame)
         print(
-            f"Offline mode — frame: {base_frame.width}×{base_frame.height},"
-            f" scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+            f"Offline mode — frame: {base_frame.width}×{base_frame.height}, "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
 
         if archive_dir:
@@ -870,8 +873,8 @@ def _cmd_scan_agents(args: argparse.Namespace) -> None:
         frame = grab_window()
         calib = calibrate(frame)
         print(
-            f"Game window found: {frame.width}×{frame.height},"
-            f" scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+            f"Game window found: {frame.width}×{frame.height}, "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
         capture_fn = grab_window
 
@@ -926,8 +929,8 @@ def _cmd_scan(args: argparse.Namespace) -> None:
             frame = frame.crop((x0, y0, x1, y1))
         calib = calibrate(frame)
         print(
-            f"Offline mode — frame: {frame.width}×{frame.height},"
-            f" scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+            f"Offline mode — frame: {frame.width}×{frame.height}, "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
 
         if archive_dir:
@@ -948,6 +951,14 @@ def _cmd_scan(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         print(f"\nDisc: {json.dumps(disc.to_dict(), indent=2)}")
+        violations = conf.get("_violations") or []
+        if any(v["severity"] == "error" for v in violations):
+            print("\nFAILED VALIDATION — disc excluded from export (T13):")
+            for v in violations:
+                print(
+                    f"  {v['field']}: {v['code']} observed={v['observed']} expected={v['expected']}"
+                )
+            sys.exit(1)
         export_discs([disc], output)
         print(f"\nExported to: {output}")
 
@@ -957,8 +968,8 @@ def _cmd_scan(args: argparse.Namespace) -> None:
         frame = grab_window()
         calib = calibrate(frame)
         print(
-            f"Game window found: {frame.width}×{frame.height},"
-            f" scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
+            f"Game window found: {frame.width}×{frame.height}, "
+            f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
         capture_fn = grab_window
 
@@ -993,6 +1004,183 @@ def _cmd_scan(args: argparse.Namespace) -> None:
         print(f"\nExported to: {output}")
 
 
+# ── T10: offline archive revalidation ────────────────────────────────────────
+
+# Same 439×770 panel-crop-onto-1920×1080-canvas trick as
+# tests/test_golden_replay.py:_panel_to_frame and
+# tests/test_disc_scanner.py:_panel_file_to_frame — archived `disc_NNNN/panel.png`
+# crops are reference-scale, so an identity CalibrationResult applies unchanged.
+_REVALIDATE_PANEL_ORIGIN = (1421, 100)
+
+
+def _revalidate_panel_to_frame(panel_path):
+    from PIL import Image
+
+    panel = Image.open(panel_path).convert("RGB")
+    frame = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
+    frame.paste(panel, _REVALIDATE_PANEL_ORIGIN)
+    return frame
+
+
+def _cmd_revalidate(args: argparse.Namespace) -> None:
+    """T10: replay an archived scan offline through the current validator/repair
+    tables and write a corrected export + repair report — no game, no pynput.
+
+    Preserves location/lock by merging from the archive's discs.json on
+    matching index (a static panel.png has no thumbnail strip to read lock from).
+    """
+    from youkai_ocr.capture import CalibrationResult
+    from youkai_ocr.disc_rules import evidence_from_conf, validate_disc
+    from youkai_ocr.disc_scanner import export_discs, scan_single_frame
+
+    archive_dir = Path(args.archive)
+    raw_discs = json.loads((archive_dir / "discs.json").read_text(encoding="utf-8"))
+    if args.limit is not None:
+        raw_discs = raw_discs[: args.limit]
+
+    calib = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
+
+    discs: list[ZodDisc] = []
+    disc_reports: list[dict] = []
+    clean = repaired = unrepairable = 0
+
+    t0 = time.perf_counter()
+    for i, raw in enumerate(raw_discs):
+        # T13: a disc that can't be read or doesn't validate is EXCLUDED from
+        # the export — a known-wrong value poisons downstream optimizers, and
+        # the pre-T13 critical-fail path even passed the *old uncorrected*
+        # discs.json entry through. Failed discs live only in the report.
+        panel_path = archive_dir / f"disc_{i:04d}" / "panel.png"
+        if not panel_path.exists():
+            disc_reports.append(
+                {
+                    "index": i,
+                    "status": "missing_panel",
+                    "excluded_from_export": True,
+                    "disc": raw,
+                    "repairs": [],
+                    "violations": [],
+                }
+            )
+            unrepairable += 1
+            continue
+
+        frame = _revalidate_panel_to_frame(panel_path)
+        try:
+            disc, conf = scan_single_frame(frame, calib, engine=args.engine)
+        except Exception as exc:  # noqa: BLE001 — one bad panel must not abort a 2090-disc sweep
+            disc_reports.append(
+                {
+                    "index": i,
+                    "status": "critical_fail",
+                    "excluded_from_export": True,
+                    "disc": raw,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                    "repairs": [],
+                    "violations": [],
+                }
+            )
+            unrepairable += 1
+            continue
+
+        if disc is None:
+            disc_reports.append(
+                {
+                    "index": i,
+                    "status": "critical_fail",
+                    "excluded_from_export": True,
+                    "disc": raw,
+                    "reason": conf.get("_fail_reason", "?"),
+                    "repairs": [],
+                    "violations": [],
+                }
+            )
+            unrepairable += 1
+            continue
+
+        disc.location = raw["location"]
+        disc.lock = raw["lock"]
+
+        # Re-run explicitly on the merged disc for the report's gate. location/
+        # lock aren't validated fields, but the evidence (main-stat value, roll
+        # suffixes, pct_seen) captured in conf MUST be passed: the evidence-only
+        # main_value_mismatch check is otherwise silently skipped, letting a
+        # main-key/level/rarity misread leak into the corrected export — the very
+        # T13 guarantee this tool exists to enforce (same evidence the live
+        # scan_discs path and _extract_disc's internal validate use).
+        evidence = evidence_from_conf(conf, len(disc.substats))
+        final_violations = validate_disc(disc, evidence)
+        repairs = conf.get("_repairs", [])
+
+        report_entry = {
+            "index": i,
+            "status": "unrepairable" if final_violations else ("repaired" if repairs else "clean"),
+            "repairs": repairs,
+            "violations": [
+                {
+                    "field": v.field,
+                    "code": v.code,
+                    "observed": v.observed,
+                    "expected": v.expected,
+                    "severity": v.severity,
+                }
+                for v in final_violations
+            ],
+        }
+        if final_violations:
+            # Excluded: keep the disc's values in the report so the failure is
+            # reviewable, but never in the export.
+            report_entry["excluded_from_export"] = True
+            report_entry["disc"] = disc.to_dict()
+            unrepairable += 1
+        else:
+            discs.append(disc)
+            if repairs:
+                repaired += 1
+            else:
+                clean += 1
+        disc_reports.append(report_entry)
+
+        if (i + 1) % 200 == 0:
+            print(f"  ...{i + 1}/{len(raw_discs)} discs processed", flush=True)
+
+    elapsed = time.perf_counter() - t0
+
+    output = Path(args.out)
+    export_discs(discs, output)
+
+    summary = {
+        "total": len(disc_reports),
+        "clean": clean,
+        "repaired": repaired,
+        "unrepairable": unrepairable,
+        "exported": len(discs),
+        "excluded": unrepairable,
+        "elapsed_s": round(elapsed, 1),
+    }
+    print(f"\nRevalidated {summary['total']} disc(s) in {elapsed:.1f}s.")
+    print(f"  clean: {clean}  repaired: {repaired}  unrepairable: {unrepairable}")
+    print(f"Corrected export written to: {output} ({len(discs)} disc(s))")
+
+    # T13: failed discs exist ONLY in the report now, so it is always written —
+    # default path sits next to the export when --report isn't given.
+    report_path = (
+        Path(args.report) if args.report else output.with_name(output.stem + ".report.json")
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps({"summary": summary, "discs": disc_reports}, indent=2),
+        encoding="utf-8",
+    )
+    print(f"Report written to: {report_path}")
+
+    if unrepairable:
+        print(
+            f"\n{unrepairable} disc(s) failed validation and were EXCLUDED from the "
+            f"export — review them in the report and re-scan in-game to recover."
+        )
+
+
 def _write_review_report(issues: list[dict], path: Path) -> None:
     """F3: Write a human-readable review.txt for manual verification of low-confidence items."""
     from io import StringIO
@@ -1012,14 +1200,14 @@ def _write_review_report(issues: list[dict], path: Path) -> None:
     for issue in critical:
         if "agent" in issue:
             crit_rows.append(
-                f"  [agent #{issue['agent']:03d}] {issue.get('type', '?')}: "
-                f"{issue.get('message', '')}"
+                f"  [agent #{issue['agent']:03d}] "
+                f"{issue.get('type', '?')}: {issue.get('message', '')}"
             )
         elif "cell" in issue:
             phase = "disc" if "disc" in issue else "engine"
             crit_rows.append(
-                f"  [{phase} cell #{issue['cell']:04d}] {issue.get('type', '?')}: "
-                f"{issue.get('message', '')}"
+                f"  [{phase} cell #{issue['cell']:04d}] "
+                f"{issue.get('type', '?')}: {issue.get('message', '')}"
             )
         else:
             crit_rows.append(f"  {issue}")
@@ -1034,11 +1222,9 @@ def _write_review_report(issues: list[dict], path: Path) -> None:
         and i.get("key", "?") in ("", None)
     ]
     unk_rows = [
-        (
-            f"  [agent #{i['agent']:03d}] raw OCR name: "
-            f"{i.get('raw_name', i.get('fields', {}).get('name_raw', '(no raw)'))!r}"
-            f"  score={i.get('fields', {}).get('name', i.get('score', '?'))}"
-        )
+        f"  [agent #{i['agent']:03d}] raw OCR name: "
+        f"{i.get('raw_name', i.get('fields', {}).get('name_raw', '(no raw)'))!r}  "
+        f"score={i.get('fields', {}).get('name', i.get('score', '?'))}"
         for i in unknown_agents
     ]
     _section("UNKNOWN AGENT NAMES — add alias to agents.json or fix OCR", unk_rows)
@@ -1071,6 +1257,22 @@ def _write_review_report(issues: list[dict], path: Path) -> None:
         )
     _section("LOW-CONFIDENCE ENGINE FIELDS — verify key/rarity in-game", eng_rows)
 
+    # ── Failed discs (T13: excluded from the export entirely) ────────────────
+    failed_discs = [i for i in issues if i.get("status") == "failed_validation"]
+    failed_rows = []
+    for issue in failed_discs:
+        disc = issue.get("disc", {})
+        failed_rows.append(
+            f"  [cell #{issue.get('cell', '?'):>4}] set={disc.get('setKey', '?')!r}  "
+            f"slot={disc.get('slotKey', '?')}  lv={disc.get('level', '?')}"
+        )
+        for v in issue.get("violations", []):
+            failed_rows.append(
+                f"      {v['field']}: {v['code']}  "
+                f"observed={v['observed']}  expected={v['expected']}"
+            )
+    _section("FAILED DISCS — EXCLUDED from export; re-scan in-game to recover", failed_rows)
+
     # ── Low-confidence discs ─────────────────────────────────────────────────
     low_discs = [i for i in issues if "disc" in i and i.get("status") == "low_confidence"]
     disc_rows = []
@@ -1083,6 +1285,18 @@ def _write_review_report(issues: list[dict], path: Path) -> None:
         )
     _section("LOW-CONFIDENCE DISC FIELDS — verify set/stat in-game", disc_rows)
 
+    # ── Auto-repaired disc fields (T9: disc_rules.repair_disc) ───────────────
+    repaired_discs = [i for i in issues if "disc" in i and i.get("repairs")]
+    repair_rows = []
+    for issue in repaired_discs:
+        disc = issue["disc"]
+        for r in issue["repairs"]:
+            repair_rows.append(
+                f"  [cell #{issue.get('cell', '?'):>4}] set={disc.get('setKey', '?')!r}  "
+                f"{r['field']}: {r['before']} -> {r['after']}  (rule={r['rule']})"
+            )
+    _section("AUTO-REPAIRED DISC FIELDS — verify in-game", repair_rows)
+
     # ── Orphan equipment ─────────────────────────────────────────────────────
     orphans = [i for i in issues if i.get("status") == "orphan"]
     orp_rows = [f"  {i}" for i in orphans]
@@ -1092,7 +1306,8 @@ def _write_review_report(issues: list[dict], path: Path) -> None:
         f"youkai-ocr review report\n"
         f"  critical: {len(critical)}  unknown_agents: {len(unknown_agents)}  "
         f"low_agents: {len(low_agents)}  low_engines: {len(low_engines)}  "
-        f"low_discs: {len(low_discs)}  orphans: {len(orphans)}\n"
+        f"failed_discs: {len(failed_discs)}  low_discs: {len(low_discs)}  "
+        f"repaired_discs: {len(repaired_discs)}  orphans: {len(orphans)}\n"
     )
     content = summary_line + buf.getvalue()
     if not buf.getvalue().strip():
@@ -1330,8 +1545,9 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             from youkai_ocr.capture import focus_game_window
 
             focused = focus_game_window()
-            status = "focused" if focused else "WARNING: could not focus game window"
-            print(f"  Game window {status}")
+            print(
+                f"  Game window {'focused' if focused else 'WARNING: could not focus game window'}"
+            )
             time.sleep(0.3)
             frame = capture_fn()
             if not _is_main_menu(frame, calib):
@@ -1385,8 +1601,8 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                     "elapsed": round(elapsed, 1),
                 }
                 print(
-                    f"  Scanned {len(engines)} engine(s) in {elapsed:.1f}s."
-                    f" Issues: {len(engine_issues)}"
+                    f"  Scanned {len(engines)} engine(s) in {elapsed:.1f}s. "
+                    f"Issues: {len(engine_issues)}"
                 )
                 engines_cache.write_text(
                     _json.dumps([e.to_dict() for e in engines], indent=2), encoding="utf-8"
@@ -1614,8 +1830,8 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                     "elapsed": round(elapsed, 1),
                 }
                 print(
-                    f"  Scanned {len(engines)} engine(s) in {elapsed:.1f}s."
-                    f" Issues: {len(engine_issues)}"
+                    f"  Scanned {len(engines)} engine(s) in {elapsed:.1f}s. "
+                    f"Issues: {len(engine_issues)}"
                 )
                 engines_cache.write_text(
                     _json.dumps([e.to_dict() for e in engines], indent=2), encoding="utf-8"
@@ -1742,8 +1958,8 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                 print(
                     f"\n  WARNING: roster coverage: scanned {len(unique_agents)} agent(s) but "
                     f"roster grid (first page) shows {grid_count} owned. "
-                    f"Gap: {gap}. Some agents may have been missed or"
-                    " the grid was not fully visible."
+                    f"Gap: {gap}. Some agents may have been missed "
+                    f"or the grid was not fully visible."
                 )
                 if crit_fail_agents:
                     print(f"  {len(crit_fail_agents)} agent visit(s) failed OCR — see issues.json.")
@@ -1872,28 +2088,60 @@ def main() -> None:
 
     # -- scan-agents --------------------------------------------------------------
     scan_agt = subparsers.add_parser(
-        "scan-agents",
-        help="Scan agent roster (stats, skills, equipment) and export JSON.",
+        "scan-agents", help="Scan agent roster (stats, skills, equipment) and export JSON."
     )
     _add_scan_args(scan_agt, "export/agents.json", "agent")
     scan_agt.add_argument(
         "--skills-file",
         default=None,
         metavar="PATH",
-        help=("Offline mode: skills-tab screenshot (defaults to --file if omitted)."),
+        help="Offline mode: skills-tab screenshot (defaults to --file if omitted).",
     )
     scan_agt.add_argument(
         "--debug-overlays",
         action="store_true",
-        help=(
-            "Also save *_overlay.png frames with click targets"
-            " + OCR crops drawn (needs --archive-dir)."
-        ),
+        help="Also save *_overlay.png frames with click targets + OCR crops drawn "
+        "(needs --archive-dir).",
     )
 
     # -- scan ---------------------------------------------------------------------
     scan = subparsers.add_parser("scan", help="Scan the Drive Disc inventory and export JSON.")
     _add_scan_args(scan, "export/discs.json", "disc")
+
+    # -- revalidate -----------------------------------------------------------------
+    revalidate = subparsers.add_parser(
+        "revalidate",
+        help="Replay an archived disc scan offline through the current validator/repair "
+        "tables and write a corrected export (archive-only, no game/pynput).",
+    )
+    revalidate.add_argument(
+        "--archive",
+        required=True,
+        metavar="DIR",
+        help="Archive run dir containing discs.json and disc_NNNN/panel.png crops.",
+    )
+    revalidate.add_argument(
+        "--out", required=True, metavar="PATH", help="Corrected export JSON output path."
+    )
+    revalidate.add_argument(
+        "--report",
+        default=None,
+        metavar="PATH",
+        help="Optional path to write the per-disc violations/repairs report JSON.",
+    )
+    revalidate.add_argument(
+        "--engine",
+        default="tesseract",
+        choices=["tesseract"],
+        help="OCR engine (default: tesseract).",
+    )
+    revalidate.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Only process the first N discs (for faster dev iteration).",
+    )
 
     # -- scan-all -----------------------------------------------------------------
     scan_all = subparsers.add_parser(
@@ -1979,6 +2227,8 @@ def main() -> None:
             _cmd_calibrate(args)
         elif args.command == "scan":
             _cmd_scan(args)
+        elif args.command == "revalidate":
+            _cmd_revalidate(args)
         elif args.command == "scan-engines":
             _cmd_scan_engines(args)
         elif args.command == "scan-agents":

@@ -56,11 +56,13 @@ DEFAULT_GRID = GridParams()
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 
-# post-click settle before render-gate (was 0.09 — raised so panel has a head start)
-CLICK_DELAY_S = 0.15
+CLICK_DELAY_S = (
+    0.15  # post-click settle before render-gate (was 0.09 — raised so panel has a head start)
+)
 SCROLL_WAIT_S = 0.50  # wait after scroll-trigger click for animation
-# min wall time per disc (human-cadence floor; OCR backpressure may make it longer)
-CAPTURE_MIN_INTERVAL_S = 0.40
+CAPTURE_MIN_INTERVAL_S = (
+    0.40  # min wall time per disc (human-cadence floor; OCR backpressure may make it longer)
+)
 
 # ── Render-gate: wait for the detail panel to actually appear ─────────────────
 # ZZZ fades the detail panel in on each selection change.  At the old 0.09 s
@@ -406,6 +408,7 @@ class GridNavigator:
         # SCROLL_PROGRESS_WINDOW scrolls the thumb should descend clearly, so if
         # it doesn't we bail rather than re-read the same row indefinitely.
         ckpt_thumb = self._thumb()
+        none_count = 0  # consecutive None readings; too many → stall
         for i, inv_row in enumerate(range(repeat_row + 1, total_rows - 1)):
             if self._kill.is_set():
                 return
@@ -413,6 +416,17 @@ class GridNavigator:
             yield from emit(repeat_row, self._read_row(repeat_row, cols))
             if (i + 1) % SCROLL_PROGRESS_WINDOW == 0:
                 now = self._thumb()
+                if now is None:
+                    none_count += 1
+                    if none_count >= 2:
+                        # Scrollbar consistently undetectable — treat as stalled.
+                        print(
+                            f"  [nav] scrollbar undetectable for {none_count} windows "
+                            f"at inv row {inv_row}; stopping"
+                        )
+                        return
+                else:
+                    none_count = 0
                 if (
                     ckpt_thumb is not None
                     and now is not None
@@ -423,7 +437,9 @@ class GridNavigator:
                         f"(thumb {ckpt_thumb:.0f}→{now:.0f}); stopping"
                     )
                     return
-                ckpt_thumb = now
+                # Re-read ckpt each window so an initial None can't disable the guard.
+                if now is not None:
+                    ckpt_thumb = now
 
         # The last inventory row can only sit at the bottom visible row (we can't
         # scroll past it); read just its real width.
@@ -443,10 +459,21 @@ class GridNavigator:
             yield from emit(row, self._read_row(row))
 
         scrolled = 0
+        none_streak = 0
         while not self._kill.is_set() and scrolled < SCAN_MAX_ROWS:
             before = self._thumb()
             self._scroll_down()
             after = self._thumb()
+            if before is None and after is None:
+                none_streak += 1
+                if none_streak >= SCROLL_PROGRESS_WINDOW:
+                    print(
+                        f"  [nav] scrollbar undetectable for {none_streak} consecutive "
+                        f"scrolls; stopping thumb-scan"
+                    )
+                    break
+            else:
+                none_streak = 0
             if before is not None and after is not None and after <= before + 1.0:
                 break  # thumb didn't descend → bottom reached (emit nothing)
             yield from emit(repeat_row, self._read_row(repeat_row))

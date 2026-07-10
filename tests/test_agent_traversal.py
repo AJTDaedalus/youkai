@@ -182,8 +182,7 @@ class _StripSim(AgentNavigator):
                 arr[ey - r : ey + r, ex - r : ex + r] = 255  # bright engine hexagon
             if self.panel_open:
                 px0, py0, px1, py1 = _SLOT_PANEL_BBOX
-                # dark slot-select panel (stays "rendered")
-                arr[py0:py1, px0:px1] = 0
+                arr[py0:py1, px0:px1] = 0  # dark slot-select panel (stays "rendered")
                 # H18: per-slot title mark so _open_slot's slot-switch gate sees the panel
                 # content change between consecutive slots (kept small → dark_frac stays high).
                 mx = px0 + 10 + max(self.cur_slot, 0) * 40
@@ -262,6 +261,35 @@ def test_visits_each_owned_once_in_order_skipping_grayout():
     assert sim.escapes == 5  # exactly one Escape per OWNED agent (equipment)
 
 
+def test_ring_close_survives_failed_anchor_read():
+    # Regression: a blank/unreadable name OCR on the very first frame used to leave
+    # start_name permanently "" (only ever set when visited==1), disabling ring-close
+    # for the rest of the scan and looping forever on a circular strip (AGENT_MAX, the
+    # old hard-cap backstop, was removed in 747490f). The anchor must retry on every
+    # visit until a name is actually read, not just the first one.
+    class _FlakyAnchorSim(_StripSim):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self._ring_key_calls = 0
+
+        def _ring_close_key(self, frame) -> str:
+            self._ring_key_calls += 1
+            if self._ring_key_calls == 1:
+                return ""  # simulate OCR miss on the entry frame
+            return str(self.idx)
+
+    # The anchor lands on the first position it can actually read (idx=3, one visit
+    # late) rather than the true entry position (idx=2) — so this scan takes one extra
+    # lap and idx=2 gets yielded twice before the ring closes back at idx=3. That's the
+    # known cost of "retry until it lands": the important thing is it terminates at all,
+    # where before this fix it would have spun forever (start_name stuck at "").
+    sim = _FlakyAnchorSim(n_owned=5, start_idx=2)
+    seq = _run(sim)
+    assert seq == [2, 3, 4, 0, 1, 2]  # walks a full extra lap before closing
+    assert sim.idx == 3  # closes back at the position it anchored on
+    assert sim.escapes == 6
+
+
 def test_skips_interleaved_grayout():
     # H15/H16: ownership is NOT assumed contiguous — grayed agents are skipped, not a stop.
     sim = _StripSim(n_owned=3, n_total=6, start_idx=0, owned_idxs={0, 2, 5})
@@ -285,13 +313,6 @@ def test_single_agent_total_advance_no_op():
     sim = _StripSim(n_owned=1, n_total=1, start_idx=0)
     assert _run(sim) == [0]
     assert sim.escapes == 1
-
-
-def test_agent_max_cap(monkeypatch):
-    monkeypatch.setattr(A, "AGENT_MAX", 3)
-    sim = _StripSim(n_owned=8, n_total=12, start_idx=0)
-    seq = _run(sim)
-    assert seq == [0, 1, 2]  # capped before the whole roster
 
 
 def test_kill_event_stops_traversal():
@@ -370,10 +391,10 @@ def test_open_slot_reclicks_dropped_second_slot():
 
 
 def test_open_slot_same_set_adjacent_slots_no_reclick_no_skip():
-    # H19 ("disc N skipped" + "errors from clicking repeatedly"): two adjacent slots
-    # holding the SAME disc set have near-identical TITLES.  The old title-only
-    # switch test could neither tell them apart (endless re-clicks → the disc-4 "hang")
-    # nor avoid banking a duplicate (a skipped slot).
+    # H19 ("disc N skipped" + "errors from clicking repeatedly"): two adjacent slots holding the
+    # SAME
+    # disc set have near-identical TITLES.  The old title-only switch test could neither tell them
+    # apart (endless re-clicks → the disc-4 "hang") nor avoid banking a duplicate (a skipped slot).
     # Gating on the detail BODY (substats differ) fixes both: each slot is opened with exactly ONE
     # click and banked distinctly.
     class _SameSet(_StripSim):
@@ -382,9 +403,9 @@ def test_open_slot_same_set_adjacent_slots_no_reclick_no_skip():
             if self.on_detail and self.panel_open:
                 arr = np.array(img)
                 px0, py0, px1, py1 = _SLOT_PANEL_BBOX
-                # Title region identical for every slot (same set) — wipe the per-slot
-                # title mark and paint a FIXED glyph.  The body band (drawn by
-                # super()) still differs per slot.
+                # Title region identical for every slot (same set) — wipe the per-slot title mark
+                # and
+                # paint a FIXED glyph.  The body band (drawn by super()) still differs per slot.
                 arr[py0:py1, px0:px1] = 0
                 arr[py0:py1, px0 + 10 : px0 + 40] = 255
                 return Image.fromarray(arr, "RGB")
@@ -442,8 +463,7 @@ def test_trial_agent_equipment_unavailable_is_skipped_not_hung():
     sim = _TrialAt(n_owned=3, n_total=3, start_idx=0, trial_idx=1)
     seq = _run(sim)
     assert seq == [0, 2]  # the trial agent (idx 1) is skipped, others kept
-    # 2 equipment Escapes + 1 modal-dismiss for the trial
-    assert sim.escapes == 3
+    assert sim.escapes == 3  # 2 equipment Escapes + 1 modal-dismiss for the trial
 
 
 def test_read_equipment_all_empty_clicks_every_slot_records_none():

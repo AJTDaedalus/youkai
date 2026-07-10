@@ -49,10 +49,8 @@ _log = logging.getLogger(__name__)
 # ── Navigation constants (navigation.yaml, 1920×1080 ref coords) ─────────────
 
 _ROSTER_STRIP_BBOX = (0, 32, 1920, 75)
-# vertical click target inside strip (strip peak luma y=45-60)
-_ROSTER_CENTER_Y = 53
-# ignore columns left of this (City/Home UI buttons at x≈40-80)
-_ROSTER_X_MIN = 400
+_ROSTER_CENTER_Y = 53  # vertical click target inside strip (strip peak luma y=45-60)
+_ROSTER_X_MIN = 400  # ignore columns left of this (City/Home UI buttons at x≈40-80)
 
 # Tab bar measured from archive/live_20260605/agent_000/base_stats.png:
 # active (yellow) Base Stats bbox x=1011-1294, y=964-1028, center (1152, 996).
@@ -135,33 +133,36 @@ _SLOT_PANEL_DARK_FRAC_MIN = 0.08  # dark pixels (luma<30) / total > this → pan
 # Slot-open render gate (H18 → H19).  Clicking the FIRST hexagon slot triggers the big
 # equipment→disc-select LAYOUT TRANSITION (ref_7 → ref_8: the character render slides out, the disc
 # list slides in).  A slot click fired DURING that animation is silently DROPPED by the game — the
-# H17 tab-drop class — so the 2nd slot was never opened (its capture re-banked slot 1's
-# panel).  Each slot is render-gated with re-click, like `_capture_tab`/`_advance`:
+# H17 tab-drop class — so the 2nd slot was never opened (its capture re-banked slot 1's panel).
+# Each
+# slot is render-gated with re-click, like `_capture_tab`/`_advance`:
 #   slot 0  → gate on the select panel APPEARING (`_slot_panel_rendered`).
 #   slot 1+ → the panel stays open and just SWAPS content (H10-Q4), so gate on the panel BODY
 #             switching from the previous slot; a dropped switch (settled-but-unchanged) → re-click.
 #
 # H19 — the H18 gate used the TITLE region and MISFIRED both ways:
-#   • false-NEGATIVE on two adjacent slots of the SAME disc set (near-identical
-#     titles → the switch is never detected → 8 polls of futile re-clicking
-#     → the user's "errors from clicking repeatedly" and the ~2.8s "hangs oddly on disc 4").
-#   • false-POSITIVE on a half-faded title (banked a duplicate of the previous
-#     slot → "disc 2 skipped").
-# Fix: gate on the full detail-panel BODY (main stat + substats — which DIFFER
-# between two discs of one set, ref_8 — where the title does not) AND require it to
-# be STABLE across two captures (so a mid-fade
+#   • false-NEGATIVE on two adjacent slots of the SAME disc set (near-identical titles → the switch
+# is
+#     never detected → 8 polls of futile re-clicking → the user's "errors from clicking repeatedly"
+#     and the ~2.8s "hangs oddly on disc 4").
+#   • false-POSITIVE on a half-faded title (banked a duplicate of the previous slot → "disc 2
+# skipped").
+# Fix: gate on the full detail-panel BODY (main stat + substats — which DIFFER between two discs of
+# one
+# set, ref_8 — where the title does not) AND require it to be STABLE across two captures (so a
+# mid-fade
 # frame is never banked).  Generous budget: the per-agent OCR pause downstream dwarfs this.
-# 20×0.35 ≈ 7s; doubled from 10 to survive disc→engine panel transitions
-_SLOT_GATE_POLLS = 20
+_SLOT_GATE_POLLS = 20  # 20×0.35 ≈ 7s; doubled from 10 to survive disc→engine panel transitions
 _SLOT_GATE_POLL_S = 0.35
-# title + main-stat + substats (stops before the same-for-a-set set-effect text);
-# switch-detect signal
-_SLOT_DETAIL_BBOX = (610, 120, 965, 600)
-# body pHash Hamming > this vs the previous slot → panel switched (new disc)
-_SLOT_CHANGE_MIN_BITS = 8
-# body pHash Hamming ≤ this across two captures → panel animation settled
+_SLOT_DETAIL_BBOX = (610, 120, 965, 600)  # title + main-stat + substats (stops before the
+# same-for-a-set set-effect text); switch-detect signal
+_SLOT_CHANGE_MIN_BITS = (
+    8  # body pHash Hamming > this vs the previous slot → panel switched (new disc)
+)
+_SLOT_STABLE_MAX_BITS = (
+    10  # body pHash Hamming ≤ this across two captures → panel animation settled
+)
 # relaxed from 6 to 10 to tolerate minor background/model animation drift
-_SLOT_STABLE_MAX_BITS = 10
 
 # Empty-slot detection (H18 / issue 3 — calibrated from reference_17, Koleda fully unequipped).
 # Equipped discs/engines come in many colour schemes, but the UNEQUIPPED state is distinctive
@@ -176,8 +177,7 @@ _SLOT_STABLE_MAX_BITS = 10
 #                     render.  The luma<max guard rejects a hypothetical bright colourful engine;
 #                     only one equipped-engine sample exists → confirm live (OQ-H18c).
 _SLOT_SAMPLE_R = 50  # half-window (px) around a disc slot center for the empty test
-# disc-slot mean luma > this → equipped (empty ≈32, equipped ≥120)
-_DISC_EQUIPPED_LUMA_MIN = 80
+_DISC_EQUIPPED_LUMA_MIN = 80  # disc-slot mean luma > this → equipped (empty ≈32, equipped ≥120)
 _ENGINE_SAMPLE_R = 45  # half-window around the engine center
 _ENGINE_EMPTY_COLORED_MIN = 0.15  # engine colored-px frac > this ...
 _ENGINE_EMPTY_LUMA_MAX = 150  # ... AND mean luma < this → empty "core available" icon
@@ -236,10 +236,8 @@ _CORE_NODE_BBOXES: list[tuple[int, int, int, int]] = [
 
 # ── Traversal ─────────────────────────────────────────────────────────────────
 
-AGENT_MAX = 60  # hard cap on agents visited in one scan
 _PHASH_SIZE = 16  # hash grid dimension (16×16 = 256 bits)
-# ±px around a portrait center for the hash crop (grid path / tests)
-_PHASH_CROP_HALF = 64
+_PHASH_CROP_HALF = 64  # ±px around a portrait center for the hash crop (grid path / tests)
 
 # ── Top-strip traversal (H8 / D29) ────────────────────────────────────────────
 # The agent detail page (ref_3) carries a horizontal agent strip across the top.
@@ -268,8 +266,7 @@ _SELECT_CONFIRM_RETRIES = 2  # re-click attempts when a ">"/"<" shows no change
 # The strip is CIRCULAR (H16, user-confirmed): the chevrons wrap around, so there is
 # no terminal "first"/"last" agent to rewind to.  We anchor on wherever entry lands and
 # detect a completed loop when the strip identity returns to the start (Hamming ≤ this).
-# strip pHash back within this of start → ring closed
-_RING_CLOSE_MAX_BITS = _STRIP_CHANGE_MIN_BITS
+_RING_CLOSE_MAX_BITS = _STRIP_CHANGE_MIN_BITS  # strip pHash back within this of start → ring closed
 
 # Agent identity for advance-confirm + ring-closure (H18 — fixes the "double/triple-click skip").
 # The thin strip band is a POOR move-detector: a single ">"/"<" moves only the SELECTION
@@ -318,12 +315,10 @@ _OWN_CHEVRON_BBOX = (1315, 455, 1370, 535)  # the level-up ">>" pill, right of "
 _OWN_GREEN_HUE = (35, 90)  # OpenCV hue band for the green (owned) chevron
 _OWN_GREEN_S_MIN = 60
 _OWN_GREEN_V_MIN = 60
-# > this green fraction in the pill → owned (live green ≈ 0.16)
-_OWN_GREEN_FRAC_MIN = 0.03
+_OWN_GREEN_FRAC_MIN = 0.03  # > this green fraction in the pill → owned (live green ≈ 0.16)
 _OWN_WHITE_S_MAX = 45  # bright-white = low saturation …
 _OWN_WHITE_V_MIN = 200  # … and high value → the static unowned ">>"
-# > this white fraction in the pill → unowned (live white ≈ 0.16)
-_OWN_WHITE_FRAC_MIN = 0.06
+_OWN_WHITE_FRAC_MIN = 0.06  # > this white fraction in the pill → unowned (live white ≈ 0.16)
 _OWN_LEVEL_OWNED_MIN = 2  # level >= this ⇒ owned outright (chevron not consulted)
 
 # ── Timing ─────────────────────────────────────────────────────────────────────
@@ -922,8 +917,14 @@ def _extract_base_stats(
     conf["level"] = 90.0 if 1 <= level <= 60 else 30.0
 
     cap = _read_level_cap(base_frame, calib)
-    ascension = _ASCENSION_FROM_CAP.get(cap, 0)
-    conf["ascension"] = 90.0 if cap != 0 else 30.0
+    if cap != 0:
+        ascension = _ASCENSION_FROM_CAP.get(cap, 0)
+        conf["ascension"] = 90.0
+    else:
+        # OCR of the dim "/NN" cap text failed; fall back to counting filled
+        # promotion dots below the agent name (visual, survives font changes).
+        ascension = _count_ascension_dots(base_frame, calib)
+        conf["ascension"] = 60.0 if ascension > 0 else 30.0
 
     return key, level, ascension, conf
 
@@ -960,7 +961,7 @@ def _extract_skills(
     # OCR cannot handle the stylized bold-italic badge font; use blob classifier.
     skill_levels: list[int] = []
     skill_names = ("basic", "dodge", "assist", "special", "chain")
-    for name, bbox in zip(skill_names, _SKILL_LEVEL_BBOXES, strict=True):
+    for name, bbox in zip(skill_names, _SKILL_LEVEL_BBOXES, strict=False):
         crop = _crop(skills_frame, calib, bbox)
         raw = _read_skill_badge(crop)
         if raw is not None:
@@ -1142,7 +1143,7 @@ def _region_phash(frame: Image.Image, calib: CalibrationResult, ref_bbox: tuple)
 
 def _phash_hamming(a: str, b: str) -> int:
     """Number of differing bits between two equal-length pHash strings."""
-    return sum(c1 != c2 for c1, c2 in zip(a, b, strict=True))
+    return sum(c1 != c2 for c1, c2 in zip(a, b, strict=False))
 
 
 def _strip_id(frame: Image.Image, calib: CalibrationResult) -> str:
@@ -1357,7 +1358,8 @@ class AgentNavigator:
     def _ring_close_key(self, frame: Image.Image) -> str:
         """Return the ring-close key for this frame: the normalised agent name (H23).
 
-        Returns "" when no recognizer is available (ring-close falls back to AGENT_MAX).
+        Returns "" when no recognizer is available (ring-close disabled; kill event is the only
+        stop).
         Overridable in tests — the strip sim has no OCR, so it returns str(self.idx).
         """
         if self._recognizer is None:
@@ -1440,10 +1442,10 @@ class AgentNavigator:
             ``prev_equipped_id`` so the next EQUIPPED slot can confirm it switched to a NEW disc.
 
         Flow once the panel is rendered AND stable across two captures (H19 anti-fade):
-          - EMPTY → return immediately.  Two empty slots auto-load the SAME
-            inventory[0] detail, so a body-switch test would never fire — but their
-            result (no record) is identical, so a dropped click between empties is harmless;
-            no switch-detect, no futile re-clicks.
+          - EMPTY → return immediately.  Two empty slots auto-load the SAME inventory[0] detail, so
+          a
+            body-switch test would never fire — but their result (no record) is identical, so a
+            dropped click between empties is harmless; no switch-detect, no futile re-clicks.
           - EQUIPPED → accept if first equipped or the body changed from the previous equipped slot
             (substats differ between two discs even of one set, ref_8); else the click was dropped
             (panel still shows the previous disc) → re-click.
@@ -1460,20 +1462,20 @@ class AgentNavigator:
                     prev_hash is not None
                     and _phash_hamming(cur, prev_hash) <= _SLOT_STABLE_MAX_BITS
                 ):
-                    # Panel settled (two stable captures).  Resolve equipped/empty
-                    # from the action bar.
+                    # Panel settled (two stable captures).  Resolve equipped/empty from the action
+                    # bar.
                     if not self._slot_equipped_from_panel(frame):
                         return frame, False, None
-                    # Equipped — confirm it's a NEW disc (not a dropped click
-                    # banking the prev slot).
+                    # Equipped — confirm it's a NEW disc (not a dropped click banking the prev
+                    # slot).
                     if (
                         prev_equipped_id is None
                         or _phash_hamming(cur, prev_equipped_id) > _SLOT_CHANGE_MIN_BITS
                     ):
                         return frame, True, cur
                     _log.debug(
-                        "slot_reclick slot=%d poll=%d — equipped panel settled"
-                        " but unchanged from previous slot (dropped click)",
+                        "slot_reclick slot=%d poll=%d — equipped panel settled but unchanged "
+                        "from previous slot (dropped click)",
                         slot_no,
                         poll,
                     )
@@ -1491,18 +1493,21 @@ class AgentNavigator:
             _SLOT_GATE_POLLS,
         )
         equipped = self._slot_equipped_from_panel(frame)
-        phash = _region_phash(frame, self._calib, _SLOT_DETAIL_BBOX) if equipped else None
-        return frame, equipped, phash
+        return (
+            frame,
+            equipped,
+            (_region_phash(frame, self._calib, _SLOT_DETAIL_BBOX) if equipped else None),
+        )
 
     def _read_equipment(self):
         """Open the Equipment tab, visit all 7 slots, capture the EQUIPPED ones, restore the bar.
 
         H21 closed-loop contract: every slot is clicked, then resolved from the SELECT panel's
         action bar (`_open_slot` → equipped/empty).  The old pre-click pixel skip is gone — it
-        false-skipped equipped engines on ~4/5 agents (D36, proven non-separable).
-        Clicking an empty slot is safe: we never press "Equip", and the action-bar
-        gate prevents recording the inventory[0] item that an empty slot auto-loads
-        (the H18 corruption path).
+        false-skipped equipped engines on ~4/5 agents (D36, proven non-separable).  Clicking an
+        empty
+        slot is safe: we never press "Equip", and the action-bar gate prevents recording the
+        inventory[0] item that an empty slot auto-loads (the H18 corruption path).
 
         Per H10-Q4: a slot click hides the strip bar but slots stay clickable, so we switch between
         slots in the open select view with NO inter-slot Escape; ONE Escape after the last slot
@@ -1513,8 +1518,9 @@ class AgentNavigator:
           - None if the scan was killed mid-read,
           - _EQUIP_UNAVAILABLE if the Equipment tab never rendered the hexagon — a trial/preview
             agent ("not available in preview mode") OR a dropped tab.  We Escape (dismiss any modal)
-            and bail so the traversal is never left stuck on a popup (H18).
-            This is a SAFETY NET, not proactive trial detection (see DESIGN_agents.md H18-Q / H21).
+            and bail so the traversal is never left stuck on a popup (H18).  This is a SAFETY NET,
+            not
+            proactive trial detection (see DESIGN_agents.md H18-Q / H21).
         """
         equip_frame = self._capture_tab(_TAB_EQUIP_IDX)
         # Let the hexagon finish fading in before the render-gate so an equipped engine has time to
@@ -1555,8 +1561,9 @@ class AgentNavigator:
                 )
                 frames.append(None)
 
-        # ONE Escape exits the select view (every slot was clicked, so the bar is
-        # hidden) and restores the top strip bar (Q4) so ">" works.
+        # ONE Escape exits the select view (every slot was clicked, so the bar is hidden) and
+        # restores
+        # the top strip bar (Q4) so ">" works.
         if clicked_any:
             self._press_escape()
         return frames
@@ -1608,9 +1615,8 @@ class AgentNavigator:
         return self._capture()
 
     def scan(self):
-        """Top-strip roster traversal.
-
-        Yields (agent_idx, base_frame, skills_frame, equipment_frames).
+        """Top-strip roster traversal. Yields (agent_idx, base_frame, skills_frame,
+        equipment_frames).
 
         Game must be on the agent menu (or already on a detail page) before calling.
         Enters the detail page, then walks the strip in one direction with the advance
@@ -1624,8 +1630,8 @@ class AgentNavigator:
         SKIPPED after a single Base capture (no Skills/Equipment), not a stop — owned agents
         need not be contiguous.  We stop when the strip identity returns to the start (the
         ring has closed → every agent visited once), or on a true advance no-op (a
-        degenerate single-agent / non-looping strip), on the kill event, or at AGENT_MAX
-        visited.  This is independent of sort order and of which way the chevrons actually
+        degenerate single-agent / non-looping strip), or on the kill event.
+        This is independent of sort order and of which way the chevrons actually
         move (the user saw the pass run "in reverse" — now benign: a ring traversed
         backward still returns to its start).
 
@@ -1646,12 +1652,13 @@ class AgentNavigator:
         # for the same settled base_stats frame (offline calibration confirmed identical
         # (key, score) on both visits for every same-agent pair).  We set start_name
         # from the first non-empty normalised key we see; ring closes when any subsequent
-        # non-empty key matches it.  AGENT_MAX is the hard backstop.
+        # non-empty key matches it.  The ring always closes; kill event and advance no-op are
+        # backstops.
         start_name: str = ""  # first reliable agent name seen (set on first non-empty read)
 
         agent_idx = 0  # owned agents yielded (archive index)
-        visited = 0  # total strip positions visited (bounds runtime)
-        while not self._kill.is_set() and visited < AGENT_MAX:
+        visited = 0  # total strip positions visited (for logging)
+        while not self._kill.is_set():
             visited += 1
             # D37: capture the Base tab FIRST — it carries both the "Lv. N" pill and the
             # ownership ">>" chevron, and is the one tab where ownership can be read.  The
@@ -1665,10 +1672,10 @@ class AgentNavigator:
             # Same-agent pHash drifts 19–111 bits between visits (idle animation); name OCR is
             # deterministic (offline calibration: all 7 same-agent pairs returned identical keys).
             current_name = self._ring_close_key(base_frame)
-            if visited == 1:
+            if not start_name:
                 if current_name:
-                    start_name = current_name  # anchor on entry position
-            elif start_name and current_name == start_name:
+                    start_name = current_name  # anchor on entry position (retried until it lands)
+            elif current_name == start_name:
                 _log.info(
                     "agent_scan_done — ring closed (returned to '%s') after %d owned (%d visited)",
                     start_name,
@@ -1718,8 +1725,6 @@ class AgentNavigator:
                     visited,
                 )
                 return
-        if visited >= AGENT_MAX:
-            _log.warning("agent_scan_cap — hit AGENT_MAX (%d) after %d owned", AGENT_MAX, agent_idx)
 
 
 # ── Public scanner ────────────────────────────────────────────────────────────

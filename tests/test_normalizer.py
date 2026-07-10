@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from youkai_ocr.normalizer import (
@@ -12,6 +14,7 @@ from youkai_ocr.normalizer import (
     normalize_substat,
     parse_level,
     parse_numeric,
+    parse_roll_suffix,
     parse_slot,
     validate_disc_level,
     validate_disc_rarity,
@@ -33,6 +36,22 @@ from youkai_ocr.normalizer import (
 )
 def test_parse_slot(text, expected):
     assert parse_slot(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text,garbled_result,strict_result",
+    [
+        # disc_2070 (T12): OCR misread "[1]" as "[ 4" — the garble-tolerant
+        # fallback confidently returns the wrong digit, so the strict tier must
+        # return None and let the panel slot-widget read (G5) outrank it.
+        ("Fanged Metal [ 4", 4, None),
+        ("Dawn's Bloom < [ 6 ] 4", 6, None),
+        ("Bunny in Wonderland [1]", 1, 1),  # clean bracket: both tiers agree
+    ],
+)
+def test_parse_slot_strict_rejects_garbled_bracket(text, garbled_result, strict_result):
+    assert parse_slot(text) == garbled_result
+    assert parse_slot(text, allow_garbled=False) == strict_result
 
 
 # ── normalize_disc_set ────────────────────────────────────────────────────────
@@ -70,6 +89,150 @@ def test_normalize_disc_set_no_match():
     assert 0.0 <= conf <= 100.0
 
 
+# ── T2: live set-list refresh (2026-07-04) ────────────────────────────────────
+
+
+def test_normalize_disc_set_wuthering_salon():
+    key, conf = normalize_disc_set("Wuthering Salon [2]")
+    assert key == "WutheringSalon"
+    assert conf >= 95.0
+
+
+def test_normalize_disc_set_the_sky_ablaze():
+    key, conf = normalize_disc_set("The Sky Ablaze [5]")
+    assert key == "TheSkyAblaze"
+    assert conf >= 95.0
+
+
+_OLD_26_DISC_SET_KEYS = {
+    "WoodpeckerElectro",
+    "PufferElectro",
+    "ShockstarDisco",
+    "FreedomBlues",
+    "HormonePunk",
+    "SoulRock",
+    "SwingJazz",
+    "ChaosJazz",
+    "ProtoPunk",
+    "InfernoMetal",
+    "ChaoticMetal",
+    "ThunderMetal",
+    "PolarMetal",
+    "FangedMetal",
+    "BranchBladeSong",
+    "AstralVoice",
+    "ShadowHarmony",
+    "PhaethonsMelody",
+    "YunkuiTales",
+    "KingOfTheSummit",
+    "DawnsBloom",
+    "MoonlightLullaby",
+    "WhiteWaterBallad",
+    "ShiningAria",
+    "BunnyInWonderland",
+    "NotesFromTheChained",
+}
+
+
+def test_disc_sets_old_26_keys_unchanged():
+    from youkai_ocr import normalizer
+
+    normalizer._load()
+    assert _OLD_26_DISC_SET_KEYS <= set(normalizer._disc_sets.values())
+
+
+def test_disc_sets_excludes_removed_beta_stubs():
+    # T2: these titles share the wiki's Category:Drive Discs but carry
+    # Category:Removed + Category:Drive Disc Missing ID — beta stubs, never
+    # released. They must not appear as ZOD keys (see LOG T2).
+    from youkai_ocr import normalizer
+
+    normalizer._load()
+    excluded_display_names = {
+        "Assassin's Ballad",
+        "Doom Grindcore",
+        "Ecstatic Punk",
+        "Mammoth Electro",
+        "Monsoon Funk",
+        "Noisy Pop",
+        "Twisted Grindcore",
+        "Unicorn Electro",
+        "Vagabond Folk",
+    }
+    assert excluded_display_names.isdisjoint(normalizer._disc_sets.keys())
+
+
+# ── normalize_disc_set unknown-set floor (T3) ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        "Future Set Name [1]",
+        "Nonexistent Set 9000",
+        "",
+    ],
+)
+def test_normalize_disc_set_floor_rejects_unknown(garbage):
+    """Below-floor matches return ('', <floor) so the caller emits unknown_set
+    instead of snapping a foreign/unmapped title to the nearest set — the
+    Wuthering-Salon-read-as-SwingJazz failure mode (E1), fixed by T2's table
+    refresh + this floor as a backstop for the *next* unmapped patch."""
+    from youkai_ocr.normalizer import _SET_NAME_SCORE_MIN
+
+    key, score = normalize_disc_set(garbage)
+    assert key == "", f"expected empty key for {garbage!r}, got {key!r} (score={score})"
+    assert score < _SET_NAME_SCORE_MIN
+
+
+def test_normalize_disc_set_partial_wonderland_still_resolves():
+    # Real archived OCR (docs/diag_title_reocr_20260704.json, disc with a
+    # 2-line title where only "Wonderland" survived): scores 68-73, comfortably
+    # above the 60 floor, and must still resolve rather than critical-fail.
+    key, score = normalize_disc_set("B Z Wonderland [1] »®")
+    assert key == "BunnyInWonderland", f"got {key!r} (score={score})"
+    assert score >= 60.0
+
+
+def test_normalize_disc_set_shockstar_dropped_char_still_resolves():
+    # Real archived OCR with a dropped trailing char: scores ~78, above floor.
+    key, score = normalize_disc_set("Shockstar Disc G] 6 ©")
+    assert key == "ShockstarDisco", f"got {key!r} (score={score})"
+    assert score >= 60.0
+
+
+def test_normalize_disc_set_floor_below_all_legit_sweep_scores():
+    """Re-verify the 60 floor against the full June-22 sweep now that T2 has
+    landed: every legit title (all but the 6 pre-existing blank-OCR crops)
+    must clear the floor. See LOG T3 for the observed minimum (68.42, the
+    Wonderland partial title)."""
+    import json
+
+    from youkai_ocr.normalizer import _SET_NAME_SCORE_MIN
+
+    diag_path = Path(__file__).resolve().parents[1] / "docs" / "diag_title_reocr_20260704.json"
+    if not diag_path.exists():
+        pytest.skip("diagnostic sweep file missing")
+    rows = json.loads(diag_path.read_text())
+
+    resolved_scores = []
+    unresolved = []
+    for row in rows:
+        key, score = normalize_disc_set(row["ocr"])
+        if key:
+            resolved_scores.append(score)
+        else:
+            unresolved.append(row)
+
+    # Only the 6 pre-existing blank-OCR crops (empty ocr text) should fail to
+    # resolve; every legit title must clear the floor.
+    assert all(r["ocr"] == "" for r in unresolved), (
+        f"unexpected below-floor legit titles: {unresolved[:5]}"
+    )
+    assert len(unresolved) == 6
+    assert min(resolved_scores) >= _SET_NAME_SCORE_MIN
+
+
 # ── normalize_substat ─────────────────────────────────────────────────────────
 
 
@@ -99,6 +262,31 @@ def test_normalize_substat_upgrade_stripped():
     assert conf >= 80.0
 
 
+# ── parse_roll_suffix ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("DEF +2", 2),
+        ("CRIT Rate", None),
+        ("Anomaly Proficiency +1", 1),
+        ("CRIT Rate% +3", 3),
+        ("", None),
+        ("DEF +l", 1),  # OCR noise: 'l' misread for the digit '1'
+        # T12/Cluster-1: wide values ("14.4%") straddle the name/value bbox
+        # boundary, bleeding their leading digit(s) into the name crop. The
+        # suffix must still parse when trailing bleed follows it.
+        ("DEF +2 1", 2),  # disc_0001/0091 et al. — the literal 38-disc read
+        ("DEF +2 14", 2),
+        ("HP +2 336", 2),
+        ("DEF +21", None),  # merged bleed: ambiguous, refuse rather than guess
+    ],
+)
+def test_parse_roll_suffix(text, expected):
+    assert parse_roll_suffix(text) == expected
+
+
 # ── normalize_main_stat ───────────────────────────────────────────────────────
 
 
@@ -123,6 +311,24 @@ def test_normalize_main_stat(text, slot, expected_key):
     key, conf = normalize_main_stat(text, slot)
     assert key == expected_key, f"got {key!r} for slot={slot} text={text!r}"
     assert conf >= 80.0
+
+
+@pytest.mark.parametrize("text", ["", "   "])
+@pytest.mark.parametrize("slot", [1, 4, 5, 6])
+def test_normalize_main_stat_empty_query_returns_no_match(text, slot):
+    """T12/Cluster-3: rapidfuzz scores every candidate 0 for an empty query and
+    returns the first one arbitrarily — an OCR total-failure must yield the
+    explicit ("", 0.0) no-match signal, never a confident-looking key
+    (disc_0576/0618: empty main-name read silently became "hp_")."""
+    assert normalize_main_stat(text, slot) == ("", 0.0)
+
+
+@pytest.mark.parametrize("text", ["", "   ", "+2"])
+def test_normalize_substat_empty_query_returns_no_match(text):
+    """Same unguarded-empty-query gap as normalize_main_stat ("+2" strips to
+    empty via _UPGRADE_RE). normalize_agent/engine/disc_set are already safe
+    behind their score floors."""
+    assert normalize_substat(text) == ("", 0.0)
 
 
 # ── parse_level ───────────────────────────────────────────────────────────────
