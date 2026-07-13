@@ -214,7 +214,12 @@ _VALID_AGENT_CAPS = frozenset({10, 20, 30, 40, 50, 60})
 _ASCENSION_FROM_CAP: dict[int, int] = {10: 0, 20: 1, 30: 2, 40: 3, 50: 4, 60: 5}
 
 # Skills tab field bboxes (re-measured from reference_4 in H4)
-_MINDSCAPE_BBOX = (35, 980, 200, 1030)
+# Tightened in mindscape-fix T1.1: old bbox (35,980,200,1030) captured the whole
+# circular Mindscape progress ring; Otsu thresholding turned the bright ring arcs
+# into blobs that swamped the small "N/6" digits. This bbox brackets the teal
+# badge itself (with margin tesseract needs to segment glyphs) while excluding
+# the dotted ring texture and black arc above it.
+_MINDSCAPE_BBOX = (90, 980, 190, 1025)
 _SKILL_LEVEL_BBOXES: list[tuple[int, int, int, int]] = [
     (930, 750, 1065, 780),  # basic attack
     (1110, 750, 1245, 780),  # dodge
@@ -347,8 +352,17 @@ _NODE_LIT_LUMA_MIN = 80  # lit node: character-coloured (luma≥91 observed); lo
 _LOW_CONF_THRESHOLD = 70.0
 _CRITICAL_CONF = 30.0
 
-_MINDSCAPE_RE = re.compile(r"([0-6O])/[0-9/]")  # N/6 pattern; O→0 handled in extraction
+_MINDSCAPE_RE = re.compile(r"([0-6O])\s*/\s*6")  # N/6 pattern; O→0 handled in extraction
 _SKILL_DIGIT_RE = re.compile(r"\d+")
+
+# T2.2: "0" and "6" are the only Mindscape numerator digits whose glyph encloses a
+# hole in this font (confirmed on 16× true-0 and 13× true-6 live/reference badges,
+# incl. reference_4); a hole count of 0 rules a digit out as neither, cheaply, with
+# no template needed. Within the 1-hole bucket, "0" is a near-symmetric closed loop
+# while "6" has a lighter top half over a heavier bottom loop — vertical density
+# ratio separates them cleanly (measured: true-6 top/bottom ratio 0.944-0.965,
+# true-0 ratio 1.018-1.026; no overlap across 29 samples).
+_MINDSCAPE_ZERO_SIX_RATIO = 0.99
 
 # ── Detail-page presence check (RC-2 — yellow active-tab signature) ───────────
 # The full agent detail page (ref_3) has a bottom tab bar; the *active* tab is a
@@ -675,6 +689,72 @@ def _read_skill_badge(badge_crop: Image.Image) -> tuple[int, float] | None:
     return _classify(binary_lo, dim_fallback=True)
 
 
+def _classify_mindscape_numerator(cinema_crop: Image.Image) -> tuple[int, float] | None:
+    """Hole-count/shape classify the Mindscape "N/6" numerator glyph (T2.2).
+
+    Tesseract confuses the stylized numerator font ("0" read as "6", "6" read as
+    "5" — both observed on live captures even after the T1.1 bbox fix and T2.1
+    regex hardening). Per-crop Otsu thresholding is background-colour-agnostic
+    (the badge renders in teal/orange/yellow/blue/gray depending on character
+    theme), so this works the same way regardless of theme.
+
+    Returns (digit, confidence) only when the glyph encloses a hole — i.e. it is
+    unambiguously "0" or "6" — since those are the only two Mindscape values that
+    do in this font. Returns None for 1-5 (no hole), leaving those to the existing
+    regex/OCR path, which already reads them correctly.
+    """
+    w, h = cinema_crop.size
+    if w == 0 or h == 0:
+        return None
+    # Numerator occupies the left ~14-58% of the badge crop across every observed
+    # digit (0-2,4,6); the "/6" denominator starts to the right of that band.
+    num_crop = cinema_crop.crop((int(0.14 * w), 0, int(0.58 * w), h))
+    arr = np.array(num_crop.convert("RGB"))
+    up = cv2.resize(arr, (arr.shape[1] * 4, arr.shape[0] * 4), interpolation=cv2.INTER_LANCZOS4)
+    gray = cv2.cvtColor(up, cv2.COLOR_RGB2GRAY)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Full-width blobs are ring/margin residue leaking in at the crop's top/bottom
+    # edge (the bbox brackets the badge tightly but not perfectly, per T1.1), not
+    # a glyph stroke — a single numerator digit never spans the whole sub-crop.
+    max_glyph_w = 0.85 * binary.shape[1]
+    n, _, stats, _ = cv2.connectedComponentsWithStats(binary)
+    candidates = [
+        (i, stats[i])
+        for i in range(1, n)
+        if stats[i, cv2.CC_STAT_AREA] > 300 and stats[i, cv2.CC_STAT_WIDTH] < max_glyph_w
+    ]
+    if not candidates:
+        return None
+    # The numerator glyph is always a single connected blob in this font — the
+    # runner-up candidates here are consistently the "/" separator's left tip and
+    # bottom-corner ring residue (near-identical size/position regardless of which
+    # digit is showing), not a second stroke of the same glyph, so no merge step.
+    candidates.sort(key=lambda c: -c[1][cv2.CC_STAT_AREA])
+    _, best = candidates[0]
+    x0, y0 = int(best[cv2.CC_STAT_LEFT]), int(best[cv2.CC_STAT_TOP])
+    x1, y1 = x0 + int(best[cv2.CC_STAT_WIDTH]), y0 + int(best[cv2.CC_STAT_HEIGHT])
+    glyph = binary[y0:y1, x0:x1]
+
+    scale = min(_BADGE_GLYPH_W / glyph.shape[1], _BADGE_GLYPH_H / glyph.shape[0])
+    nw, nh = max(1, int(glyph.shape[1] * scale)), max(1, int(glyph.shape[0] * scale))
+    scaled = cv2.resize(glyph, (nw, nh), interpolation=cv2.INTER_AREA)
+    _, scaled = cv2.threshold(scaled, 127, 255, cv2.THRESH_BINARY)
+    canvas = np.zeros((_BADGE_GLYPH_H, _BADGE_GLYPH_W), dtype=np.uint8)
+    y_off, x_off = (_BADGE_GLYPH_H - nh) // 2, (_BADGE_GLYPH_W - nw) // 2
+    canvas[y_off : y_off + nh, x_off : x_off + nw] = scaled
+
+    if _b1_hole_count(canvas) == 0:
+        return None  # not 0/6 — the regex/OCR path already handles 1-5 correctly
+
+    mid = _BADGE_GLYPH_H // 2
+    top = float(canvas[:mid, :].sum())
+    bottom = float(canvas[mid:, :].sum())
+    ratio = top / (bottom + 1e-6)
+    digit = 0 if ratio >= _MINDSCAPE_ZERO_SIX_RATIO else 6
+    return digit, 90.0
+
+
 def _detect_core_rank(skills_frame: Image.Image, calib: CalibrationResult) -> int:
     """Count lit (teal-glowing) core nodes A–F → int 0-6.
 
@@ -946,16 +1026,23 @@ def _extract_skills(
     # O→0 substitution handles Tesseract mis-classifying "0" as letter "O".
     cinema_crop = _crop(skills_frame, calib, _MINDSCAPE_BBOX)
     cinema_text = recognizer.read_cinema(cinema_crop)
+    shape_result = _classify_mindscape_numerator(cinema_crop)
     m = _MINDSCAPE_RE.search(cinema_text)
-    if m:
+    if shape_result is not None:
+        # Hole-count/shape classification (T2.2) beats OCR on the stylized font:
+        # it directly resolves the "0" read as "6" / "6" read as "5" confusions
+        # Tesseract still made even after the T1.1 bbox fix and T2.1 regex hardening.
+        mindscape, conf["mindscape"] = shape_result
+    elif m:
         c = m.group(1)
         mindscape = 0 if c == "O" else int(c)
         conf["mindscape"] = 90.0
     else:
-        # Single-digit fallback: some characters' art occludes the "/6" part.
-        lone = re.search(r"^([0-6])$", cinema_text.strip())
-        mindscape = int(lone.group(1)) if lone else 0
-        conf["mindscape"] = 65.0 if lone else 30.0
+        # No verified "/6" denominator: a lone digit (or noise) is not trustworthy
+        # evidence of mindscape rank, so don't stamp it as the value. Surface as
+        # low/critical confidence rather than silently accepting a guess.
+        mindscape = 0
+        conf["mindscape"] = 40.0 if cinema_text.strip() else _CRITICAL_CONF
 
     # Five numbered skill levels (basic, dodge, assist, special, chain).
     # OCR cannot handle the stylized bold-italic badge font; use blob classifier.
