@@ -355,14 +355,31 @@ _CRITICAL_CONF = 30.0
 _MINDSCAPE_RE = re.compile(r"([0-6O])\s*/\s*6")  # N/6 pattern; O→0 handled in extraction
 _SKILL_DIGIT_RE = re.compile(r"\d+")
 
-# T2.2: "0" and "6" are the only Mindscape numerator digits whose glyph encloses a
-# hole in this font (confirmed on 16× true-0 and 13× true-6 live/reference badges,
-# incl. reference_4); a hole count of 0 rules a digit out as neither, cheaply, with
-# no template needed. Within the 1-hole bucket, "0" is a near-symmetric closed loop
-# while "6" has a lighter top half over a heavier bottom loop — vertical density
-# ratio separates them cleanly (measured: true-6 top/bottom ratio 0.944-0.965,
-# true-0 ratio 1.018-1.026; no overlap across 29 samples).
-_MINDSCAPE_ZERO_SIX_RATIO = 0.99
+# Mindscape numerator classification is done geometrically on the normalised 24×36
+# glyph canvas, not by OCR: Tesseract returns empty on this stylized bold-italic
+# badge font under every preprocessing tried, and the skill-level badge_glyphs.json
+# templates do not transfer (the mindscape strokes are bolder/differently
+# proportioned — cosine matching collapses 0↔6 and 6↔4 at ~0.77). The features below
+# were measured across 78 live badges (two full scans of the same account) covering
+# digits {0,1,2,4,6}; each threshold sits in a gap with no overlap between classes.
+#
+#   hole count      1 → {0,6}   |   0 → {1,2,3,4,5}   ("4" is an open-top glyph here,
+#                   so 0 and 6 are the only holed numerators — matches T2.2.)
+#   0-vs-6          hole-centroid vertical position: true-0 0.498–0.500 (centred loop),
+#                   true-6 0.609–0.620 (low loop). A top/bottom pixel ratio also
+#                   separates them but sits on a knife-edge (~0.99) that a 1px render
+#                   shift can flip; the hole centroid has a clean 0.11 gap instead.
+#   "1"             glyph aspect (w/h): true-1 ≈0.44 vs 0.89–0.92 for every other digit.
+#   "4"             middle-third pixel fraction: true-4 ≈0.56 vs ≤0.41 for 0/1/2/6.
+#   "2"             the balanced 0-hole shape: |top-third − bottom-third| ≈0.00.
+_MINDSCAPE_ZERO_SIX_HCY = 0.55  # hole centroid below this fraction of height → 0, else 6
+_MINDSCAPE_ONE_ASPECT = 0.62  # 0-hole glyph narrower than this (w/h) → "1"
+_MINDSCAPE_FOUR_MID = 0.45  # 0-hole glyph with middle-third fraction above this → "4"
+_MINDSCAPE_BALANCED_DELTA = 0.08  # |t3−b3| within this → balanced "2"
+# 3 and 5 do not occur on the available capture account, so their rules below are
+# structural (top-bar-heavy → 5, otherwise → 3) and UNVALIDATED on live frames; they
+# are returned at sub-threshold confidence so they always surface for human review.
+_MINDSCAPE_UNVALIDATED_CONF = 65.0
 
 # ── Detail-page presence check (RC-2 — yellow active-tab signature) ───────────
 # The full agent detail page (ref_3) has a bottom tab bar; the *active* tab is a
@@ -690,18 +707,18 @@ def _read_skill_badge(badge_crop: Image.Image) -> tuple[int, float] | None:
 
 
 def _classify_mindscape_numerator(cinema_crop: Image.Image) -> tuple[int, float] | None:
-    """Hole-count/shape classify the Mindscape "N/6" numerator glyph (T2.2).
+    """Geometrically classify the Mindscape "N/6" numerator glyph (0–6).
 
-    Tesseract confuses the stylized numerator font ("0" read as "6", "6" read as
-    "5" — both observed on live captures even after the T1.1 bbox fix and T2.1
-    regex hardening). Per-crop Otsu thresholding is background-colour-agnostic
-    (the badge renders in teal/orange/yellow/blue/gray depending on character
-    theme), so this works the same way regardless of theme.
+    OCR is unusable on this stylized badge font (Tesseract returns empty; the
+    skill-level templates don't transfer — see the _MINDSCAPE_* constants), so the
+    glyph is resolved from shape features on a per-crop Otsu-thresholded, size-
+    normalised 24×36 canvas. Otsu is background-colour-agnostic, so the badge's
+    per-character theme colour (teal/orange/yellow/blue/gray) is irrelevant.
 
-    Returns (digit, confidence) only when the glyph encloses a hole — i.e. it is
-    unambiguously "0" or "6" — since those are the only two Mindscape values that
-    do in this font. Returns None for 1-5 (no hole), leaving those to the existing
-    regex/OCR path, which already reads them correctly.
+    Returns (digit, confidence), or None only when no glyph blob can be isolated
+    (falls back to the regex/OCR path). Digits 0,1,2,4,6 are returned at high
+    confidence (rules validated on 78 live badges); 3 and 5 are best-effort at
+    sub-threshold confidence (no live samples available — see module constants).
     """
     w, h = cinema_crop.size
     if w == 0 or h == 0:
@@ -744,15 +761,48 @@ def _classify_mindscape_numerator(cinema_crop: Image.Image) -> tuple[int, float]
     y_off, x_off = (_BADGE_GLYPH_H - nh) // 2, (_BADGE_GLYPH_W - nw) // 2
     canvas[y_off : y_off + nh, x_off : x_off + nw] = scaled
 
-    if _b1_hole_count(canvas) == 0:
-        return None  # not 0/6 — the regex/OCR path already handles 1-5 correctly
+    return _classify_glyph_canvas(canvas)
 
-    mid = _BADGE_GLYPH_H // 2
-    top = float(canvas[:mid, :].sum())
-    bottom = float(canvas[mid:, :].sum())
-    ratio = top / (bottom + 1e-6)
-    digit = 0 if ratio >= _MINDSCAPE_ZERO_SIX_RATIO else 6
-    return digit, 90.0
+
+def _classify_glyph_canvas(canvas: np.ndarray) -> tuple[int, float]:
+    """Resolve a normalised 24×36 binary Mindscape numerator glyph to a digit 0–6.
+
+    Split by decision tree on validated shape features (see _MINDSCAPE_* constants).
+    """
+    total = float(canvas.sum()) + 1e-6
+    H = canvas.shape[0]
+
+    # Locate enclosed holes (background regions not connected to the canvas edge).
+    inv = 255 - canvas
+    padded = np.pad(inv, 1, mode="constant", constant_values=255)
+    mask = np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), dtype=np.uint8)
+    cv2.floodFill(padded, mask, (0, 0), 128)
+    hole = padded[1 : H + 1, 1 : canvas.shape[1] + 1] == 255
+    if hole.any():
+        # Only "0" and "6" enclose a hole in this font. "0" is a centred loop
+        # (hole centroid ≈ 0.50·H); "6" is a low loop (≈ 0.61·H).
+        hole_cy = float(np.where(hole)[0].mean()) / H
+        return (0 if hole_cy < _MINDSCAPE_ZERO_SIX_HCY else 6), 90.0
+
+    # 0-hole bucket: {1, 2, 3, 4, 5}. Work from the glyph's tight bounding box.
+    ys, xs = np.where(canvas > 0)
+    if ys.size == 0:
+        return 0, _CRITICAL_CONF
+    aspect = (xs.max() - xs.min() + 1) / (ys.max() - ys.min() + 1)
+    if aspect < _MINDSCAPE_ONE_ASPECT:
+        return 1, 90.0  # narrow single stem
+
+    third = _BADGE_GLYPH_H // 3
+    t3 = float(canvas[:third, :].sum()) / total
+    m3 = float(canvas[third : 2 * third, :].sum()) / total
+    b3 = float(canvas[2 * third :, :].sum()) / total
+    if m3 > _MINDSCAPE_FOUR_MID:
+        return 4, 90.0  # open-top "4": heavy waist, thin bottom stem
+    if abs(t3 - b3) <= _MINDSCAPE_BALANCED_DELTA:
+        return 2, 88.0  # balanced top/bottom is the "2" signature (validated)
+    # Asymmetric residue — a "5" (top bar heavy) or "3". Unvalidated on live data,
+    # so return sub-threshold confidence to force human review rather than trust it.
+    return (5 if t3 > b3 else 3), _MINDSCAPE_UNVALIDATED_CONF
 
 
 def _detect_core_rank(skills_frame: Image.Image, calib: CalibrationResult) -> int:

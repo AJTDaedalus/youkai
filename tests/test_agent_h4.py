@@ -150,6 +150,33 @@ def test_agent_019_mindscape_six_not_misread_as_five(_rec):
 
 
 @pytest.mark.parametrize(
+    "fixture,expected",
+    [
+        # Non-{0,6} mindscapes: the digits with no enclosed hole, which the shape
+        # classifier previously abstained on (returning None) and which Tesseract
+        # cannot read on this badge font — so they silently defaulted to M0. These
+        # three cover the units-place decision tree (1 narrow-stem, 2 balanced,
+        # 4 open-top heavy-waist) on visually-confirmed live badges. The expected
+        # value is the mindscape shown *on the captured frame*, not the character's
+        # current account rank (e.g. agent_029 shows 4/6 in this 2026-06 capture).
+        ("agent_038_mindscape_1of6.png", 1),
+        ("agent_034_mindscape_2of6.png", 2),
+        ("agent_029_mindscape_4of6.png", 4),
+    ],
+)
+def test_nonzero_nonsix_mindscape(_rec, fixture, expected):
+    path = _MINDSCAPE_FIXTURES / fixture
+    if not path.exists():
+        pytest.skip(f"fixture not found: {path}")
+    img = Image.open(path)
+    mindscape, _talent, conf = _extract_skills(img, _CALIB, _rec)
+    assert mindscape == expected, f"{fixture}: expected mindscape={expected}, got {mindscape}"
+    assert conf.get("mindscape", 0) >= _LOW_CONF_THRESHOLD, (
+        f"{fixture}: mindscape conf {conf.get('mindscape')} < {_LOW_CONF_THRESHOLD}"
+    )
+
+
+@pytest.mark.parametrize(
     "skill,expected",
     [
         ("basic", 12),
