@@ -441,9 +441,17 @@ def test_validate_disc_slot():
         ("Trigger", "Trigger"),
         ("Vivian", "Vivian"),
         ("Pulchra", "Pulchra"),
+        # Velina: short + full in-game name. Without the "Velina Airgid" alias the
+        # full-name read only reaches WRatio 90 and any first-token OCR noise
+        # ("Velina"→"Vellna"/"Velna") sinks below the 85 floor → unknown_agent →
+        # dropped from export. The alias anchors the match on the intact surname.
+        ("Velina", "Velina"),
+        ("Velina Airgid", "Velina"),
         # OCR-noise variants that still resolve (score ≥ 85)
         ("Dan Yinhu", "PanYinhu"),
         ("Orphie Magnus", "OrphieMagus"),
+        ("Vellna Airgid", "Velina"),
+        ("Velna Airgid", "Velina"),
         # H30.2 — new full-name aliases
         ("Nekomiya Manaka", "Nekomata"),
         ("Nekomiya Mana", "Nekomata"),

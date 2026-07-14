@@ -20,8 +20,12 @@ import pytest
 from PIL import Image
 
 from youkai_ocr.agent_scanner import (
+    _LOW_CONF_THRESHOLD,
+    _MINDSCAPE_BBOX,
     _SKILL_LEVEL_BBOXES,
+    _crop,
     _extract_equip_frame,
+    _extract_skills,
     _read_skill_badge,
     scan_single_frame_agent,
 )
@@ -95,10 +99,81 @@ def test_zhao_ascension(zhao_agent):
 # ── Skills tab (ref_4) ────────────────────────────────────────────────────────
 
 
-def test_zhao_mindscape(zhao_agent):
+def test_zhao_mindscape(zhao_agent, zhao_skills, _rec):
     agent, _ = zhao_agent
     assert agent is not None
     assert agent.constellation == 0  # CINEMA 0/6 visible in ref_4
+
+    # T3.2: guard against the empty-OCR blind spot — this must fail if
+    # read_cinema regresses to returning '', since constellation == 0 alone
+    # can't distinguish a genuine 0/6 read from a silent default.
+    cinema_crop = _crop(zhao_skills, _CALIB, _MINDSCAPE_BBOX)
+    cinema_text = _rec.read_cinema(cinema_crop)
+    assert cinema_text, "read_cinema returned empty text on reference-4 crop"
+    assert "/6" in cinema_text, f"expected '/6' in raw OCR, got {cinema_text!r}"
+
+
+_MINDSCAPE_FIXTURES = Path(__file__).parent / "fixtures" / "mindscape"
+
+
+def test_agent_021_nonzero_mindscape(_rec):
+    """T3.1: a genuine non-zero mindscape (6/6, live agent_021, visually confirmed)
+    must be read as 6, not silently defaulted to 0. Under the pre-fix bbox this
+    frame's cinema crop OCR'd empty and fell through to a silent mindscape=0 —
+    exactly the blind spot this test closes."""
+    path = _MINDSCAPE_FIXTURES / "agent_021_mindscape_6of6.png"
+    if not path.exists():
+        pytest.skip(f"fixture not found: {path}")
+    img = Image.open(path)
+    mindscape, _talent, conf = _extract_skills(img, _CALIB, _rec)
+    assert mindscape == 6, f"expected mindscape=6, got {mindscape}"
+    assert conf.get("mindscape", 0) >= _LOW_CONF_THRESHOLD, (
+        f"mindscape confidence {conf.get('mindscape')} below threshold {_LOW_CONF_THRESHOLD}"
+    )
+
+
+def test_agent_019_mindscape_six_not_misread_as_five(_rec):
+    """T2.2: a genuine 6/6 badge that Tesseract mis-OCR'd as '5/6' (live agent_019,
+    visually confirmed 6/6) must be read as 6, not the OCR'd 5. Pre-T2.2 this
+    frame's regex match on the raw OCR text stamped mindscape=5 at conf=90 — a
+    confident WRONG value, worse than the empty-OCR silent-M0 case T3.1 closed.
+    The hole-count/shape classifier resolves it from pixels, bypassing OCR."""
+    path = _MINDSCAPE_FIXTURES / "agent_019_mindscape_6of6_misread_as_5.png"
+    if not path.exists():
+        pytest.skip(f"fixture not found: {path}")
+    img = Image.open(path)
+    mindscape, _talent, conf = _extract_skills(img, _CALIB, _rec)
+    assert mindscape == 6, f"expected mindscape=6, got {mindscape}"
+    assert conf.get("mindscape", 0) >= _LOW_CONF_THRESHOLD, (
+        f"mindscape confidence {conf.get('mindscape')} below threshold {_LOW_CONF_THRESHOLD}"
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture,expected",
+    [
+        # Non-{0,6} mindscapes: the digits with no enclosed hole, which the shape
+        # classifier previously abstained on (returning None) and which Tesseract
+        # cannot read on this badge font — so they silently defaulted to M0. These
+        # three cover the units-place decision tree (1 narrow-stem, 2 balanced,
+        # 4 open-top heavy-waist) on visually-confirmed live badges. The expected
+        # value is the mindscape shown *on the captured frame*, not the character's
+        # current account rank (e.g. agent_029 shows 4/6 in this 2026-06 capture).
+        ("agent_038_mindscape_1of6.png", 1),
+        ("agent_034_mindscape_2of6.png", 2),
+        ("agent_029_mindscape_4of6.png", 4),
+    ],
+)
+def test_nonzero_nonsix_mindscape(_rec, fixture, expected):
+    path = _MINDSCAPE_FIXTURES / fixture
+    if not path.exists():
+        pytest.skip(f"fixture not found: {path}")
+    img = Image.open(path)
+    mindscape, _talent, conf = _extract_skills(img, _CALIB, _rec)
+    assert mindscape == expected, f"{fixture}: expected mindscape={expected}, got {mindscape}"
+    assert conf.get("mindscape", 0) >= _LOW_CONF_THRESHOLD, (
+        f"{fixture}: mindscape conf {conf.get('mindscape')} < {_LOW_CONF_THRESHOLD}"
+    )
 
 
 @pytest.mark.parametrize(
