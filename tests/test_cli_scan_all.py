@@ -28,6 +28,7 @@ from youkai_ocr.cli import (
     _is_agent_selection_menu,
     _is_main_menu,
     _make_first_item_check,
+    _phase_summary_line,
     _preflight_frame,
     _reconcile_locations,
     select_phases,
@@ -926,6 +927,59 @@ def test_crash_txt_written_on_failure(tmp_path):
     # "Results summary" line lands in scan.log — so check for a line that was
     # already there when the engine phase crashed, not scan.log's final state.
     assert "[2/3] W-Engine inventory" in content
+
+
+def test_phase_summary_line_uses_manual_nav_order():
+    """The two nav modes run phases in different orders, and the summary infers the
+    failing phase from the first one missing — so it must be told which order applied.
+
+    Regression: a discs failure under --manual-nav was reported as engines=FAILED.
+    """
+    # Manual-nav runs discs → engines → agents; a discs failure means nothing else ran.
+    assert (
+        _phase_summary_line({}, manual_nav=True) == "discs=FAILED engines=not-reached "
+        "agents=not-reached"
+    )
+    # Auto-nav runs engines → discs → agents.
+    assert (
+        _phase_summary_line({}, manual_nav=False) == "engines=FAILED discs=not-reached "
+        "agents=not-reached"
+    )
+
+
+def test_phase_summary_line_renders_completed_phases():
+    line = _phase_summary_line(
+        {
+            "discs": {"count": 412},
+            "engines": {"count": 0, "skipped": True},
+        },
+        manual_nav=True,
+    )
+    assert line == "discs=done(412) engines=skipped agents=FAILED"
+
+    resumed = _phase_summary_line({"engines": {"count": 7, "resumed": True}}, manual_nav=False)
+    assert resumed == "engines=resumed(7) discs=FAILED agents=not-reached"
+
+
+def test_crash_txt_names_the_failing_phase_under_manual_nav(tmp_path):
+    """End-to-end: discs fails first under --manual-nav (the default in these tests)."""
+    args = _make_porcelain_args(tmp_path)
+    buf = io.StringIO()
+
+    with (
+        patch("youkai_ocr.capture.calibrate_window", return_value=(_identity_calib(), MagicMock())),
+        patch("youkai_ocr.disc_scanner.scan_discs", side_effect=RuntimeError("boom")),
+        patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()),
+        patch("youkai_ocr.cli._countdown"),
+        patch("youkai_ocr.cli._check_disc_screen"),
+        patch("builtins.input", return_value=""),
+        patch("sys.stdout", buf),
+    ):
+        with pytest.raises(RuntimeError, match="boom"):
+            _cmd_scan_all(args)
+
+    content = (_find_run_dir(args.archive_dir) / "crash.txt").read_text()
+    assert "phases  : discs=FAILED engines=not-reached agents=not-reached" in content
 
 
 def test_crash_txt_write_failure_does_not_mask_original_exception(tmp_path, monkeypatch):

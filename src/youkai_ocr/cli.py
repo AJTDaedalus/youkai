@@ -1485,18 +1485,20 @@ def select_phases(args) -> frozenset[str]:
 
 
 _PHASE_ORDER = ("engines", "discs", "agents")
+_PHASE_ORDER_MANUAL = ("discs", "engines", "agents")
 
 
-def _phase_summary_line(phase_results: dict) -> str:
+def _phase_summary_line(phase_results: dict, *, manual_nav: bool = False) -> str:
     """Render phase_results as e.g. 'engines=done(412) discs=FAILED agents=not-reached'.
 
     phase_results only gains an entry once a phase finishes (or is skipped/resumed),
-    so the first phase in canonical order missing from it is the one that was
-    running when the failure hit; anything after that was never reached.
+    so the first phase in execution order missing from it is the one that was
+    running when the failure hit; anything after that was never reached.  The two
+    nav modes run the phases in different orders, so the caller must say which.
     """
     parts = []
     failed_marked = False
-    for name in _PHASE_ORDER:
+    for name in _PHASE_ORDER_MANUAL if manual_nav else _PHASE_ORDER:
         v = phase_results.get(name)
         if v is not None:
             if v.get("skipped"):
@@ -1530,6 +1532,7 @@ def _write_crash_report(
     started: str,
     argv: list[str],
     phase_results: dict,
+    manual_nav: bool,
     calib,
     engine: str,
     exc: BaseException,
@@ -1563,7 +1566,7 @@ def _write_crash_report(
         )
     else:
         lines.append("window  : unknown (failure occurred before calibration)")
-    lines.append(f"phases  : {_phase_summary_line(phase_results)}")
+    lines.append(f"phases  : {_phase_summary_line(phase_results, manual_nav=manual_nav)}")
     lines.append("---")
     lines.append(str(exc) or type(exc).__name__)
     lines.append("---")
@@ -1578,7 +1581,9 @@ def _write_crash_report(
         tail_bytes = tail_text.encode("utf-8")
         if len(tail_bytes) > 16 * 1024:
             tail_text = tail_bytes[-16 * 1024 :].decode("utf-8", errors="replace")
-        lines.append(f"last {len(tail_lines)} line(s) of scan.log:")
+        # Recount after the byte cap — it can drop lines, and a header claiming
+        # 50 lines over a truncated body reads as corruption to whoever triages it.
+        lines.append(f"last {len(tail_text.splitlines())} line(s) of scan.log:")
         lines.append(tail_text)
     else:
         lines.append("scan.log: unavailable")
@@ -2130,6 +2135,7 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                 started=run_start_iso,
                 argv=sys.argv,
                 phase_results=phase_results,
+                manual_nav=manual_nav,
                 calib=calib,
                 engine=getattr(args, "engine", "unknown"),
                 exc=_exc,
