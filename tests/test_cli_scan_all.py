@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -871,6 +872,200 @@ def test_porcelain_error_event_on_screen_assert_error(tmp_path):
     error_events = [r for r in rows if r["event"] == "error"]
     assert len(error_events) == 1
     assert "wrong screen" in error_events[0]["message"]
+
+
+# ── T2/T3/T4: crash.txt, results.json status, failure-message pointer ───────
+
+
+def _porcelain_scan_all_failing_engines(tmp_path: Path, buf, exc: BaseException):
+    """Run porcelain _cmd_scan_all where the disc phase succeeds and the
+    engine phase raises `exc`. Manual-nav order is discs → engines → agents,
+    so this leaves one completed phase and one failed phase in phase_results.
+
+    Returns (args, stack) — enter `stack` as a context manager, then call
+    `_cmd_scan_all(args)` inside it.
+    """
+    args = _make_porcelain_args(tmp_path)
+    calib = _identity_calib()
+    stack = ExitStack()
+    stack.enter_context(
+        patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock()))
+    )
+    stack.enter_context(
+        patch("youkai_ocr.disc_scanner.scan_discs", return_value=([_sample_disc()], []))
+    )
+    stack.enter_context(patch("youkai_ocr.wengine_scanner.scan_engines", side_effect=exc))
+    stack.enter_context(patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()))
+    stack.enter_context(patch("youkai_ocr.cli._countdown"))
+    stack.enter_context(patch("youkai_ocr.cli._check_disc_screen"))
+    stack.enter_context(patch("youkai_ocr.cli._check_engine_screen"))
+    stack.enter_context(patch("builtins.input", return_value=""))
+    stack.enter_context(patch("sys.stdout", buf))
+    return args, stack
+
+
+def test_crash_txt_written_on_failure(tmp_path):
+    """A mid-phase exception writes crash.txt with the exception type and a scan.log line."""
+    buf = io.StringIO()
+    args, stack = _porcelain_scan_all_failing_engines(
+        tmp_path, buf, TypeError("unsupported operand type(s) for +: 'float' and 'list'")
+    )
+
+    with stack:
+        with pytest.raises(TypeError, match="unsupported operand"):
+            _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    crash_path = run_dir / "crash.txt"
+    assert crash_path.exists(), "crash.txt not written on failure"
+    content = crash_path.read_text()
+    assert "TypeError" in content
+    assert "unsupported operand type(s) for +" in content
+
+    # The tail is captured at except-time, before the `finally` block's own
+    # "Results summary" line lands in scan.log — so check for a line that was
+    # already there when the engine phase crashed, not scan.log's final state.
+    assert "[2/3] W-Engine inventory" in content
+
+
+def test_crash_txt_write_failure_does_not_mask_original_exception(tmp_path, monkeypatch):
+    """If the run dir can't be written to, the original exception must still
+    propagate — never an OSError from the crash-report/results.json writer."""
+    buf = io.StringIO()
+    args, stack = _porcelain_scan_all_failing_engines(tmp_path, buf, RuntimeError("boom"))
+
+    orig_write_text = Path.write_text
+
+    def _guarded_write_text(self, *a, **k):
+        if self.name in ("crash.txt", "results.json"):
+            raise OSError("disk full (simulated)")
+        return orig_write_text(self, *a, **k)
+
+    monkeypatch.setattr(Path, "write_text", _guarded_write_text)
+
+    with stack:
+        with pytest.raises(RuntimeError, match="boom"):
+            _cmd_scan_all(args)
+
+
+def test_results_json_status_failed_with_error_info(tmp_path):
+    buf = io.StringIO()
+    args, stack = _porcelain_scan_all_failing_engines(tmp_path, buf, RuntimeError("boom"))
+
+    with stack:
+        with pytest.raises(RuntimeError, match="boom"):
+            _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert results["status"] == "failed"
+    assert results["error"]["type"] == "RuntimeError"
+    assert results["error"]["message"] == "boom"
+    assert "discs" in results["phases"]
+    assert "engines" not in results["phases"]
+
+
+def test_results_json_status_ok_on_success(tmp_path):
+    """Success path adds status: "ok" without disturbing pre-existing keys."""
+    args = _make_args(tmp_path)
+    _patched_scan_all(tmp_path, args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert results["status"] == "ok"
+    assert results["summary"]["discs"] == 1
+    assert "error" not in results
+
+
+def test_results_json_status_aborted_on_keyboard_interrupt(tmp_path):
+    """KeyboardInterrupt (Ctrl+C) maps to status: "aborted", not "failed"."""
+    args = _make_porcelain_args(tmp_path)
+    buf = io.StringIO()
+    calib = _identity_calib()
+
+    with (
+        patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())),
+        patch("youkai_ocr.disc_scanner.scan_discs", side_effect=KeyboardInterrupt),
+        patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()),
+        patch("youkai_ocr.cli._countdown"),
+        patch("youkai_ocr.cli._check_disc_screen"),
+        patch("builtins.input", return_value=""),
+        patch("sys.stdout", buf),
+    ):
+        with pytest.raises(KeyboardInterrupt):
+            _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert results["status"] == "aborted"
+    assert "error" in results
+
+
+def test_results_json_status_aborted_on_user_decline(tmp_path):
+    """The interactive low-confidence/dark-frame decline paths raise
+    RuntimeError("Scan aborted by user ...") — also status: "aborted"."""
+    args = _make_porcelain_args(tmp_path)
+    buf = io.StringIO()
+    calib = _identity_calib()
+
+    with (
+        patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())),
+        patch(
+            "youkai_ocr.disc_scanner.scan_discs",
+            side_effect=RuntimeError("Scan aborted by user after dark-frame warning."),
+        ),
+        patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()),
+        patch("youkai_ocr.cli._countdown"),
+        patch("youkai_ocr.cli._check_disc_screen"),
+        patch("builtins.input", return_value=""),
+        patch("sys.stdout", buf),
+    ):
+        with pytest.raises(RuntimeError, match="Scan aborted by user"):
+            _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    results = json.loads((run_dir / "results.json").read_text())
+    assert results["status"] == "aborted"
+
+
+def test_porcelain_error_message_points_to_crash_txt(tmp_path):
+    buf = io.StringIO()
+    args, stack = _porcelain_scan_all_failing_engines(tmp_path, buf, RuntimeError("boom"))
+
+    with stack:
+        with pytest.raises(RuntimeError, match="boom"):
+            _cmd_scan_all(args)
+
+    buf.seek(0)
+    rows = [json.loads(line) for line in buf if line.strip()]
+    error_events = [r for r in rows if r["event"] == "error"]
+    assert len(error_events) == 1
+    run_dir = _find_run_dir(args.archive_dir)
+    assert str(run_dir / "crash.txt") in error_events[0]["message"]
+
+
+def test_porcelain_error_message_omits_crash_txt_pointer_when_write_fails(tmp_path, monkeypatch):
+    buf = io.StringIO()
+    args, stack = _porcelain_scan_all_failing_engines(tmp_path, buf, RuntimeError("boom"))
+
+    orig_write_text = Path.write_text
+
+    def _guarded_write_text(self, *a, **k):
+        if self.name == "crash.txt":
+            raise OSError("disk full (simulated)")
+        return orig_write_text(self, *a, **k)
+
+    monkeypatch.setattr(Path, "write_text", _guarded_write_text)
+
+    with stack:
+        with pytest.raises(RuntimeError, match="boom"):
+            _cmd_scan_all(args)
+
+    buf.seek(0)
+    rows = [json.loads(line) for line in buf if line.strip()]
+    error_events = [r for r in rows if r["event"] == "error"]
+    assert len(error_events) == 1
+    assert "crash.txt" not in error_events[0]["message"]
 
 
 # ── T4: non-interactive policy under porcelain ───────────────────────────────
