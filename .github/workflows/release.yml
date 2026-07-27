@@ -84,7 +84,7 @@ jobs:
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             youkai-portable-${{ steps.version.outputs.version }}.zip
