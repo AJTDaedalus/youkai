@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload artifact (manual dispatch rehearsal)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: youkai-portable-${{ steps.version.outputs.version }}-${{ github.sha }}
           path: youkai-portable-${{ steps.version.outputs.version }}.zip

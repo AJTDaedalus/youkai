@@ -72,7 +72,7 @@ jobs:
           & packaging\ci_build.ps1 -Version ${{ steps.version.outputs.version }}
 
       - name: Upload portable bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: youkai-portable-${{ steps.version.outputs.version }}-${{ github.sha }}
           path: youkai-portable-${{ steps.version.outputs.version }}.zip
