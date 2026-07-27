@@ -8,6 +8,11 @@ canonical ZOD keyset (references/zo-allStat_gen.json["wengine"]).
 Re-run whenever fairy adds an engine:  python tools/gen_engines.py
 
 Source of truth: /root/fairy. Do not hand-edit data/zzz_1.4/engines.json.
+
+Engines that are live in-game but have no fairy modifier file yet go in
+EXTRA_ENGINES, so the scanner can recognise them without waiting on fairy's kit
+curation. That path is a stopgap, not a second source of truth: the generator
+hard-errors once fairy ships the real file, so the entry has to be removed.
 """
 
 from __future__ import annotations
@@ -38,6 +43,39 @@ NEWER_THAN_REF = {
     "Serpentine Seeker",
     "Starlight Rider Faceplate",
     "The Simmering Pot",
+    # ZZZ 3.1, verified against fairy's w_engines table 2026-07-27.
+    "Boisterous Echoes",
+    "Chief Sidekick",
+    "Joyau Dore",
+    "Ode of Resurrected Wings",
+    "Sol Exuvia",
+}
+
+# Modifier files are named from whatever fairy's kit curation captured first, which for
+# a signature engine can be the pre-release/datamined name.  The scanner matches what the
+# English client prints, so the display name is corrected here, keyed by source_id because
+# the id is stable across a rename and the name by definition is not.
+#
+# 14158 shipped as "Ode of Resurrected Wings"; its modifier file still says "Poem of the
+# Empty Feather Return".  Same engine — same id, both S/anomaly.
+SOURCE_NAME_OVERRIDES = {"14158": "Ode of Resurrected Wings"}
+
+# Engines live in-game that fairy's w_engines table has but has no modifier file for yet.
+# The generator reads modifier files, so these are invisible to the scanner until fairy's
+# kit curation catches up.  Absent is usually safe — normalize_engine's floor rejects an
+# unknown name — but not always: "Ode of Resurrected Wings" fuzzy-matched "Flight of Fancy"
+# at 85.5, over the 80 floor, so it was silently exported as the wrong engine.
+#
+# hakushin_id 14159 is deliberately excluded: its DB name is literally "..." — an
+# unreleased placeholder, not a shipped engine.
+#
+# name -> rarity.  Remove an entry once fairy ships its modifier file; the duplicate check
+# below fails loudly if you forget, rather than letting the two sources drift.
+EXTRA_ENGINES = {
+    "Boisterous Echoes": "A",
+    "Chief Sidekick": "S",
+    "Joyau Dore": "S",
+    "Sol Exuvia": "S",
 }
 
 
@@ -48,8 +86,22 @@ def main() -> None:
     engines: dict[str, tuple[str, str]] = {}
     for f in sorted(glob.glob(str(W_ENGINES / "*.json"))):
         d = json.loads(Path(f).read_text())
-        name = d["source_name"]
+        name = SOURCE_NAME_OVERRIDES.get(str(d.get("source_id")), d["source_name"])
         rarity = d["rarity"]
+        key = KEY_OVERRIDES.get(name, to_zod_key(name))
+        if key not in ref_keys and name not in NEWER_THAN_REF:
+            raise SystemExit(
+                f"ERROR: key {key!r} for {name!r} not in fairy canonical keyset "
+                f"and not in NEWER_THAN_REF allowlist. Resolve before generating."
+            )
+        engines[name] = (key, rarity)
+
+    for name, rarity in EXTRA_ENGINES.items():
+        if name in engines:
+            raise SystemExit(
+                f"ERROR: {name!r} is in EXTRA_ENGINES but fairy now has a modifier file "
+                f"for it. Drop it from EXTRA_ENGINES so fairy stays the single source."
+            )
         key = KEY_OVERRIDES.get(name, to_zod_key(name))
         if key not in ref_keys and name not in NEWER_THAN_REF:
             raise SystemExit(

@@ -507,3 +507,100 @@ def test_normalize_engine_floor_rejects_garbage(garbage):
     key, score = normalize_engine(garbage)
     assert key == "", f"expected empty key for {garbage!r}, got {key!r} (score={score})"
     assert score < _ENGINE_NAME_SCORE_MIN
+
+
+# ── ZZZ 3.1 content (fairy DB, 2026-07-27) ───────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_key"),
+    [
+        ("Thorned Rose", "ThornedRose"),
+        ("Feathered Fate", "FeatheredFate"),
+    ],
+)
+def test_normalize_disc_set_zzz31_sets(text, expected_key):
+    """Both scored below the 60 floor before being added (48 and 49), so every
+    disc of these sets was rejected as unknown_set and dropped from the export.
+    """
+    key, score = normalize_disc_set(text)
+    assert key == expected_key, f"got {key!r} (score={score})"
+    assert score >= 90.0
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_key"),
+    [("Remielle", "Remielle"), ("Sigrid", "Sigrid"), ("Norma", "Norma")],
+)
+def test_normalize_agent_zzz31_agents(text, expected_key):
+    """Scored 68, 65 and 61.5 against the nearest existing agent before being
+    added, below the 85 floor, so all three were rejected as unknown_agent.
+
+    Norma is not 3.1 content — she is an older omission (fairy hakushin_id 1571,
+    created 2026-05-21) that the 2026-06-09 regeneration missed while picking up
+    every other agent created that day. Covered here for lack of a better home.
+    """
+    key, score = normalize_agent(text)
+    assert key == expected_key, f"got {key!r} (score={score})"
+    assert score >= 90.0
+
+
+def test_every_known_name_maps_to_itself():
+    """Guards against a new entry pulling an existing name off its key.
+
+    Adding a set/agent changes the fuzzy candidate pool for every other name, so
+    a new entry can in principle steal a match from an existing one. This asserts
+    the whole table round-trips.
+    """
+    import json
+
+    from youkai_ocr.normalizer import _find_data_dir
+
+    data_dir = _find_data_dir()
+    sets = json.loads((data_dir / "disc_sets.json").read_text())["disc_sets"]
+    agents = json.loads((data_dir / "agents.json").read_text())["agents"]
+    # engines.json carries "_comment_*" sentinels for readability; they are not engines.
+    engines = {
+        k: v
+        for k, v in json.loads((data_dir / "engines.json").read_text())["engines"].items()
+        if not k.startswith("_")
+    }
+
+    mismatches = []
+    for name, expected in sets.items():
+        key, score = normalize_disc_set(name)
+        if key != expected:
+            mismatches.append(f"set {name!r} -> {key!r} (want {expected!r}, score {score})")
+    for name, expected in agents.items():
+        key, score = normalize_agent(name)
+        if key != expected:
+            mismatches.append(f"agent {name!r} -> {key!r} (want {expected!r}, score {score})")
+    for name, expected in engines.items():
+        key, score = normalize_engine(name)
+        if key != expected:
+            mismatches.append(f"engine {name!r} -> {key!r} (want {expected!r}, score {score})")
+
+    assert not mismatches, "names no longer map to their own key:\n  " + "\n  ".join(mismatches)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_key"),
+    [
+        ("Ode of Resurrected Wings", "OdeOfResurrectedWings"),
+        ("Sol Exuvia", "SolExuvia"),
+        ("Joyau Dore", "JoyauDore"),
+        ("Joyau Doré", "JoyauDore"),  # client prints the accent; fairy's DB spelling doesn't
+        ("Chief Sidekick", "ChiefSidekick"),
+        ("Boisterous Echoes", "BoisterousEchoes"),
+    ],
+)
+def test_normalize_engine_zzz31_engines(text, expected_key):
+    """Ode of Resurrected Wings is the reason this set matters.
+
+    It scored 85.5 against "Flight of Fancy" — over the 80 floor — so it was not
+    rejected as unknown_engine but silently exported as the wrong engine. The other
+    four scored in the 40s-50s and were correctly rejected.
+    """
+    key, score = normalize_engine(text)
+    assert key == expected_key, f"got {key!r} (score={score})"
+    assert score >= 90.0

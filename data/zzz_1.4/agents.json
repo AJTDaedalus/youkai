@@ -2,8 +2,9 @@
   "_meta": {
     "game_version": "1.4+",
     "description": "ZZZ agent display names (English PC client) → ZOD key. Both short names and full in-game names are accepted. ZOD keys are sourced from the fairy DB (to_zod_key of the canonical short name). Patch by adding entries; do not change existing keys (optimizer data will reference them).",
-    "last_updated": "2026-06-09",
-    "source": "fairy PostgreSQL agents table"
+    "last_updated": "2026-07-27",
+    "source": "fairy PostgreSQL agents table",
+    "2026-07-27_update": "Added Remielle + Sigrid from the fairy agents table. No full-name aliases: Remielle's full_name equals her short name, and Sigrid's is the raw asset codename (Avatar_Female_Size03_Sigrid_En), which never appears on screen. Also added Norma (hakushin_id 1571), a pre-existing omission rather than new 3.1 content: she was created in fairy 2026-05-21 alongside Velina/Pyrois/Promeia/Cissia/Nangong Yu/Aria/Sunna/Dialyn/Starlight - Billy, all nine of which were already present, and was the only member of that batch missed by the 2026-06-09 regeneration. She scored 61.5 against the nearest existing agent, below the 85 floor, so she was rejected as unknown_agent rather than mismatched. full_name equals her short name, so no alias."
   },
   "agents": {
     "Alice": "Alice",
@@ -48,6 +49,7 @@
     "Nekomiya Manaka": "Nekomata",
     "Nekomiya Mana": "Nekomata",
     "Nicole": "Nicole",
+    "Norma": "Norma",
     "Orphie & Magus": "OrphieMagus",
     "Orphie Magnusson": "OrphieMagus",
     "Pan Yinhu": "PanYinhu",
@@ -58,11 +60,13 @@
     "Qingyi": "Qingyi",
     "Ginayi": "Qingyi",
     "Oinayi": "Qingyi",
+    "Remielle": "Remielle",
     "Rina": "Rina",
     "Alexandrina": "Rina",
     "Seed": "Seed",
     "Seth": "Seth",
     "Seth Lowe": "Seth",
+    "Sigrid": "Sigrid",
     "Soldier 0 - Anby": "Soldier0Anby",
     "Soldier 11": "Soldier11",
     "Soukaku": "Soukaku",
