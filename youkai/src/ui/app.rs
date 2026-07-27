@@ -190,6 +190,11 @@ impl eframe::App for YoukaiApp {
 
         self.toasts.show(ctx);
 
+        // `show(ctx)` is deprecated in favour of `show_inside(ui)`, which is only
+        // reachable from `App::ui` and derives the root rect differently. Deferred
+        // deliberately — see the note on `ui()` above. Narrow allow so `-Dwarnings`
+        // still guards the rest of this method.
+        #[allow(deprecated)]
         egui::CentralPanel::default().show(ctx, |ui| {
             let rect = ui.max_rect();
             ui.painter()
