@@ -518,19 +518,34 @@ def _make_first_item_check(phase: str, *, interactive: bool = True, emitter=None
     """Return a callback that warns if the first scanned item has uniformly low confidence."""
 
     def _check(item, conf: dict) -> None:
-        if not conf:
+        # conf doubles as a metadata channel: the scanners stash "_repairs" /
+        # "_violations" (lists) and "_fail_reason" / "_error" (strings) next to
+        # the per-field confidence floats, and only pop them during export
+        # assembly — long after this callback runs.  Strip them before doing any
+        # arithmetic or comparison on the values.
+        scores = {k: v for k, v in conf.items() if not k.startswith("_")}
+        if item is None:
+            reason = conf.get("_fail_reason") or conf.get("_error")
+            raise RuntimeError(
+                f"First {phase} completely failed OCR"
+                + (f" ({reason})" if reason else "")
+                + ". Check that the game is on the correct screen and the window is "
+                "unobscured.\n"
+                "Inspect the preflight PNG in your archive dir to see what the scanner captured."
+            )
+        if not scores:
             return
-        mean_conf = sum(conf.values()) / len(conf)
-        low_fields = {k: v for k, v in conf.items() if v < 30}
-        if item is None or mean_conf < 25:
+        mean_conf = sum(scores.values()) / len(scores)
+        low_fields = {k: v for k, v in scores.items() if v < 30}
+        if mean_conf < 25:
             raise RuntimeError(
                 f"First {phase} completely failed OCR (mean confidence {mean_conf:.0f}%). "
                 "Check that the game is on the correct screen and the window is unobscured.\n"
                 "Inspect the preflight PNG in your archive dir to see what the scanner captured."
             )
-        if len(low_fields) >= len(conf) // 2:
+        if len(low_fields) >= len(scores) // 2:
             msg = (
-                f"First {phase} has low confidence on {len(low_fields)}/{len(conf)} fields: "
+                f"First {phase} has low confidence on {len(low_fields)}/{len(scores)} fields: "
                 + ", ".join(
                     f"{k}={v:.0f}%" for k, v in sorted(low_fields.items(), key=lambda x: x[1])
                 )
@@ -544,7 +559,7 @@ def _make_first_item_check(phase: str, *, interactive: bool = True, emitter=None
                 return
             print(
                 f"\n  WARNING: first {phase} has low confidence "
-                f"on {len(low_fields)}/{len(conf)} fields:"
+                f"on {len(low_fields)}/{len(scores)} fields:"
             )
             for field, score in sorted(low_fields.items(), key=lambda x: x[1]):
                 print(f"    {field}: {score:.0f}%")

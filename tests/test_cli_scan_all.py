@@ -1022,6 +1022,77 @@ def test_make_first_item_check_total_fail_raises_regardless_of_interactive():
         check(item, conf)
 
 
+def test_make_first_item_check_ignores_metadata_keys():
+    """Regression: conf carries "_repairs"/"_violations" lists from the repair pass.
+
+    scan_discs hands this callback the raw conf dict; the underscore metadata keys
+    are only popped later during export assembly.  Summing them raised
+    TypeError: unsupported operand type(s) for +: 'float' and 'list'.
+    """
+    emitter = _FakeEmitter()
+    check = _make_first_item_check("disc", interactive=False, emitter=emitter)
+    item = object()
+    conf = {
+        "set": 92.0,
+        "slot": 95.0,
+        "level": 90.0,
+        "main_stat": 93.0,
+        "_repairs": [{"field": "level", "before": 51, "after": 15, "rule": "level_range"}],
+        "_violations": [
+            {
+                "field": "substat_1",
+                "code": "substat_roll_mismatch",
+                "observed": 9,
+                "expected": 3,
+                "severity": "error",
+            }
+        ],
+    }
+
+    with patch("builtins.input", side_effect=AssertionError("input called in porcelain")):
+        check(item, conf)  # must not raise
+
+    assert len(emitter.warnings) == 0  # all real fields are high-confidence
+    assert "_repairs" in conf and "_violations" in conf  # callback must not consume them
+
+
+def test_make_first_item_check_metadata_excluded_from_low_field_ratio():
+    """Metadata keys must not pad len(conf) and dilute the low-field ratio."""
+    emitter = _FakeEmitter()
+    check = _make_first_item_check("disc", interactive=False, emitter=emitter)
+    item = object()
+    # 2 real fields, both < 30, mean 26.5 ≥ 25.  With metadata counted in the
+    # denominator the ratio check (2 >= 6//2) would silently pass.
+    conf = {
+        "set": 26.0,
+        "slot": 27.0,
+        "_repairs": [{}],
+        "_violations": [{}],
+        "_fail_reason": "x",
+        "_error": "y",
+    }
+
+    with patch("builtins.input", side_effect=AssertionError("input called in porcelain")):
+        check(item, conf)
+
+    assert len(emitter.warnings) == 1
+    assert "2/2 fields" in emitter.warnings[0]
+
+
+def test_make_first_item_check_none_item_reports_fail_reason():
+    """A first disc that trips the slot/set guard returns (None, {"_fail_reason": str}).
+
+    Regression: summing a str-valued conf raised TypeError instead of the guard's
+    own hard abort.
+    """
+    emitter = _FakeEmitter()
+    check = _make_first_item_check("disc", interactive=False, emitter=emitter)
+    conf = {"set": 12.0, "_fail_reason": "unknown_set:12:title='Wo0dpecker Electr0'"}
+
+    with pytest.raises(RuntimeError, match="unknown_set"):
+        check(None, conf)
+
+
 def _make_porcelain_scan_all_args(tmp_path: Path, manual_nav: bool = True) -> SimpleNamespace:
     return SimpleNamespace(
         output=str(tmp_path / "out.json"),
