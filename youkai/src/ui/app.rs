@@ -1,5 +1,6 @@
-// Float literals in egui API calls (Stroke::new etc.) fall back to f32 — pre-existing,
-// will be cleaned up when egui is updated.
+// Float literals in egui API calls (Stroke::new etc.) fall back to f32 — pre-existing.
+// Not fixed by the 0.32 -> 0.34 bump (verified: the lint still fires without this allow),
+// since egui still takes f32 here. Removing it needs the literals themselves annotated.
 #![allow(float_literal_f32_fallback)]
 use std::{fs, thread};
 
@@ -48,7 +49,7 @@ impl YoukaiApp {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         egui_material_icons::initialize(&cc.egui_ctx);
 
-        cc.egui_ctx.style_mut(|style| {
+        cc.egui_ctx.global_style_mut(|style| {
             style.visuals.window_corner_radius = egui::CornerRadius::ZERO;
             style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::ZERO;
             style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
@@ -124,6 +125,17 @@ impl eframe::App for YoukaiApp {
         eframe::set_value(storage, eframe::APP_KEY, &self.saved_state);
     }
 
+    /// eframe 0.34 made `ui` a required trait method as part of moving apps off
+    /// the context-driven `update`.  eframe still calls `update` (see
+    /// `epi_integration.rs`: `App::update` then `App::ui`), so the whole UI stays
+    /// there and this is deliberately empty.
+    ///
+    /// Porting the panel tree to `ui` means swapping `CentralPanel::show(ctx)` for
+    /// `show_inside(ui)`, which changes how the root rect is derived — and this
+    /// layout is hand-tuned to 800×500 and cannot be verified headless.  Not worth
+    /// the risk in a dependency bump; left as its own change.
+    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Poll scan handle every frame
         if let Some(h) = &self.scan_handle {
@@ -171,7 +183,7 @@ impl eframe::App for YoukaiApp {
         }
 
         let mut clicked_exit = false;
-        ctx.style_mut(|style| {
+        ctx.global_style_mut(|style| {
             style.interaction.selectable_labels = false;
             style.interaction.tooltip_delay = 0.25;
         });
