@@ -60,7 +60,7 @@ jobs:
           workspaces: "youkai -> target"
 
       - name: Cache Tesseract
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: dist/youkai-ocr/tesseract
           key: tesseract-w64-v1-${{ hashFiles('packaging/get_tesseract.ps1') }}
