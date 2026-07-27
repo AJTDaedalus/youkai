@@ -4,8 +4,8 @@
 use std::{fs, thread};
 
 use egui::{
-    Button, Color32, Id, Key, KeyboardShortcut, Modal, Modifiers, OpenUrl, PointerButton, RichText,
-    Sense, ViewportCommand,
+    Button, Color32, Id, Key, KeyboardShortcut, Label, Modal, Modifiers, OpenUrl, PointerButton,
+    RichText, Sense, ViewportCommand,
 };
 use egui_file_dialog::FileDialog;
 use egui_notify::Toasts;
@@ -841,18 +841,39 @@ impl YoukaiApp {
         ui.separator();
         ui.add_space(4.0);
 
+        // Selectable overrides the global `selectable_labels = false` for this one
+        // label, so the traceback can be dragged out even without the button below.
+        // Height trimmed 140 -> 114 to pay for the COPY ERROR row: the panel must not
+        // grow, it is already tight at the 800x500 design size.
         egui::ScrollArea::vertical()
-            .max_height(140.0)
+            .max_height(114.0)
             .show(ui, |ui| {
-                ui.label(
-                    RichText::new(&message)
-                        .monospace()
-                        .size(8.5)
-                        .color(Color32::from_rgb(0xff, 0x60, 0x60)),
+                ui.add(
+                    Label::new(
+                        RichText::new(&message)
+                            .monospace()
+                            .size(8.5)
+                            .color(Color32::from_rgb(0xff, 0x60, 0x60)),
+                    )
+                    .selectable(true),
                 );
             });
 
         ui.add_space(6.0);
+
+        // Crash reports are useless as screenshots — make the text recoverable.
+        if ui
+            .add(
+                Button::new(RichText::new(" COPY ERROR ").monospace().size(9.5))
+                    .min_size(egui::vec2(ui.available_width() - 4.0, 0.0)),
+            )
+            .clicked()
+        {
+            ui.ctx().copy_text(message.clone());
+            self.toasts.info("Error copied to clipboard.");
+        }
+
+        ui.add_space(4.0);
 
         if let Some(rd) = run_dir {
             if ui
