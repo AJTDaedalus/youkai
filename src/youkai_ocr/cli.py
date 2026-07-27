@@ -518,19 +518,34 @@ def _make_first_item_check(phase: str, *, interactive: bool = True, emitter=None
     """Return a callback that warns if the first scanned item has uniformly low confidence."""
 
     def _check(item, conf: dict) -> None:
-        if not conf:
+        # conf doubles as a metadata channel: the scanners stash "_repairs" /
+        # "_violations" (lists) and "_fail_reason" / "_error" (strings) next to
+        # the per-field confidence floats, and only pop them during export
+        # assembly — long after this callback runs.  Strip them before doing any
+        # arithmetic or comparison on the values.
+        scores = {k: v for k, v in conf.items() if not k.startswith("_")}
+        if item is None:
+            reason = conf.get("_fail_reason") or conf.get("_error")
+            raise RuntimeError(
+                f"First {phase} completely failed OCR"
+                + (f" ({reason})" if reason else "")
+                + ". Check that the game is on the correct screen and the window is "
+                "unobscured.\n"
+                "Inspect the preflight PNG in your archive dir to see what the scanner captured."
+            )
+        if not scores:
             return
-        mean_conf = sum(conf.values()) / len(conf)
-        low_fields = {k: v for k, v in conf.items() if v < 30}
-        if item is None or mean_conf < 25:
+        mean_conf = sum(scores.values()) / len(scores)
+        low_fields = {k: v for k, v in scores.items() if v < 30}
+        if mean_conf < 25:
             raise RuntimeError(
                 f"First {phase} completely failed OCR (mean confidence {mean_conf:.0f}%). "
                 "Check that the game is on the correct screen and the window is unobscured.\n"
                 "Inspect the preflight PNG in your archive dir to see what the scanner captured."
             )
-        if len(low_fields) >= len(conf) // 2:
+        if len(low_fields) >= len(scores) // 2:
             msg = (
-                f"First {phase} has low confidence on {len(low_fields)}/{len(conf)} fields: "
+                f"First {phase} has low confidence on {len(low_fields)}/{len(scores)} fields: "
                 + ", ".join(
                     f"{k}={v:.0f}%" for k, v in sorted(low_fields.items(), key=lambda x: x[1])
                 )
@@ -544,7 +559,7 @@ def _make_first_item_check(phase: str, *, interactive: bool = True, emitter=None
                 return
             print(
                 f"\n  WARNING: first {phase} has low confidence "
-                f"on {len(low_fields)}/{len(conf)} fields:"
+                f"on {len(low_fields)}/{len(scores)} fields:"
             )
             for field, score in sorted(low_fields.items(), key=lambda x: x[1]):
                 print(f"    {field}: {score:.0f}%")
@@ -1469,6 +1484,113 @@ def select_phases(args) -> frozenset[str]:
     return names
 
 
+_PHASE_ORDER = ("engines", "discs", "agents")
+_PHASE_ORDER_MANUAL = ("discs", "engines", "agents")
+
+
+def _phase_summary_line(phase_results: dict, *, manual_nav: bool = False) -> str:
+    """Render phase_results as e.g. 'engines=done(412) discs=FAILED agents=not-reached'.
+
+    phase_results only gains an entry once a phase finishes (or is skipped/resumed),
+    so the first phase in execution order missing from it is the one that was
+    running when the failure hit; anything after that was never reached.  The two
+    nav modes run the phases in different orders, so the caller must say which.
+    """
+    parts = []
+    failed_marked = False
+    for name in _PHASE_ORDER_MANUAL if manual_nav else _PHASE_ORDER:
+        v = phase_results.get(name)
+        if v is not None:
+            if v.get("skipped"):
+                parts.append(f"{name}=skipped")
+            elif v.get("resumed"):
+                parts.append(f"{name}=resumed({v.get('count')})")
+            else:
+                parts.append(f"{name}=done({v.get('count')})")
+        elif not failed_marked:
+            parts.append(f"{name}=FAILED")
+            failed_marked = True
+        else:
+            parts.append(f"{name}=not-reached")
+    return " ".join(parts)
+
+
+def _is_user_abort(exc: BaseException, msg: str) -> bool:
+    """True for a deliberate user stop, as opposed to a real crash.
+
+    Covers Ctrl+C at a terminal (KeyboardInterrupt) and the interactive
+    decline paths in `_make_first_item_check`/`_preflight_frame`, which both
+    raise RuntimeError("Scan aborted by user ...").
+    """
+    return isinstance(exc, KeyboardInterrupt) or msg.startswith("Scan aborted by user")
+
+
+def _write_crash_report(
+    crash_path: Path,
+    *,
+    run_dir: Path,
+    started: str,
+    argv: list[str],
+    phase_results: dict,
+    manual_nav: bool,
+    calib,
+    engine: str,
+    exc: BaseException,
+    tb_str: str,
+) -> None:
+    """Write a single self-contained diagnostic file for a failed scan-all run.
+
+    Caller wraps this in try/except — a write failure here must never mask the
+    original exception, so this function does not need to be defensive itself
+    beyond falling back to "unknown" for fields that may not exist yet.
+    """
+    import datetime
+    import platform as _platform
+
+    from youkai_ocr import __version__
+
+    lines = [
+        f"youkai-ocr {__version__}",
+        f"run dir : {run_dir}",
+        f"started : {started}      failed: {datetime.datetime.now().isoformat(timespec='seconds')}",
+        f"command : {' '.join(argv)}",
+        f"platform: {_platform.system()} {_platform.release()}  "
+        f"python {_platform.python_version()}",
+        f"engine  : {engine}",
+    ]
+    if calib is not None:
+        lines.append(
+            f"window  : {calib.frame_width}x{calib.frame_height} @ "
+            f"({calib.window_left},{calib.window_top}) scale "
+            f"{calib.scale_x:.3f}x{calib.scale_y:.3f}"
+        )
+    else:
+        lines.append("window  : unknown (failure occurred before calibration)")
+    lines.append(f"phases  : {_phase_summary_line(phase_results, manual_nav=manual_nav)}")
+    lines.append("---")
+    lines.append(str(exc) or type(exc).__name__)
+    lines.append("---")
+    lines.append(tb_str)
+    lines.append("---")
+
+    log_path = run_dir / "scan.log"
+    if log_path.exists():
+        log_lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        tail_lines = log_lines[-50:]
+        tail_text = "\n".join(tail_lines)
+        tail_bytes = tail_text.encode("utf-8")
+        if len(tail_bytes) > 16 * 1024:
+            tail_text = tail_bytes[-16 * 1024 :].decode("utf-8", errors="replace")
+        # Recount after the byte cap — it can drop lines, and a header claiming
+        # 50 lines over a truncated body reads as corruption to whoever triages it.
+        lines.append(f"last {len(tail_text.splitlines())} line(s) of scan.log:")
+        lines.append(tail_text)
+    else:
+        lines.append("scan.log: unavailable")
+
+    crash_path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def _cmd_scan_all(args: argparse.Namespace) -> None:
     """H5/H7c: Full ZodExport with run-dir persistence, screen assertions, and resume.
 
@@ -1494,11 +1616,24 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
 
     # Run dir: always timestamped so consecutive runs don't overwrite frames.
     run_ts = datetime.datetime.now().strftime("live_%Y%m%d_%H%M%S")
+    run_start_iso = datetime.datetime.now().isoformat(timespec="seconds")
     if args.archive_dir:
         run_dir = Path(args.archive_dir) / run_ts
     else:
         run_dir = Path("archive") / run_ts
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Declared before the try so the except/finally handlers can always see them,
+    # even if the failure happens before the phases below assign anything.
+    all_issues: list[dict] = []
+    phase_results: dict = {}
+    grid_count = 0  # owned cells visible in the initial agent-menu frame (coverage check)
+    coverage: dict = {}
+    success_summary: dict | None = None
+    calib = None
+    t_start = time.perf_counter()
+    run_status = "failed"
+    error_info: dict | None = None
 
     # Emitter captures real stdout before _Tee redirects sys.stdout.
     emitter: ProgressEmitter | NullEmitter = (
@@ -1523,11 +1658,6 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             f"offset: ({calib.window_left},{calib.window_top}), "
             f"scale: {calib.scale_x:.3f}×{calib.scale_y:.3f}"
         )
-
-        all_issues: list[dict] = []
-        phase_results: dict = {}
-        grid_count = 0  # owned cells visible in the initial agent-menu frame (coverage check)
-        t_start = time.perf_counter()
 
         phases = select_phases(args)
         emitter.run_start(
@@ -1938,7 +2068,6 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             print(f"  Review report   → {review_path}")
 
         # ── T3.1: Roster coverage check ──────────────────────────────────────
-        coverage: dict = {}
         if "agents" in phases and grid_count > 0:
             crit_fail_agents = [
                 i for i in all_issues if i.get("status") == "critical_fail" and "agent" in i
@@ -1964,31 +2093,21 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                 if crit_fail_agents:
                     print(f"  {len(crit_fail_agents)} agent visit(s) failed OCR — see issues.json.")
 
-        # ── Write results.json ───────────────────────────────────────────────
-        total_elapsed = round(time.perf_counter() - t_start, 1)
-        results = {
-            "run_dir": str(run_dir),
-            "output": str(output),
-            "total_elapsed": total_elapsed,
-            "phases": phase_results,
-            "summary": {
-                "agents": len(unique_agents),
-                "discs": len(discs),
-                "engines": len(engines),
-                "issues": len(all_issues),
-            },
+        # ── Stash the success summary; results.json itself is written in `finally`
+        # so both the success and failure paths go through one write site. ──────
+        success_summary = {
+            "agents": len(unique_agents),
+            "discs": len(discs),
+            "engines": len(engines),
+            "issues": len(all_issues),
         }
-        if coverage:
-            results["coverage"] = coverage
-        results_path = run_dir / "results.json"
-        results_path.write_text(_json.dumps(results, indent=2), encoding="utf-8")
-        print(f"  Results summary → {results_path}")
+        run_status = "ok"
 
         review_str = str(run_dir / "review.txt") if all_issues else None
         emitter.done(
             output=str(output),
             run_dir=str(run_dir),
-            summary=results["summary"],
+            summary=success_summary,
             review_path=review_str,
         )
 
@@ -1997,9 +2116,64 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
 
         _tb_str = _tb.format_exc().strip()
         _msg = str(_exc) or type(_exc).__name__
-        emitter.error(message=f"{_msg}\n---\n{_tb_str}" if _tb_str else _msg)
+
+        run_status = "aborted" if _is_user_abort(_exc, _msg) else "failed"
+        error_info = {"type": type(_exc).__name__, "message": _msg}
+
+        crash_path = run_dir / "crash.txt"
+        crash_written = False
+        try:
+            # _Tee buffers writes to scan.log; flush so the tail we're about to
+            # read actually reflects everything printed before this exception.
+            tee.flush()
+        except Exception:
+            pass
+        try:
+            _write_crash_report(
+                crash_path,
+                run_dir=run_dir,
+                started=run_start_iso,
+                argv=sys.argv,
+                phase_results=phase_results,
+                manual_nav=manual_nav,
+                calib=calib,
+                engine=getattr(args, "engine", "unknown"),
+                exc=_exc,
+                tb_str=_tb_str,
+            )
+            crash_written = True
+        except Exception:
+            crash_written = False
+
+        error_msg = f"{_msg}\n---\n{_tb_str}" if _tb_str else _msg
+        if crash_written:
+            error_msg += (
+                f"\nFull details written to {crash_path} — attach this file when reporting."
+            )
+        emitter.error(message=error_msg)
         raise
     finally:
+        total_elapsed = round(time.perf_counter() - t_start, 1)
+        results: dict = {
+            "run_dir": str(run_dir),
+            "output": str(output),
+            "total_elapsed": total_elapsed,
+            "phases": phase_results,
+            "status": run_status,
+        }
+        if run_status == "ok":
+            results["summary"] = success_summary
+            if coverage:
+                results["coverage"] = coverage
+        elif error_info is not None:
+            results["error"] = error_info
+        try:
+            results_path = run_dir / "results.json"
+            results_path.write_text(_json.dumps(results, indent=2), encoding="utf-8")
+            print(f"  Results summary → {results_path}")
+        except Exception:
+            pass
+
         _pkg_log.removeHandler(_log_handler)
         _log_handler.close()
         _pkg_log.setLevel(_prev_level)
