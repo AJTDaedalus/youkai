@@ -528,10 +528,17 @@ def test_normalize_disc_set_zzz31_sets(text, expected_key):
     assert score >= 90.0
 
 
-@pytest.mark.parametrize(("text", "expected_key"), [("Remielle", "Remielle"), ("Sigrid", "Sigrid")])
+@pytest.mark.parametrize(
+    ("text", "expected_key"),
+    [("Remielle", "Remielle"), ("Sigrid", "Sigrid"), ("Norma", "Norma")],
+)
 def test_normalize_agent_zzz31_agents(text, expected_key):
-    """Scored 68 and 65 against the nearest existing agent before being added,
-    below the 85 floor, so both were rejected as unknown_agent.
+    """Scored 68, 65 and 61.5 against the nearest existing agent before being
+    added, below the 85 floor, so all three were rejected as unknown_agent.
+
+    Norma is not 3.1 content — she is an older omission (fairy hakushin_id 1571,
+    created 2026-05-21) that the 2026-06-09 regeneration missed while picking up
+    every other agent created that day. Covered here for lack of a better home.
     """
     key, score = normalize_agent(text)
     assert key == expected_key, f"got {key!r} (score={score})"
