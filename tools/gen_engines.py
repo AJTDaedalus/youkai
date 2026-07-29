@@ -49,6 +49,8 @@ NEWER_THAN_REF = {
     "Joyau Dore",
     "Ode of Resurrected Wings",
     "Sol Exuvia",
+    # Named in fairy's 2026-07-28 refresh; see EXTRA_ENGINES.
+    "Knight's Extolment",
 }
 
 # Modifier files are named from whatever fairy's kit curation captured first, which for
@@ -66,8 +68,10 @@ SOURCE_NAME_OVERRIDES = {"14158": "Ode of Resurrected Wings"}
 # unknown name — but not always: "Ode of Resurrected Wings" fuzzy-matched "Flight of Fancy"
 # at 85.5, over the 80 floor, so it was silently exported as the wrong engine.
 #
-# hakushin_id 14159 is deliberately excluded: its DB name is literally "..." — an
-# unreleased placeholder, not a shipped engine.
+# hakushin_id 14159 was the "..." placeholder when this list was first written; fairy's
+# 2026-07-28 refresh resolved it to "Knight's Extolment" (S/attack, Sigrid's signature).
+# It scores 53 against the nearest existing engine, well under normalize_engine's 80 floor,
+# so before this entry it was dropped as unknown_engine rather than mismatched.
 #
 # name -> rarity.  Remove an entry once fairy ships its modifier file; the duplicate check
 # below fails loudly if you forget, rather than letting the two sources drift.
@@ -75,6 +79,7 @@ EXTRA_ENGINES = {
     "Boisterous Echoes": "A",
     "Chief Sidekick": "S",
     "Joyau Dore": "S",
+    "Knight's Extolment": "S",
     "Sol Exuvia": "S",
 }
 

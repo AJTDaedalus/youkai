@@ -592,6 +592,8 @@ def test_every_known_name_maps_to_itself():
         ("Joyau Doré", "JoyauDore"),  # client prints the accent; fairy's DB spelling doesn't
         ("Chief Sidekick", "ChiefSidekick"),
         ("Boisterous Echoes", "BoisterousEchoes"),
+        ("Knight's Extolment", "KnightsExtolment"),
+        ("Knight’s Extolment", "KnightsExtolment"),  # client's typographic apostrophe
     ],
 )
 def test_normalize_engine_zzz31_engines(text, expected_key):
@@ -600,6 +602,11 @@ def test_normalize_engine_zzz31_engines(text, expected_key):
     It scored 85.5 against "Flight of Fancy" — over the 80 floor — so it was not
     rejected as unknown_engine but silently exported as the wrong engine. The other
     four scored in the 40s-50s and were correctly rejected.
+
+    Knight's Extolment (hakushin_id 14159, Sigrid's signature) arrived later: it was
+    the literal "..." placeholder in fairy's table on 2026-07-27 and only got its real
+    name in the 2026-07-28 refresh. It scored 53, so it was dropped rather than
+    mismatched, but dropped is still a hole in the export.
     """
     key, score = normalize_engine(text)
     assert key == expected_key, f"got {key!r} (score={score})"
