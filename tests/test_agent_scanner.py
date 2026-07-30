@@ -20,7 +20,10 @@ from youkai_ocr.agent_scanner import (
     _ASCENSION_DOTS_BBOX,
     _CORE_NODE_BBOXES,
     _DISC_SLOT_CENTERS,
+    _LEVEL_BBOX,
+    _LEVEL_CAP_BBOX,
     _ROSTER_STRIP_BBOX,
+    _ascension_floor_from_level,
     _count_ascension_dots,
     _crop,
     _detect_core_rank,
@@ -742,3 +745,64 @@ def test_scan_single_frame_agent_empty_key_below_floor_returns_none(monkeypatch)
 
     agent, conf = ag.scan_single_frame_agent(frame, frame, calib)
     assert agent is None
+
+
+# ── _ascension_floor_from_level ───────────────────────────────────────────────
+# Regression cover for the 2026-07-30 export, where the level-cap OCR failed on all
+# 41 agents and the (bogus) promotion-dot fallback put 26 of them at ascension 0 —
+# including 27 of 28 level-60 agents, for whom 5 is the only possible value.
+
+
+@pytest.mark.parametrize(
+    ("level", "expected"),
+    [
+        (60, 5),  # only cap 60 permits level 60 → exact, not just a bound
+        (55, 5),
+        (51, 5),
+        (50, 4),
+        (41, 4),
+        (40, 3),
+        (31, 3),
+        (30, 2),
+        (21, 2),
+        (20, 1),
+        (11, 1),
+        (10, 0),
+        (1, 0),
+    ],
+)
+def test_ascension_floor_from_level(level, expected):
+    assert _ascension_floor_from_level(level) == expected
+
+
+@pytest.mark.parametrize("level", [0, -1, 61, 90, 99])
+def test_ascension_floor_rejects_impossible_levels(level):
+    """A level outside 1-60 means the level read itself is untrustworthy."""
+    assert _ascension_floor_from_level(level) == 0
+
+
+def test_level_and_cap_bboxes_clear_the_pill_border():
+    """Both crops must sit inside the level pill's interior (y=443-500).
+
+    The pill's dark border rows (436-440 top, 501-505 bottom) binarise into a blob
+    fused to the glyphs, which is what silently killed the cap read.
+    """
+    for bbox in (_LEVEL_BBOX, _LEVEL_CAP_BBOX):
+        _, y0, _, y1 = bbox
+        assert y0 >= 441, f"{bbox} starts on the pill's top border"
+        assert y1 <= 501, f"{bbox} extends into the pill's bottom border"
+
+
+def test_level_bbox_covers_the_digit_ink():
+    """Ink measured at x=1070-1173, y=458-484 on all 42 live frames."""
+    x0, y0, x1, y1 = _LEVEL_BBOX
+    assert x0 <= 1070 and x1 >= 1173
+    assert y0 <= 458 and y1 >= 484
+
+
+def test_cap_bbox_covers_ink_and_excludes_max_circle():
+    """Ink measured at x=1182-1284; the MAX circle begins at x≈1293."""
+    x0, y0, x1, y1 = _LEVEL_CAP_BBOX
+    assert x0 <= 1182 and x1 >= 1284
+    assert x1 < 1293, "crop reaches into the neighbouring MAX circle"
+    assert y0 <= 447 and y1 >= 495

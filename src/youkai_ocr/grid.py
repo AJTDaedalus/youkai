@@ -94,6 +94,7 @@ SCROLL_SETTLE_S = 0.18  # settle after a burst before measuring the thumb
 # has stalled (bottom reached, or the click stopped scrolling) → stop.
 SCROLL_PROGRESS_WINDOW = 5  # scrolls between thumb-progress checks
 SCROLL_PROGRESS_MIN_PX = 4  # min thumb descent over a window to count as progress
+SCROLL_STALL_WINDOWS = 3  # consecutive flat windows before declaring a real stall
 SCAN_MAX_ROWS = 400  # hard cap on count-free scrolling (≈ 3600 discs)
 SCAN_DEBUG_FRAMES = 30  # when debug_dir set, save this many read frames
 _PANEL_DBG_BBOX = (1421, 260, 1860, 790)  # detail-panel region for the log fingerprint
@@ -161,6 +162,9 @@ class GridNavigator:
         self._kill = kill_event or Event()
         self._mouse = None
         self._t0: float = 0.0  # scan start time for relative timestamps
+        # Set by scan() when traversal ends before the count is exhausted; None on a
+        # complete pass.  Callers must check it — see _mark_incomplete.
+        self.incomplete: dict | None = None
         self._debug_dir = debug_dir
         if debug_dir is not None:
             debug_dir.mkdir(parents=True, exist_ok=True)
@@ -314,6 +318,38 @@ class GridNavigator:
         """Current scrollbar thumb top edge in reference-Y (None if not found)."""
         return _scrollbar_thumb_top(self._capture(), self._calib)
 
+    def _mark_incomplete(
+        self,
+        reason: str,
+        inv_row: int,
+        total_rows: int | None,
+        cells_read: int,
+        total_cells: int | None,
+    ) -> None:
+        """Record and announce that traversal ended before the count was exhausted.
+
+        Sets ``self.incomplete`` for the caller to turn into a reported issue.  Prints
+        a WARNING rather than an unadorned ``[nav]`` line: an early stop used to look
+        identical to a clean finish in the log and the run still reported success.
+        """
+        missed = None if total_cells is None else max(0, total_cells - cells_read)
+        self.incomplete = {
+            "reason": reason,
+            "stopped_at_row": inv_row,
+            "expected_rows": total_rows,
+            "cells_read": cells_read,
+            "expected_cells": total_cells,
+            "cells_missed": missed,
+        }
+        detail = f"  WARNING: traversal stopped early at inventory row {inv_row}"
+        if total_rows is not None:
+            detail += f" of {total_rows}"
+        detail += f" — {reason}."
+        if missed:
+            pct = 100.0 * missed / total_cells if total_cells else 0.0
+            detail += f"\n  {missed} of {total_cells} item(s) ({pct:.1f}%) were never read."
+        print(detail, flush=True)
+
     def _scroll_down(self) -> None:
         """Click the bottom row once to scroll the grid down a row, then settle.
 
@@ -346,7 +382,12 @@ class GridNavigator:
         fingerprints can't be trusted to decide "did we scroll" or "is this empty".
 
         Without a count, falls back to scrolling until the scrollbar thumb stops.
+
+        If traversal ends before the count is exhausted, ``self.incomplete`` is set to
+        a dict describing what was missed; it stays None on a complete pass.  Callers
+        MUST check it — an early stop is silent data loss otherwise.
         """
+        self.incomplete = None
         self._t0 = time.monotonic()
         cols = self._grid.columns
         rows_visible = self._grid.rows_visible
@@ -409,6 +450,7 @@ class GridNavigator:
         # it doesn't we bail rather than re-read the same row indefinitely.
         ckpt_thumb = self._thumb()
         none_count = 0  # consecutive None readings; too many → stall
+        stall_windows = 0  # consecutive windows with no thumb progress
         for i, inv_row in enumerate(range(repeat_row + 1, total_rows - 1)):
             if self._kill.is_set():
                 return
@@ -420,9 +462,12 @@ class GridNavigator:
                     none_count += 1
                     if none_count >= 2:
                         # Scrollbar consistently undetectable — treat as stalled.
-                        print(
-                            f"  [nav] scrollbar undetectable for {none_count} windows "
-                            f"at inv row {inv_row}; stopping"
+                        self._mark_incomplete(
+                            "scrollbar undetectable",
+                            inv_row,
+                            total_rows,
+                            cell_idx,
+                            total_discs,
                         )
                         return
                 else:
@@ -432,11 +477,28 @@ class GridNavigator:
                     and now is not None
                     and now <= ckpt_thumb + SCROLL_PROGRESS_MIN_PX
                 ):
+                    # One flat window is not proof of a stall: a single stale capture
+                    # or dropped scroll click reads the same thumb twice.  Bailing on
+                    # it cost 135 of 2097 discs on 2026-07-29, where the thumb still
+                    # had 58px of groove left to travel.  Require it to persist.
+                    stall_windows += 1
+                    if stall_windows >= SCROLL_STALL_WINDOWS:
+                        self._mark_incomplete(
+                            f"scrolling stalled (thumb {ckpt_thumb:.0f}→{now:.0f} over "
+                            f"{stall_windows} windows)",
+                            inv_row,
+                            total_rows,
+                            cell_idx,
+                            total_discs,
+                        )
+                        return
                     print(
-                        f"  [nav] scrolling stalled at inv row {inv_row} "
-                        f"(thumb {ckpt_thumb:.0f}→{now:.0f}); stopping"
+                        f"  [nav] no thumb progress at inv row {inv_row} "
+                        f"(thumb {ckpt_thumb:.0f}→{now:.0f}); "
+                        f"window {stall_windows}/{SCROLL_STALL_WINDOWS}, continuing"
                     )
-                    return
+                else:
+                    stall_windows = 0
                 # Re-read ckpt each window so an initial None can't disable the guard.
                 if now is not None:
                     ckpt_thumb = now
@@ -467,9 +529,14 @@ class GridNavigator:
             if before is None and after is None:
                 none_streak += 1
                 if none_streak >= SCROLL_PROGRESS_WINDOW:
-                    print(
-                        f"  [nav] scrollbar undetectable for {none_streak} consecutive "
-                        f"scrolls; stopping thumb-scan"
+                    # Unlike the thumb-stopped-descending exit below, this is a fault,
+                    # not a clean end-of-list: we have no idea how much is left.
+                    self._mark_incomplete(
+                        f"scrollbar undetectable for {none_streak} consecutive scrolls",
+                        repeat_row + scrolled,
+                        None,
+                        0,
+                        None,
                     )
                     break
             else:

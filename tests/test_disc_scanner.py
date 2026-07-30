@@ -15,7 +15,7 @@ import pytest
 from PIL import Image
 
 from youkai_ocr.capture import CalibrationResult
-from youkai_ocr.disc_scanner import _crop, export_discs
+from youkai_ocr.disc_scanner import _arbitrate_main_value, _crop, export_discs
 from youkai_ocr.grid import DEFAULT_GRID
 from youkai_ocr.zod import ZodDisc, ZodSubstat
 
@@ -1049,3 +1049,42 @@ def test_scan_discs_evidence_keys_do_not_flag_clean_disc(monkeypatch):
 
     assert len(discs) == 1
     assert issues == []  # a clean disc must not be flagged from evidence keys alone
+
+
+# ── _arbitrate_main_value ─────────────────────────────────────────────────────
+# The main-stat value is fully determined by (rarity, main_key, level).  When the
+# 1x and 2x OCR passes disagree the old rule always took the 2x read, which threw
+# away a correct 1x value: "7.2%" came back as "1.2%" upscaled and 67 discs failed
+# validation on 2026-07-30 for exactly that.
+
+
+@pytest.mark.parametrize(
+    ("v1", "v2", "rarity", "key", "level", "expected"),
+    [
+        (7.2, 1.2, 4, "impact_", 3, 7.2),  # the live failure: 1x right, 2x wrong
+        (1.2, 7.2, 4, "impact_", 3, 7.2),  # and the mirror image
+        (7.5, 7.9, 4, "atk_", 0, 7.5),
+        (71.5, 7.5, 4, "atk_", 0, 7.5),
+        (7.5, 71.9, 4, "atk_", 0, 7.5),
+    ],
+)
+def test_arbitrate_picks_the_lattice_consistent_read(v1, v2, rarity, key, level, expected):
+    assert _arbitrate_main_value(v1, v2, rarity, key, level) == expected
+
+
+def test_arbitrate_falls_back_to_2x_when_neither_matches():
+    """Both scales wrong → no basis to choose; keep the old behaviour and let the
+    validator reject the disc rather than inventing a value."""
+    assert _arbitrate_main_value(3.3, 9.9, 4, "atk_", 0) == 9.9
+
+
+@pytest.mark.parametrize(
+    ("rarity", "key", "level"),
+    [
+        (4, "", 0),  # main-stat key unreadable
+        (99, "atk_", 0),  # rarity outside the table
+        (4, "not_a_stat", 0),
+    ],
+)
+def test_arbitrate_falls_back_when_the_table_cannot_answer(rarity, key, level):
+    assert _arbitrate_main_value(7.2, 1.2, rarity, key, level) == 1.2

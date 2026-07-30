@@ -223,6 +223,31 @@ def _repair_and_fold_violations(disc: ZodDisc, conf: dict) -> ZodDisc:
 # ── Crop helpers ──────────────────────────────────────────────────────────────
 
 
+def _arbitrate_main_value(v1: float, v2: float, rarity: int, main_key: str, level: int) -> float:
+    """Choose between disagreeing 1× and 2× reads of the main-stat value.
+
+    The old rule preferred the 2× read unconditionally, which threw away a correct
+    1× read whenever the upscale mangled a digit — "7.2%" came back as "1.2%" at 2×,
+    and 67 discs failed validation on 2026-07-30 for exactly that reason.
+
+    (rarity, main_key, level) determine the value exactly, so ask the expected-value
+    table which candidate is real rather than guessing by scale.  Falls back to the
+    2× read when the table can't answer (unknown key, unreadable rarity/level), which
+    preserves the previous behaviour for everything the lattice doesn't cover.
+    """
+    if main_key:
+        try:
+            from youkai_ocr.disc_rules import _main_value_matches, expected_main_value
+
+            expected = expected_main_value(rarity, main_key, level)
+        except (KeyError, IndexError, TypeError, ValueError):
+            return v2
+        for candidate in (v1, v2):
+            if _main_value_matches(candidate, expected, main_key):
+                return candidate
+    return v2
+
+
 def _crop(frame: Image.Image, calib: CalibrationResult, ref_bbox: tuple) -> Image.Image:
     x0, y0, x1, y1 = ref_bbox
     return frame.crop(
@@ -382,10 +407,10 @@ def _extract_disc(
     main_v1, main_v2 = parse_numeric(mv1), parse_numeric(mv2)
     if main_v1 is not None and main_v1 == main_v2:
         main_value = main_v1
-    elif main_v1 is None and main_v2 is None:
-        main_value = None
+    elif main_v1 is None or main_v2 is None:
+        main_value = main_v1 if main_v2 is None else main_v2
     else:
-        main_value = main_v2 if main_v2 is not None else main_v1
+        main_value = _arbitrate_main_value(main_v1, main_v2, rarity, main_key, level)
     if main_value is not None:
         conf["main_stat_value"] = main_value
         conf["main_stat_pct_seen"] = "%" in mv1 or "%" in mv2
@@ -658,6 +683,13 @@ def scan_discs(
                     entry["repairs"] = repairs
                 issues.append(entry)
             discs.append(disc)
+
+    # Traversal that ended early is silent data loss — surface it as an issue so it
+    # reaches issues.json and the run summary instead of only a line in scan.log.
+    # getattr: scan_* is also driven by navigator stand-ins in tests.
+    incomplete = getattr(navigator, "incomplete", None)
+    if incomplete is not None:
+        issues.append({"status": "incomplete_traversal", "type": "disc", **incomplete})
 
     return discs, issues
 

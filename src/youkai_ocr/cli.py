@@ -2224,6 +2224,23 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
             results["summary"] = success_summary
             if coverage:
                 results["coverage"] = coverage
+            # An early-stopped traversal completes every phase and would otherwise
+            # report a clean "ok" while silently omitting whole rows of inventory.
+            truncated = [i for i in all_issues if i.get("status") == "incomplete_traversal"]
+            if truncated:
+                results["status"] = "ok_incomplete"
+                results["incomplete_traversal"] = truncated
+                print(
+                    "\n  WARNING: this run did not read the full inventory — "
+                    f"{len(truncated)} phase(s) stopped early:"
+                )
+                for t in truncated:
+                    missed, expected = t.get("cells_missed"), t.get("expected_cells")
+                    scope = (
+                        f"{missed} of {expected}" if missed and expected else "an unknown number of"
+                    )
+                    print(f"    {t.get('type')}: {scope} item(s) missing — {t.get('reason')}")
+                print("  Re-run before trusting the export for optimisation.")
         elif error_info is not None:
             results["error"] = error_info
         try:
