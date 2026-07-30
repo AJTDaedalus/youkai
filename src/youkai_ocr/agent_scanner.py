@@ -203,13 +203,27 @@ def _slot_number(slot_idx: int) -> int:
     return 6 - slot_idx
 
 
-# Base Stats tab field bboxes
+# Base Stats tab field bboxes.
+#
+# The level pill's interior runs y=443–500; y=436–440 and y=501–505 are its dark
+# border.  Both crops below must clear the ink AND stay off that border — a crop
+# that clips glyph tops or swallows a border row binarises into one fused blob and
+# the read silently degrades.  Re-measured 2026-07-30 over all 42 agent frames in
+# live_20260730_085008; ink extents are identical on every one.
 _AGENT_NAME_BBOX = (935, 278, 1560, 332)
-_LEVEL_BBOX = (1060, 460, 1200, 495)  # "Lv. N" badge (re-measured H4)
+# Sits on the agent name's descenders, NOT on a promotion-dot row — the detail page
+# has none.  Retained only for the debug overlay; see _count_ascension_dots.
 _ASCENSION_DOTS_BBOX = (955, 332, 1350, 360)
+# "Lv. NN": white ink spans x=1070–1173, y=458–484.  The previous y0=460 clipped
+# two rows off the digit tops, which read Lv.60 as 90 or 99 on 8 of 42 agents.
+_LEVEL_BBOX = (1065, 455, 1180, 490)
 # Cap badge: the dim "/ NN" dark-on-dark text immediately right of the level badge.
-# Glyphs span x≈1185–1294, y≈455–499 in 1920×1080.  Measured on live_20260605.
-_LEVEL_CAP_BBOX = (1182, 453, 1300, 502)
+# Ink spans x=1182–1284, y=447–495.  The previous (1182, 453, 1300, 502) clipped the
+# glyph tops and pulled in the pill's bottom border row, fusing the digits to a black
+# bar — Tesseract then returned "/" with no digits on 41 of 42 agents, so every
+# ascension fell through to the (bogus) fallback.  x1 also trimmed 1300→1288 to keep
+# the neighbouring MAX circle out of the crop.
+_LEVEL_CAP_BBOX = (1182, 443, 1288, 501)
 _VALID_AGENT_CAPS = frozenset({10, 20, 30, 40, 50, 60})
 _ASCENSION_FROM_CAP: dict[int, int] = {10: 0, 20: 1, 30: 2, 40: 3, 50: 4, 60: 5}
 
@@ -845,6 +859,16 @@ def _read_level_cap(base_frame: Image.Image, calib: CalibrationResult) -> int:
         return 0
     norm = np.clip((up.astype(int) - mn) * 255 // (mx - mn), 0, 255).astype(np.uint8)
     _, thresh = cv2.threshold(norm, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    # Drop ink that touches the crop edge.  At this dark-on-dark contrast a clipped
+    # badge border binarises as one large blob fused to the digits, and Tesseract
+    # then reads nothing at all.  The bbox leaves ~4px of margin, so a real glyph
+    # never reaches the edge; anything that does is border, not text.
+    n_labels, labels = cv2.connectedComponents(thresh)
+    if n_labels > 1:
+        edge = np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]])
+        for lab in np.unique(edge):
+            if lab != 0:
+                thresh[labels == lab] = 0
     for_ocr = cv2.bitwise_not(thresh)  # black text on white for Tesseract
     raw = pytesseract.image_to_string(
         Image.fromarray(for_ocr),
@@ -862,7 +886,12 @@ def _read_level_cap(base_frame: Image.Image, calib: CalibrationResult) -> int:
 def _count_ascension_dots(base_frame: Image.Image, calib: CalibrationResult) -> int:
     """Count filled promotion dots below the agent name → ascension 0-6.
 
-    Each filled dot appears as a distinct bright region in the dots bbox.
+    DEPRECATED — do not use for ascension.  The agent detail page has no promotion-dot
+    row: _ASCENSION_DOTS_BBOX sits on the descenders of the agent's *name*, so this
+    counts letter strokes and returns arbitrary values (5 for "Ben Bigger", 1 for
+    "Anby", 0 for "Zhao").  It read as plausible because the counts land in 0-6.
+    Kept only so the debug overlay keeps rendering the region.  Ascension now comes
+    from the level cap, with _ascension_floor_from_level as the fallback.
     """
     crop = _crop(base_frame, calib, _ASCENSION_DOTS_BBOX)
     arr = np.array(crop.convert("L"))
@@ -875,6 +904,22 @@ def _count_ascension_dots(base_frame: Image.Image, calib: CalibrationResult) -> 
         elif not b:
             in_region = False
     return min(count, 6)
+
+
+def _ascension_floor_from_level(level: int) -> int:
+    """Lowest ascension consistent with a level — an agent cannot exceed its cap.
+
+    Level 60 is reachable only at cap 60, so it pins ascension at exactly 5.  Lower
+    levels only bound it from below: a Lv.10 agent may sit at cap 10 (ascension 0) or
+    have been promoted further and simply not levelled, so 0 is all we can assert.
+    Returns 0 for a level outside 1-60, which means the level read is untrustworthy.
+    """
+    if not 1 <= level <= 60:
+        return 0
+    for cap in sorted(_ASCENSION_FROM_CAP):
+        if level <= cap:
+            return _ASCENSION_FROM_CAP[cap]
+    return 0
 
 
 # ── Detail-page presence predicate ───────────────────────────────────────────
@@ -1051,10 +1096,12 @@ def _extract_base_stats(
         ascension = _ASCENSION_FROM_CAP.get(cap, 0)
         conf["ascension"] = 90.0
     else:
-        # OCR of the dim "/NN" cap text failed; fall back to counting filled
-        # promotion dots below the agent name (visual, survives font changes).
-        ascension = _count_ascension_dots(base_frame, calib)
-        conf["ascension"] = 60.0 if ascension > 0 else 30.0
+        # OCR of the dim "/NN" cap text failed.  Derive a floor from the level
+        # instead — sound, unlike the promotion-dot count this replaced, which was
+        # reading the agent name's descenders.  Exact at level 60, a lower bound
+        # below it, so flag it for review rather than passing it off as a real read.
+        ascension = _ascension_floor_from_level(level)
+        conf["ascension"] = 70.0 if ascension > 0 else 40.0
 
     return key, level, ascension, conf
 
