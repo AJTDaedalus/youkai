@@ -1,6 +1,6 @@
 [package]
 name = "youkai"
-version = "1.0.5"
+version = "1.0.6"
 authors = ["Konkers <konkers@konkers.net>"]
 edition = "2024"
 include = ["LICENSE-MIT", "**/*.rs", "Cargo.toml"]

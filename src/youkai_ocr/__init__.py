@@ -1,4 +1,4 @@
 """Youkai: ZZZ inventory OCR scanner."""
 
 # BUILD SCRIPT PATCHES THIS LINE — do not reformat it.
-__version__ = "1.0.5+dev"
+__version__ = "1.0.6+dev"
