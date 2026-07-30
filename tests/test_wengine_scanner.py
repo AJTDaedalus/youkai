@@ -13,7 +13,7 @@ from PIL import Image
 from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.matchers import count_filled_stars
 from youkai_ocr.normalizer import parse_level_with_ascension
-from youkai_ocr.wengine_scanner import _crop, export_engines, scan_equipped_engine_frame
+from youkai_ocr.wengine_scanner import _NAME_BBOX, _crop, export_engines, scan_equipped_engine_frame
 from youkai_ocr.zod import ZodWEngine
 
 _ARCHIVE = Path(__file__).parent.parent / "archive" / "live_20260605"
@@ -261,3 +261,24 @@ def test_scan_equipped_engine_frame_starlight():
     assert result.ascension == 5, f"expected ascension=5, got {result.ascension}"
     assert result.refinement >= 1, "refinement must be ≥ 1"
     assert result.location == "agent_018"
+
+
+# ── Name bbox excludes the panel artwork ──────────────────────────────────────
+# read_text runs psm 6, so anything non-text left in the crop is read as text.  With
+# the old (1421, 270, 1760, 368) the engine art and the type/equipped-agent icons
+# were inside it: 24 of 1085 engines fell under the name floor on 2026-07-30, and 13
+# "[Reverb] Mark II" degraded to a bare "Mark Il" that fuzzy-matched Demara Battery
+# Mark II at 90 — a wrong key that only the floor kept out of the export.
+
+
+def test_name_bbox_excludes_artwork_and_icons():
+    x0, y0, x1, y1 = _NAME_BBOX
+    assert x1 <= 1686, "crop extends into the engine artwork"
+    assert y1 <= 354, "crop extends into the type / equipped-agent icons"
+
+
+def test_name_bbox_still_covers_two_wrapped_lines():
+    """Longest observed name ink reaches x=1481 and wraps to a second line."""
+    x0, y0, x1, y1 = _NAME_BBOX
+    assert x0 <= 1421 and x1 >= 1481
+    assert y0 <= 270 and y1 - y0 >= 80, "too short for a two-line name"

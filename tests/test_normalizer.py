@@ -611,3 +611,39 @@ def test_normalize_engine_zzz31_engines(text, expected_key):
     key, score = normalize_engine(text)
     assert key == expected_key, f"got {key!r} (score={score})"
     assert score >= 90.0
+
+
+# ── Live-client name gaps found in live_20260730_085008 ───────────────────────
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The English PC client renders Remielle's full name, which the table lacked;
+        # every scan scored 84.0 against the 85 floor and dropped her from the export.
+        ("Remielle Dan", "Remielle"),
+        ("Remiellie Dan = {", "Remielle"),  # as actually OCR'd, icon junk and all
+        # Tesseract reads Qingyi's Q as G — 83.3, just under the floor.
+        ("Gingyi", "Qingyi"),
+        ("Gingyi *", "Qingyi"),
+    ],
+)
+def test_live_ocr_reads_resolve(raw, expected):
+    key, score = normalize_agent(raw)
+    assert key == expected, f"{raw!r} → {key!r} at {score}"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Rina", "Rina"),
+        ("Velina", "Velina"),
+        ("Lucy", "Lucy"),
+        ("Lucia", "Lucia"),
+        ("Qingyi", "Qingyi"),
+        ("Remielle", "Remielle"),
+    ],
+)
+def test_new_aliases_do_not_steal_neighbouring_names(raw, expected):
+    """The added entries sit near existing keys; exact names must still win."""
+    assert normalize_agent(raw)[0] == expected

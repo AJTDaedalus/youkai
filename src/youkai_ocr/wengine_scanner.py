@@ -55,7 +55,15 @@ def read_engine_count(
 
 # ── Field bboxes in 1920×1080 reference coords (engine_inventory.detail_panel) ─
 
-_NAME_BBOX = (1421, 270, 1760, 368)
+# Name: up to two wrapped lines of white text at the top-left of the detail panel.
+# x1 was 1760 and y1 368, which pulled the engine's artwork and the type/equipped-agent
+# icons into the crop.  read_text uses psm 6, so Tesseract treated that art as more text
+# and returned fragments or nothing — 24 of 1085 engines fell under the name floor, and
+# 13 "[Reverb] Mark II" read as bare "Mark Il" and fuzzy-matched Demara Battery Mark II
+# at 90, i.e. the floor was the only thing standing between us and silently wrong keys.
+# Trimmed to the text column: recovers all 24 with correct keys, no regressions.
+# Measured 2026-07-30 over all 1085 engine crops in live_20260730_085008.
+_NAME_BBOX = (1421, 270, 1686, 354)
 _RARITY_BBOX = (1421, 402, 1452, 436)
 _LEVEL_BBOX = (1451, 402, 1640, 436)  # wide enough to include "/60" suffix
 _REFINE_BBOX = (1582, 402, 1770, 436)
