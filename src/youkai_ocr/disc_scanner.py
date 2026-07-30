@@ -684,6 +684,13 @@ def scan_discs(
                 issues.append(entry)
             discs.append(disc)
 
+    # Traversal that ended early is silent data loss — surface it as an issue so it
+    # reaches issues.json and the run summary instead of only a line in scan.log.
+    # getattr: scan_* is also driven by navigator stand-ins in tests.
+    incomplete = getattr(navigator, "incomplete", None)
+    if incomplete is not None:
+        issues.append({"status": "incomplete_traversal", "type": "disc", **incomplete})
+
     return discs, issues
 
 
