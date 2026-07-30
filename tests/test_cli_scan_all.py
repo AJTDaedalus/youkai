@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw
 
 from youkai_ocr.capture import CalibrationResult
 from youkai_ocr.cli import (
-    _AGENT_MENU_SIG_BBOX,
+    _AGENT_MENU_BAND_BBOX,
     _MAIN_MENU_SIG_BBOX,
     ScreenAssertError,
     _check_agent_screen,
@@ -115,12 +115,15 @@ def _make_main_menu_frame() -> Image.Image:
     return img
 
 
-def _make_agent_menu_frame() -> Image.Image:
-    """1920×1080 frame with teal pixels in the agent-menu signature bbox."""
+def _make_agent_menu_frame(fill: tuple[int, int, int] = (20, 150, 150)) -> Image.Image:
+    """1920×1080 frame with the SELECT band lit in the agent-menu signature bbox.
+
+    The band takes the selected agent's tint, so the detector is luma-based; `fill`
+    lets a test vary the colour to prove hue does not matter.
+    """
     img = Image.new("RGB", (1920, 1080), color=(0, 0, 0))
-    x1, y1, x2, y2 = _AGENT_MENU_SIG_BBOX
-    # teal: G-R>30 AND G>100 → (20, 150, 150)
-    ImageDraw.Draw(img).rectangle([x1, y1, x2 - 1, y2 - 1], fill=(20, 150, 150))
+    x1, y1, x2, y2 = _AGENT_MENU_BAND_BBOX
+    ImageDraw.Draw(img).rectangle([x1, y1, x2 - 1, y2 - 1], fill=fill)
     return img
 
 
@@ -446,9 +449,28 @@ def test_is_main_menu_false_on_dark_frame():
     assert _is_main_menu(Image.new("RGB", (1920, 1080), (0, 0, 0)), calib) is False
 
 
-def test_is_agent_selection_menu_true_on_teal_sig_bbox():
+def test_is_agent_selection_menu_true_on_lit_band():
     calib = _identity_calib()
     assert _is_agent_selection_menu(_make_agent_menu_frame(), calib) is True
+
+
+@pytest.mark.parametrize(
+    "fill",
+    [
+        (20, 150, 150),  # Zhao / Ice — the only tint the retired hue test accepted
+        (157, 164, 167),  # Astra Yao — grey band, G-R=6, hue test scored 0
+        (190, 120, 200),  # any future agent's tint
+    ],
+)
+def test_is_agent_selection_menu_ignores_band_tint(fill):
+    calib = _identity_calib()
+    assert _is_agent_selection_menu(_make_agent_menu_frame(fill), calib) is True
+
+
+def test_is_agent_selection_menu_false_on_dim_band():
+    """A dark band is background art, not the lit SELECT strip."""
+    calib = _identity_calib()
+    assert _is_agent_selection_menu(_make_agent_menu_frame((10, 40, 40)), calib) is False
 
 
 def test_is_agent_selection_menu_false_on_dark_frame():

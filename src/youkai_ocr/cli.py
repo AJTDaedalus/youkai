@@ -27,10 +27,18 @@ class ScreenAssertError(RuntimeError):
 # ── Auto-nav constants ────────────────────────────────────────────────────────
 
 # Main-hub bottom-nav click targets (game-area coords, 1920×1080).
-# Updated 2026-06-15: ZZZ 1.5 added "Achievements" between Notices and Inter-Knot,
-# shifting Storage (was 1123→1178) and Agents (was 1251→1274) one slot right.
-_NAV_STORAGE_CENTER = (1178, 1041)
-_NAV_AGENTS_CENTER = (1274, 1041)
+# LAST-RESORT FALLBACK ONLY — locate_bottom_nav_button() OCRs the live strip and is
+# the primary path.  The row re-centres whenever a patch adds or removes an entry, so
+# these values go stale every few patches and must never be blind-clicked on a frame
+# that is not confirmed to be the main-menu hub:
+#   1.4  Storage 1123 / Agents 1251
+#   1.5  Storage 1179 / Agents 1307   ("Achievements" added; row shifted right)
+#   3.1  Storage 1123 / Agents 1251   ("New Eridu City Fund" added; row re-centred left)
+# The 1.5 constants committed here were 1178/1274 — Agents was already 33px off and
+# only OCR kept the click landing.  3.1 values measured from reference_20_main_menu_3_1
+# (= archive/live_20260729_215512/nav_pre_agents.png).
+_NAV_STORAGE_CENTER = (1123, 1042)
+_NAV_AGENTS_CENTER = (1251, 1042)
 
 # Click center of each storage tab circle button (horizontal row, measured from
 # ref_1/ref_2 active-circle centroids; game-area coords at 1920×1080).
@@ -45,9 +53,18 @@ _STORAGE_TAB_CLICK_CENTERS: tuple[tuple[int, int], ...] = (
 _MAIN_MENU_SIG_BBOX = (1000, 1033, 1300, 1050)
 _MAIN_MENU_SIG_THRESH = 20  # mean_luma > this → main menu
 
-_AGENT_MENU_SIG_BBOX = (1888, 430, 1920, 570)
-_AGENT_MENU_SIG_THRESH = 1000  # teal_pixel_count > this → agent selection menu
-# teal: G−R>30 AND G>100
+# Agent-selection menu: the full-height SELECT band down the right edge of the roster.
+# The band is TINTED BY THE SELECTED AGENT, so the pre-3.1 hue test (teal: G−R>30 AND
+# G>100) false-negatived whenever the screen opened on a non-teal agent — Zhao (Ice)
+# gives (62,150,148) but Astra Yao gives (157,164,167), G−R=6.  That is what broke the
+# 2026-07-29 run after ZZZ 3.1 added Remielle.  Detect the band by luma instead: it is
+# uniformly bright over its whole height regardless of tint.  Main-menu frames also have
+# a bright right edge (background art), so _is_main_menu must veto first.
+_AGENT_MENU_BAND_BBOX = (1888, 100, 1920, 1000)
+_AGENT_MENU_BAND_LUMA = 80  # a row whose mean luma exceeds this counts as band
+_AGENT_MENU_BAND_MIN_FRAC = 0.95  # fraction of rows that must be band
+# Measured over all 29 archived frames: agent menus 100%, main menu 82–85%, all other
+# screens 0%.  See navigation.yaml screen_signatures.agent_selection_menu.
 
 _SCREEN_TIMEOUT_S = 8.0  # max seconds to wait for a screen transition
 _SCREEN_POLL_S = 0.3  # poll interval inside wait_for
@@ -80,19 +97,33 @@ def _is_main_menu(frame: Image.Image, calib) -> bool:
     return float(luma) > _MAIN_MENU_SIG_THRESH
 
 
-def _is_agent_selection_menu(frame: Image.Image, calib) -> bool:
-    """True when the teal SELECT pill at the right edge of the agent grid is visible."""
+def agent_menu_band_fraction(frame: Image.Image, calib) -> float:
+    """Fraction of rows in the right-edge SELECT band that are brightly lit (0.0–1.0).
+
+    Hue-independent: the band takes the selected agent's colour, so only its
+    brightness and full-height continuity are stable.  Exposed for diagnostics.
+    """
     import numpy as np
 
     arr = np.array(frame)
-    x1, y1, x2, y2 = calib.scale_bbox(_AGENT_MENU_SIG_BBOX)
+    x1, y1, x2, y2 = calib.scale_bbox(_AGENT_MENU_BAND_BBOX)
     region = arr[y1:y2, x1:x2]
     if region.size == 0:
+        return 0.0
+    luma = (
+        0.299 * region[..., 0].astype(float)
+        + 0.587 * region[..., 1].astype(float)
+        + 0.114 * region[..., 2].astype(float)
+    )
+    return float((luma.mean(axis=1) > _AGENT_MENU_BAND_LUMA).mean())
+
+
+def _is_agent_selection_menu(frame: Image.Image, calib) -> bool:
+    """True when the SELECT band at the right edge of the agent roster is visible."""
+    if _is_main_menu(frame, calib):
+        # The hub's background art also lights up the right edge (82–85% of rows).
         return False
-    g = region[..., 1].astype(int)
-    rc = region[..., 0].astype(int)
-    teal_count = int(((g - rc > 30) & (g > 100)).sum())
-    return teal_count > _AGENT_MENU_SIG_THRESH
+    return agent_menu_band_fraction(frame, calib) >= _AGENT_MENU_BAND_MIN_FRAC
 
 
 def _is_storage_screen(frame: Image.Image, calib) -> bool:
@@ -226,6 +257,37 @@ class _NavDriver:
             print(f"  [auto-nav] pre-click frame → {p}", flush=True)
         return frame
 
+    def _save_debug_frame(self, frame: Image.Image, name: str) -> str | None:
+        """Archive a frame for post-mortem diagnosis; return its path, or None."""
+        if self._archive_dir is None or frame is None:
+            return None
+        import pathlib
+
+        p = pathlib.Path(self._archive_dir) / f"debug_{name}.png"
+        frame.save(p)
+        print(f"  [auto-nav] debug frame saved → {p}", flush=True)
+        return str(p)
+
+    def _retry_nav_click(self, frame: Image.Image, label: str, fallback) -> None:
+        """Re-click a bottom-nav entry, but only if the hub strip is actually on screen.
+
+        The hard-coded fallback centre is only safe on a confirmed main-menu frame.  On
+        any other screen the click almost certainly already worked and it is the screen
+        check that is failing — a blind click there lands on unknown UI (an agent
+        portrait, a stat tab) and drives the session further from where we want it.
+        """
+        if not _is_main_menu(frame, self._calib):
+            print(
+                f"  [auto-nav] not on the main-menu hub — skipping {label} re-click "
+                "(navigation likely already succeeded).",
+                flush=True,
+            )
+            return
+        center = locate_bottom_nav_button(frame, self._calib, label.lower()) or fallback
+        self._focus()
+        print(f"  [auto-nav] re-clicking {label} at ref {center}…", flush=True)
+        self._click(*center, label=label)
+
     def _press_escape(self) -> None:
         from pynput.keyboard import Key
 
@@ -268,17 +330,13 @@ class _NavDriver:
             if _is_storage_screen(frame, self._calib):
                 return frame
             if time.time() >= deadline:
+                self._save_debug_frame(frame, "storage_timeout")
                 raise ScreenAssertError(
                     f"Storage screen did not appear within {_SCREEN_TIMEOUT_S:.0f}s."
                 )
             poll += 1
             if poll % 10 == 0:
-                self._focus()
-                print("  [auto-nav] re-clicking Storage…", flush=True)
-                center = (
-                    locate_bottom_nav_button(frame, self._calib, "storage") or _NAV_STORAGE_CENTER
-                )
-                self._click(*center, label="Storage")
+                self._retry_nav_click(frame, "Storage", _NAV_STORAGE_CENTER)
             time.sleep(_SCREEN_POLL_S)
 
     def switch_storage_tab(self, tab_idx: int, archive_dir=None) -> Image.Image:
@@ -344,17 +402,18 @@ class _NavDriver:
             if _is_agent_selection_menu(frame, self._calib):
                 return frame
             if time.time() >= deadline:
+                path = self._save_debug_frame(frame, "agents_timeout")
+                band = agent_menu_band_fraction(frame, self._calib)
                 raise ScreenAssertError(
-                    f"Agent selection menu did not appear within {_SCREEN_TIMEOUT_S:.0f}s."
+                    f"Agent selection menu did not appear within {_SCREEN_TIMEOUT_S:.0f}s.\n"
+                    f"  SELECT band lit rows: {band:.0%} "
+                    f"(need ≥{_AGENT_MENU_BAND_MIN_FRAC:.0%}); "
+                    f"on main-menu hub: {_is_main_menu(frame, self._calib)}"
+                    + (f"\n  Last frame: {path}" if path else "")
                 )
             poll += 1
             if poll % 10 == 0:
-                self._focus()
-                print("  [auto-nav] re-clicking Agents…", flush=True)
-                center = (
-                    locate_bottom_nav_button(frame, self._calib, "agents") or _NAV_AGENTS_CENTER
-                )
-                self._click(*center, label="Agents")
+                self._retry_nav_click(frame, "Agents", _NAV_AGENTS_CENTER)
             time.sleep(_SCREEN_POLL_S)
 
 

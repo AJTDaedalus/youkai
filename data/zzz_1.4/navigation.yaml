@@ -556,16 +556,27 @@ screen_signatures:
     threshold: 20        # > threshold → main menu confirmed
 
   agent_selection_menu:
-    # The teal "SELECT" pill at the far-right edge of the agent grid.
-    # Present only when the agent selection menu (ref_12) is open.
-    #   ref_12 (agent menu):  teal_px = 4480
-    #   ref_11 (main menu):   teal_px =   55
-    #   ref_1  (disc menu):   teal_px =    0
-    #   ref_2  (engine menu): teal_px =    0
-    # teal defined as: G - R > 30 AND G > 100
-    sample_bbox: [1888, 430, 1920, 570]
-    check: teal_pixel_count
-    threshold: 1000      # > threshold → agent selection menu confirmed
+    # The full-height "SELECT" band at the far-right edge of the agent grid.
+    #
+    # RETIRED 2026-07-30 — the old hue test (sample_bbox [1888,430,1920,570],
+    # teal_pixel_count > 1000, teal = G-R > 30 AND G > 100) is UNSOUND: the band is
+    # tinted by whichever agent is selected, and every calibration frame happened to
+    # have Zhao (Ice) selected.
+    #   ref_12/13 (Zhao, Ice):       band RGB (62,150,148)  teal_px = 4480  → pass
+    #   ref_14    (Astra Yao):       band RGB (157,164,167) teal_px =    0  → FALSE NEG
+    # ref_14 is an agent-selection menu.  This is what failed the 2026-07-29 run once
+    # ZZZ 3.1 added Remielle and the screen no longer opened on an Ice agent.
+    #
+    # Replacement is hue-free: the band is uniformly bright over its whole height
+    # whatever its tint.  Measure the fraction of rows whose mean luma exceeds 80.
+    #   agent menus (ref_12/13/14, preflight_agents, nav_enter_pre):  100%
+    #   main menu   (ref_11, nav_pre_agents, nav_pre_storage):      82-85%
+    #   every other screen (disc/engine/equipment/agent detail):        0%
+    # Main-menu frames light the right edge with background art, so the main_menu
+    # signature above must be checked first and veto.
+    sample_bbox: [1888, 100, 1920, 1000]
+    check: lit_row_fraction   # row counts as lit when its mean luma > 80
+    threshold: 0.95      # >= threshold AND NOT main_menu → agent selection menu
 
 # ─────────────────────────────────────────────
 # CALIBRATION ANCHORS
