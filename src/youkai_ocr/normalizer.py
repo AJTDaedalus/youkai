@@ -219,19 +219,48 @@ def _clean_agent_name(text: str) -> str:
     return " ".join(tokens)
 
 
+def _deglue_agent_name(cleaned: str) -> str:
+    """Drop a stray capital fused onto the front of the first word.
+
+    The name bbox has to stay wide (every narrower variant OCRs worse), so it keeps
+    the panel divider on the left and the faction emblem on the right.  Those bleed
+    into the read as leading glyphs, and when one lands hard against the first letter
+    _clean_agent_name cannot split it off: "Velina Airgid" comes back as
+    "WVeling Airgid", which cost 4 points and dropped the agent below the floor.
+
+    Safe because no name in the table starts with two consecutive capitals — checked
+    over all 79 entries, and test_deglue_never_alters_a_real_name pins it.
+    """
+    tokens = cleaned.split()
+    if tokens and len(tokens[0]) > 3 and tokens[0][:2].isupper():
+        tokens[0] = tokens[0][1:]
+    return " ".join(tokens)
+
+
 def normalize_agent(text: str) -> tuple[str, float]:
     """Fuzzy-map agent display name → (ZOD key, 0-100).
 
     Returns ("", score) when the best match scores below _AGENT_NAME_SCORE_MIN so
     the caller's CRITICAL_CONF gate emits unknown_agent instead of silently snapping
     to the nearest key (which was the "Zhao magnet" failure mode — H24).
+
+    A below-floor match is retried once with the leading glyph de-glued; the better of
+    the two scores wins.  The floor itself is deliberately not lowered — it is what
+    keeps a garbled read from snapping onto a neighbouring agent.
     """
     _load()
+    candidates = list(_agents.keys())
     cleaned = _clean_agent_name(text)
-    result = process.extractOne(cleaned, list(_agents.keys()), scorer=fuzz.WRatio)
+    result = process.extractOne(cleaned, candidates, scorer=fuzz.WRatio)
     if result is None:
         return ("", 0.0)
     display, score, _ = result
+    if float(score) < _AGENT_NAME_SCORE_MIN:
+        degl = _deglue_agent_name(cleaned)
+        if degl != cleaned:
+            retry = process.extractOne(degl, candidates, scorer=fuzz.WRatio)
+            if retry is not None and float(retry[1]) > float(score):
+                display, score = retry[0], retry[1]
     if float(score) < _AGENT_NAME_SCORE_MIN:
         return ("", float(score))
     return (_agents[display], float(score))

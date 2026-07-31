@@ -906,6 +906,47 @@ def _count_ascension_dots(base_frame: Image.Image, calib: CalibrationResult) -> 
     return min(count, 6)
 
 
+def _read_agent_name(
+    base_frame: Image.Image, calib: CalibrationResult, recognizer: TextRecognizer
+) -> tuple[str, float]:
+    """Read the agent name, retrying with alternate passes if the match is below floor.
+
+    The single-pass read sits close to the 85 floor for the longer names, and exactly
+    one agent per run has been landing under it — Qingyi at 83.3 on 2026-07-30 morning,
+    Velina at 81.5 that afternoon, a different agent each time.  The cause is icon
+    bleed at the crop edges, and it is not fixable by cropping: every narrower bbox
+    tested OCRs worse overall, because Tesseract's line segmentation wants the context.
+
+    So retry instead.  The primary pass is unchanged and short-circuits on success, so
+    an agent that already reads cleanly costs nothing extra and cannot change key; the
+    ladder only runs for a read that would otherwise be discarded outright.  When no
+    pass clears the floor the best score is returned, keeping the critical-fail gate.
+
+    Returns (key, score); key is "" when nothing cleared the floor.
+    """
+    crop = _crop(base_frame, calib, _AGENT_NAME_BBOX)
+    key, score = normalize_agent(recognizer.read_line(crop, "white_text_on_dark").strip())
+    if key:
+        return key, score
+
+    big = crop.resize((crop.width * 2, crop.height * 2), Image.LANCZOS)
+    ladder = (
+        lambda: recognizer.read_line(big, "white_text_on_dark"),
+        lambda: recognizer.read_text(crop, "white_text_on_dark").replace("\n", " "),
+        lambda: recognizer.read_line(crop, "white_text_on_dark_dim"),
+    )
+    best = score
+    for read in ladder:
+        try:
+            retry_key, retry_score = normalize_agent(read().strip())
+        except Exception:  # a profile or scale Tesseract chokes on must not abort
+            continue
+        if retry_key:
+            return retry_key, retry_score
+        best = max(best, retry_score)
+    return "", best
+
+
 def _ascension_floor_from_level(level: int) -> int:
     """Lowest ascension consistent with a level — an agent cannot exceed its cap.
 
@@ -1082,9 +1123,7 @@ def _extract_base_stats(
     """
     conf: dict[str, float] = {}
 
-    name_crop = _crop(base_frame, calib, _AGENT_NAME_BBOX)
-    name_text = recognizer.read_line(name_crop, "white_text_on_dark").strip()
-    key, conf["key"] = normalize_agent(name_text)
+    key, conf["key"] = _read_agent_name(base_frame, calib, recognizer)
 
     level_crop = _crop(base_frame, calib, _LEVEL_BBOX)
     level_text = recognizer.read_line(level_crop, "white_text_on_dark")

@@ -31,6 +31,7 @@ from youkai_ocr.agent_scanner import (
     _extract_equip_frame,
     _extract_skills,
     _find_agent_portraits,
+    _read_agent_name,
     export_agents,
     resolve_locations,
 )
@@ -806,3 +807,66 @@ def test_cap_bbox_covers_ink_and_excludes_max_circle():
     assert x0 <= 1182 and x1 >= 1284
     assert x1 < 1293, "crop reaches into the neighbouring MAX circle"
     assert y0 <= 447 and y1 >= 495
+
+
+# ── _read_agent_name retry ladder ─────────────────────────────────────────────
+# Exactly one agent per run was landing under the 85 name floor and being dropped —
+# Qingyi at 83.3, Velina at 81.5 the same day — from icon bleed at the crop edges.
+# Every narrower bbox OCRs worse overall, so the read is retried instead.
+
+
+class _ScriptedRecognizer:
+    """Returns a queued string per call and records how many calls were made."""
+
+    def __init__(self, line_results, text_results=()):
+        self._line = list(line_results)
+        self._text = list(text_results)
+        self.calls = 0
+
+    def _pop(self, queue):
+        self.calls += 1
+        if not queue:
+            return ""
+        return queue.pop(0)
+
+    def read_line(self, img, profile):
+        return self._pop(self._line)
+
+    def read_text(self, img, profile):
+        return self._pop(self._text)
+
+
+def test_read_agent_name_stops_after_a_clean_primary_read():
+    """A name that already reads must cost exactly one OCR call and be unchanged."""
+    rec = _ScriptedRecognizer(["Zhao", "SHOULD NOT BE READ"])
+    key, score = _read_agent_name(_dark_frame(), _identity_calib(), rec)
+    assert key == "Zhao"
+    assert score == 100.0
+    assert rec.calls == 1, "ladder ran despite the primary read being accepted"
+
+
+def test_read_agent_name_recovers_a_below_floor_primary():
+    rec = _ScriptedRecognizer(["Wvbtz Plmx", "Hoshimi Miyabi"])
+    key, _ = _read_agent_name(_dark_frame(), _identity_calib(), rec)
+    assert key == "Miyabi"
+    assert rec.calls == 2, "should stop at the first pass that clears the floor"
+
+
+def test_read_agent_name_reports_the_best_score_when_nothing_clears():
+    """Every pass below the floor → still a critical fail, but with the best evidence."""
+    rec = _ScriptedRecognizer(["Xqzzt", "Kkkk Jjjj", "Zzz"], text_results=["Qqqq"])
+    key, score = _read_agent_name(_dark_frame(), _identity_calib(), rec)
+    assert key == ""
+    assert 0 < score < 85, score
+
+
+def test_read_agent_name_survives_a_failing_ladder_pass():
+    class Exploding(_ScriptedRecognizer):
+        def read_text(self, img, profile):
+            raise RuntimeError("tesseract choked on this profile")
+
+    rec = Exploding(["Wvbtz Plmx", "Von Lycaon"])
+    # primary fails → 2x line fails → read_text raises → dim line must still be tried
+    rec._line = ["Wvbtz Plmx", "Zzzz", "Von Lycaon"]
+    key, _ = _read_agent_name(_dark_frame(), _identity_calib(), rec)
+    assert key == "Lycaon"
