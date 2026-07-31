@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 
 from youkai_ocr.capture import calibrate
-from youkai_ocr.grid import SCROLL_STALL_WINDOWS, GridNavigator
+from youkai_ocr.grid import PANEL_STUCK_RECLICKS, SCROLL_STALL_WINDOWS, GridNavigator
 
 
 def _frame():
@@ -111,3 +111,106 @@ class _DummyEvent:
 class _DummyListener:
     def stop(self):
         pass
+
+
+# ── Dropped-click detection ───────────────────────────────────────────────────
+# The 1.0.7 engine phase logged 4 cells whose detail panel came back byte-identical
+# to the previous cell's, at r0c2/c3/c4 and r1c1.  The render gate passed them —
+# it only checks the panel is lit, and a dropped click leaves the PREVIOUS item's
+# panel fully rendered — so each was recorded as a duplicate of its neighbour and
+# the real engine at that position was never read.  All four happened to be equipped
+# and were recovered by the location reconciliation; an unequipped one would have
+# been replaced by a phantom copy with nothing reported.
+
+
+def _panel_nav(sig_sequence):
+    """Navigator whose panel fingerprint follows sig_sequence, one entry per capture."""
+    frame = _frame()
+    nav = GridNavigator(lambda: frame, calibrate(frame))
+    seq = list(sig_sequence)
+    state = {"i": 0}
+
+    def sig(_frame):
+        i = min(state["i"], len(seq) - 1)
+        state["i"] += 1
+        return seq[i]
+
+    nav._panel_sig = sig
+    nav._click = lambda cx, cy: None
+    nav._wait_panel_render = lambda f: f
+    return nav
+
+
+def test_distinct_panels_are_never_flagged():
+    nav = _panel_nav(["aaa", "bbb", "ccc"])
+    rows = list(nav._read_row(0, 3))
+    assert [stuck for *_, stuck in rows] == [False, False, False]
+    assert nav.stuck_cells == []
+
+
+def test_repeated_panel_triggers_reclicks_then_flags():
+    """Panel never changes → re-clicked PANEL_STUCK_RECLICKS times, then flagged."""
+    nav = _panel_nav(["aaa"] * 20)
+    clicks = []
+    nav._click = lambda cx, cy: clicks.append((cx, cy))
+    rows = list(nav._read_row(0, 2))
+    assert rows[0][3] is False, "first cell has no predecessor to match"
+    assert rows[1][3] is True, "second cell repeated the panel and must be flagged"
+    # cell 1: 1 click.  cell 2: 1 click + PANEL_STUCK_RECLICKS retries.
+    assert len(clicks) == 2 + PANEL_STUCK_RECLICKS
+
+
+def test_reclick_that_succeeds_is_not_flagged():
+    """A dropped click that recovers on retry must read normally, not be skipped."""
+    nav = _panel_nav(["aaa", "aaa", "bbb", "ccc"])
+    rows = list(nav._read_row(0, 3))
+    assert [stuck for *_, stuck in rows] == [False, False, False]
+    assert nav.stuck_cells == []
+
+
+def test_stuck_cell_is_skipped_not_yielded_as_a_duplicate():
+    frame = _frame()
+    nav = GridNavigator(lambda: frame, calibrate(frame))
+    nav._scroll_to_top = lambda: None
+    nav._thumb = lambda: 100.0
+    seq = iter(["aaa", "aaa", "aaa", "aaa", "bbb", "ccc"])
+    last = {"v": "zzz"}
+
+    def read_row(row, ncols=None):
+        for col in range(ncols or 9):
+            v = next(seq, last["v"])
+            stuck = v == last["v"]
+            last["v"] = v
+            yield (col, frame, (0.0, 0.0, 0.0, 0.0), stuck)
+
+    nav._read_row = read_row
+    got = list(nav.scan(3))
+    # cell 0 reads; cells 1 and 2 repeat the panel and must be dropped, not yielded.
+    assert [c for c, _, _ in got] == [0]
+    assert nav.stuck_cells == [1, 2]
+
+
+@pytest.mark.parametrize("scanner", ["disc", "engine"])
+def test_scanners_report_stuck_cells(scanner, monkeypatch):
+    import youkai_ocr.disc_scanner as ds
+    import youkai_ocr.wengine_scanner as ws
+
+    mod = ds if scanner == "disc" else ws
+
+    class FakeNav:
+        incomplete = None
+        stuck_cells = [2, 4, 10]
+
+        def scan(self, total=None):
+            return iter(())
+
+    monkeypatch.setattr(mod, "GridNavigator", lambda *a, **k: FakeNav())
+    monkeypatch.setattr(
+        mod, "make_kill_listener", lambda *a, **k: (_DummyEvent(), _DummyListener())
+    )
+    fn = ds.scan_discs if scanner == "disc" else ws.scan_engines
+    frame = _frame()
+    _, issues = fn(lambda: frame, calibrate(frame))
+    stuck = [i for i in issues if i.get("status") == "stuck_panel"]
+    assert [i["cell"] for i in stuck] == [2, 4, 10]
+    assert {i["type"] for i in stuck} == {scanner}

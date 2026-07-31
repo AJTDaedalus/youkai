@@ -101,6 +101,14 @@ class _SimZZZ:
         a = np.zeros((1080, 1920, 3), dtype=np.uint8)
         # Encode the disc id at pixel (0,0) so the test can decode the read.
         a[0, 0] = (self.selected & 0xFF, (self.selected >> 8) & 0xFF, 0)
+        # Render a detail panel that changes with the selection, as the real game
+        # does.  Two things depend on it: the render gate waits for the title area
+        # to be lit, and GridNavigator reads an unchanged panel as a dropped click.
+        # A constant panel would stall the gate for its full timeout on every cell
+        # and make every read after the first look like a duplicate.
+        a[260:790, 1421:1860] = 40  # panel body, above RENDER_GATE_LUMA_FLOOR
+        a[270:385, 1421:1860] = 60  # title area the render gate samples
+        a[400, 1500] = (self.selected & 0xFF, (self.selected >> 8) & 0xFF, 0)
         # Draw a scrollbar thumb in the groove whose top edge tracks scroll_top,
         # so _scroll_down can confirm a scroll via _scrollbar_thumb_top.
         from youkai_ocr.grid import SCROLLBAR_TOP_Y
@@ -152,3 +160,63 @@ def test_scan_thumb_fallback_no_count(monkeypatch):
     # Without a count, the thumb fallback should still read a tidy full grid.
     n = 6 * 9
     assert _run_sim(n, monkeypatch, total=None) == list(range(n))
+
+
+# ── Dropped clicks ────────────────────────────────────────────────────────────
+# ZZZ intermittently swallows a grid click.  The render gate does not catch it —
+# the previous item's panel is fully rendered, just stale — so the cell used to be
+# recorded as a copy of its neighbour and the real item was never read.  The 1.0.7
+# engine phase lost 4 that way, recovered only because all 4 happened to be
+# equipped and were picked up by the location reconciliation.
+
+
+class _DroppingSim(_SimZZZ):
+    """Simulator that swallows the first click on each listed cell index."""
+
+    def __init__(self, n_discs: int, drop: set[int], drop_times: int = 1):
+        super().__init__(n_discs)
+        self._drop = dict.fromkeys(drop, drop_times)
+
+    def click(self, x: int, y: int) -> None:
+        col = round((x - DEFAULT_GRID.cell_0_0_center[0]) / DEFAULT_GRID.col_pitch)
+        srow = round((y - DEFAULT_GRID.cell_0_0_center[1]) / DEFAULT_GRID.row_pitch)
+        did = self._disc_id(self.scroll_top + srow, col)
+        if did is not None and self._drop.get(did, 0) > 0:
+            self._drop[did] -= 1
+            return  # click swallowed: selection (and so the panel) does not move
+        super().click(x, y)
+
+
+def _run_dropping(sim, monkeypatch):
+    import youkai_ocr.grid as grid_mod
+
+    monkeypatch.setattr(grid_mod.time, "sleep", lambda *_a, **_k: None)
+    calib = calibrate(sim.frame())
+    nav = GridNavigator(sim.frame, calib)
+    nav._scroll_to_top = lambda: setattr(sim, "scroll_top", 0)
+    nav._click = sim.click
+    got = []
+    for _idx, _row, frame in nav.scan(sim.n):
+        r, g, _ = frame.getpixel((0, 0))
+        got.append(r + (g << 8))
+    return got, nav
+
+
+def test_dropped_click_is_retried_and_the_cell_still_read(monkeypatch):
+    """One swallowed click must cost a re-click, not the item."""
+    sim = _DroppingSim(3 * 9, drop={4, 11, 20})
+    got, nav = _run_dropping(sim, monkeypatch)
+    assert got == list(range(3 * 9)), "a recoverable dropped click lost a disc"
+    assert nav.stuck_cells == []
+
+
+def test_permanently_stuck_cell_is_skipped_not_duplicated(monkeypatch):
+    """If re-clicks never take, the cell is reported — never recorded as its neighbour."""
+    from youkai_ocr.grid import PANEL_STUCK_RECLICKS
+
+    sim = _DroppingSim(3 * 9, drop={7}, drop_times=PANEL_STUCK_RECLICKS + 5)
+    got, nav = _run_dropping(sim, monkeypatch)
+    assert nav.stuck_cells == [7]
+    assert 7 not in got, "stuck cell was recorded anyway"
+    assert got.count(6) == 1, "the previous disc was duplicated into the stuck cell"
+    assert got == [d for d in range(3 * 9) if d != 7]

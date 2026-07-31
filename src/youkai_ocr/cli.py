@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -2241,6 +2242,19 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                     )
                     print(f"    {t.get('type')}: {scope} item(s) missing — {t.get('reason')}")
                 print("  Re-run before trusting the export for optimisation.")
+            # Same class of loss, different cause: a cell whose panel never changed is
+            # skipped, so the count is short by one per stuck cell.
+            stuck = [i for i in all_issues if i.get("status") == "stuck_panel"]
+            if stuck:
+                results["status"] = "ok_incomplete"
+                results["stuck_panel"] = stuck
+                by_type = Counter(i.get("type") for i in stuck)
+                print(
+                    f"\n  WARNING: {len(stuck)} cell(s) were skipped because the detail "
+                    "panel never changed after re-clicks "
+                    f"({', '.join(f'{v} {k}' for k, v in by_type.items())})."
+                )
+                print("  Those inventory positions are missing from the export.")
         elif error_info is not None:
             results["error"] = error_info
         try:
