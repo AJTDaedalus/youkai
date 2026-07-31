@@ -249,6 +249,22 @@ def scan_engines(
     if incomplete is not None:
         issues.append({"status": "incomplete_traversal", "type": "engine", **incomplete})
 
+    # Cells whose detail panel never changed: the frame belonged to the previous item,
+    # so nothing was recorded for this position rather than a duplicate of its
+    # neighbour.  Report each one — a skipped cell must never pass as a clean scan.
+    for cell in getattr(navigator, "stuck_cells", ()):
+        issues.append(
+            {
+                "cell": cell,
+                "type": "engine",
+                "status": "stuck_panel",
+                "message": (
+                    "detail panel never changed after re-clicks; cell skipped rather "
+                    "than recorded as a copy of the previous item"
+                ),
+            }
+        )
+
     return engines, issues
 
 

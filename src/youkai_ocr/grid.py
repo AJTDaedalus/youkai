@@ -98,6 +98,14 @@ SCROLL_STALL_WINDOWS = 3  # consecutive flat windows before declaring a real sta
 SCAN_MAX_ROWS = 400  # hard cap on count-free scrolling (≈ 3600 discs)
 SCAN_DEBUG_FRAMES = 30  # when debug_dir set, save this many read frames
 _PANEL_DBG_BBOX = (1421, 260, 1860, 790)  # detail-panel region for the log fingerprint
+# Re-clicks allowed when the detail panel comes back byte-identical to the previous
+# cell's.  The render gate only checks that the panel is *lit*, so a dropped click
+# sails through it: the panel is fully rendered, it just still shows the previous
+# item.  Two genuinely distinct copies of the same engine render different panels
+# (own level/refinement/equipped portrait), so an identical fingerprint means the
+# selection never moved — measured at 4 collisions in 1085 cells against 981
+# adjacent-identical records, all 4 of them real dropped clicks.
+PANEL_STUCK_RECLICKS = 3
 
 CaptureFunc = Callable[[], Image.Image]
 
@@ -165,6 +173,10 @@ class GridNavigator:
         # Set by scan() when traversal ends before the count is exhausted; None on a
         # complete pass.  Callers must check it — see _mark_incomplete.
         self.incomplete: dict | None = None
+        # Cell indices skipped because the detail panel never changed; the caller
+        # turns these into reported issues.  See _read_row's dropped-click retry.
+        self.stuck_cells: list[int] = []
+        self._last_panel_sig: str | None = None
         self._debug_dir = debug_dir
         if debug_dir is not None:
             debug_dir.mkdir(parents=True, exist_ok=True)
@@ -306,13 +318,40 @@ class GridNavigator:
             time.sleep(jitter(CLICK_DELAY_S))
             t_settled = time.monotonic()
             frame = self._wait_panel_render(self._capture())
+            # A panel identical to the previous cell's means the click was dropped:
+            # the selection never moved, so this frame still shows the PREVIOUS item.
+            # Reading it anyway records a duplicate and loses this cell entirely —
+            # silently, unless the real item happens to be equipped and gets picked
+            # up by the location reconciliation.  Re-click before believing it.
+            sig = self._panel_sig(frame)
+            stuck = False
+            for attempt in range(PANEL_STUCK_RECLICKS):
+                if sig != self._last_panel_sig:
+                    break
+                print(
+                    f"  [nav] panel unchanged at r{row}c{col} "
+                    f"(panel={sig}); re-click {attempt + 1}/{PANEL_STUCK_RECLICKS}",
+                    flush=True,
+                )
+                self._click(cx, cy)
+                time.sleep(jitter(CLICK_DELAY_S))
+                frame = self._wait_panel_render(self._capture())
+                sig = self._panel_sig(frame)
+            else:
+                stuck = sig == self._last_panel_sig
+            self._last_panel_sig = sig
             t_captured = time.monotonic()
             # Human-cadence floor: don't let a disc take less than this.
             floor = jitter(CAPTURE_MIN_INTERVAL_S, 0.15)
             extra = floor - (time.monotonic() - t_start)
             if extra > 0:
                 time.sleep(extra)
-            yield (col, frame, (t_start, t_clicked, t_settled, t_captured))
+            yield (col, frame, (t_start, t_clicked, t_settled, t_captured), stuck)
+
+    def _panel_sig(self, frame: Image.Image) -> str:
+        """Short fingerprint of the detail-panel region — the dropped-click signal."""
+        crop = frame.crop(self._calib.scale_bbox(_PANEL_DBG_BBOX))
+        return hashlib.md5(crop.tobytes()).hexdigest()[:6]
 
     def _thumb(self) -> float | None:
         """Current scrollbar thumb top edge in reference-Y (None if not found)."""
@@ -388,6 +427,8 @@ class GridNavigator:
         MUST check it — an early stop is silent data loss otherwise.
         """
         self.incomplete = None
+        self.stuck_cells = []
+        self._last_panel_sig = None
         self._t0 = time.monotonic()
         cols = self._grid.columns
         rows_visible = self._grid.rows_visible
@@ -397,19 +438,31 @@ class GridNavigator:
 
         def emit(row: int, cells: list):
             nonlocal cell_idx
-            for col, frame, (t0, _t1, _t2, t3) in cells:
+            for col, frame, (t0, _t1, _t2, t3), stuck in cells:
                 if self._debug_dir is not None and cell_idx < SCAN_DEBUG_FRAMES:
                     frame.save(self._debug_dir / f"read_{cell_idx:03d}_r{row}c{col}.png")
                 # panel fingerprint: same value on consecutive discs ⇒ selection
                 # didn't change (stuck/lagged); changing ⇒ reads are working.
-                pcrop = frame.crop(self._calib.scale_bbox(_PANEL_DBG_BBOX))
-                psig = hashlib.md5(pcrop.tobytes()).hexdigest()[:6]
+                psig = self._panel_sig(frame)
                 print(
                     f"  [nav] +{self._ms():>6}ms  d{cell_idx + 1:<4}  r{row}c{col}"
                     f"  panel={psig}"
                     f"  tot={int((t3 - t0) * 1000)}ms"
                 )
-                yield cell_idx, row, frame
+                if stuck:
+                    # The frame provably belongs to the previous cell.  Skip it: a
+                    # duplicate record is worse than a gap, because the gap is
+                    # reported and the duplicate is not.  cell_idx still advances so
+                    # positions stay aligned with the inventory.
+                    self.stuck_cells.append(cell_idx)
+                    print(
+                        f"  WARNING: cell {cell_idx + 1} (r{row}c{col}) — detail panel "
+                        f"never changed after {PANEL_STUCK_RECLICKS} re-clicks; skipping "
+                        f"rather than recording a copy of the previous item.",
+                        flush=True,
+                    )
+                else:
+                    yield cell_idx, row, frame
                 cell_idx += 1
 
         # ── Rewind viewport to the top (scrollbar-confirmed; primes the panel) ──
