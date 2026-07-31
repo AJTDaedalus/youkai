@@ -647,3 +647,46 @@ def test_live_ocr_reads_resolve(raw, expected):
 def test_new_aliases_do_not_steal_neighbouring_names(raw, expected):
     """The added entries sit near existing keys; exact names must still win."""
     assert normalize_agent(raw)[0] == expected
+
+
+# ── De-glued retry below the name floor ───────────────────────────────────────
+# The name bbox has to stay wide (every narrower variant OCRs worse), so panel
+# chrome bleeds into the read.  When a stray glyph lands hard against the first
+# letter — "Velina Airgid" arriving as "WVeling Airgid" — _clean_agent_name cannot
+# split it off and the match drops under the 85 floor.
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "WVeling Airgid",
+        "| WVeling Airgid' f{",  # as OCR'd, panel divider and emblem included
+    ],
+)
+def test_deglued_retry_recovers_velina(raw):
+    assert normalize_agent(raw)[0] == "Velina"
+
+
+def test_deglue_never_alters_a_real_name():
+    """No table entry starts with two consecutive capitals, so the retry is inert."""
+    from youkai_ocr.normalizer import _agents, _deglue_agent_name, _load
+
+    _load()
+    for display in _agents:
+        cleaned = " ".join(t for t in display.split() if len(t) >= 2)
+        assert _deglue_agent_name(cleaned) == cleaned, display
+
+
+def test_deglue_does_not_lower_the_floor():
+    """The retry may only raise a score, never admit an otherwise-rejected match."""
+    key, score = normalize_agent("Wvbtz Plmx")
+    assert key == ""
+    assert score < 85
+
+
+def test_every_table_name_still_maps_to_itself():
+    from youkai_ocr.normalizer import _agents, _load
+
+    _load()
+    for display, expected in _agents.items():
+        assert normalize_agent(display)[0] == expected, display
