@@ -21,7 +21,7 @@ eframe = { version = "0.34", default-features = false, features = [
 	"wayland",
 	"x11",
 ] }
-egui = "0.34"
+egui = "0.35"
 egui-file-dialog = "0.13.0"
 egui-notify = "0.22.0"
 egui_extras = { version = "0.34", features = ["image", "svg", "webp"] }
