@@ -269,9 +269,9 @@ Standard ZOD defines the base four fields. Youkai adds `talent`.
 
 ### Agent keys
 
-All agent ZOD keys for ZZZ v1.4 (54 agents):
+All agent ZOD keys for ZZZ v1.4+ (59 agents):
 
-`Alice`, `Anby`, `Anton`, `Aria`, `Astra`, `Banyue`, `Ben`, `Billy`, `Burnice`, `Caesar`, `Cissia`, `Corin`, `Dialyn`, `Ellen`, `Evelyn`, `Grace`, `Harumasa`, `Hugo`, `Jane`, `JuFufu`, `Koleda`, `Lighter`, `Lucia`, `Lucy`, `Lycaon`, `Manato`, `Miyabi`, `NangongYu`, `Nekomata`, `Nicole`, `OrphieMagus`, `PanYinhu`, `Piper`, `Promeia`, `Pulchra`, `Pyrois`, `Qingyi`, `Rina`, `Seed`, `Seth`, `Soldier0Anby`, `Soldier11`, `Soukaku`, `StarlightBilly`, `Sunna`, `Trigger`, `Vivian`, `Yanagi`, `YeShunguang`, `Yidhari`, `Yixuan`, `Yuzuha`, `Zhao`, `ZhuYuan`
+`Alice`, `Anby`, `Anton`, `Aria`, `Astra`, `Banyue`, `Ben`, `Billy`, `Burnice`, `Caesar`, `Cissia`, `Corin`, `Dialyn`, `Ellen`, `Evelyn`, `Grace`, `Harumasa`, `Hugo`, `Jane`, `JuFufu`, `Koleda`, `Lighter`, `Lucia`, `Lucy`, `Lycaon`, `Manato`, `Miyabi`, `NangongYu`, `Nekomata`, `Nicole`, `Norma`, `OrphieMagus`, `PanYinhu`, `Piper`, `Promeia`, `Pulchra`, `Pyrois`, `Qingyi`, `Remielle`, `Rina`, `Roxy`, `Seed`, `Seth`, `Sigrid`, `Soldier0Anby`, `Soldier11`, `Soukaku`, `StarlightBilly`, `Sunna`, `Trigger`, `Velina`, `Vivian`, `Yanagi`, `YeShunguang`, `Yidhari`, `Yixuan`, `Yuzuha`, `Zhao`, `ZhuYuan`
 
 ---
 

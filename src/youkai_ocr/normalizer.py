@@ -229,7 +229,7 @@ def _deglue_agent_name(cleaned: str) -> str:
     "WVeling Airgid", which cost 4 points and dropped the agent below the floor.
 
     Safe because no name in the table starts with two consecutive capitals — checked
-    over all 79 entries, and test_deglue_never_alters_a_real_name pins it.
+    over all 80 entries, and test_deglue_never_alters_a_real_name pins it.
     """
     tokens = cleaned.split()
     if tokens and len(tokens[0]) > 3 and tokens[0][:2].isupper():

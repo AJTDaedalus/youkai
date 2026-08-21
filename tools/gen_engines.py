@@ -49,8 +49,13 @@ NEWER_THAN_REF = {
     "Joyau Dore",
     "Ode of Resurrected Wings",
     "Sol Exuvia",
-    # Named in fairy's 2026-07-28 refresh; see EXTRA_ENGINES.
+    # Named in fairy's 2026-07-28 refresh; shipped as a modifier file on 2026-08-09.
     "Knight's Extolment",
+    # ZZZ 3.2, added by fairy's 2026-08-09 roster refresh; see EXTRA_ENGINES.
+    "Bloodmarrow Coffer",
+    "Catty Luck",
+    "Crimson Thirst",
+    "[Lunar] Semiluna",
 }
 
 # Modifier files are named from whatever fairy's kit curation captured first, which for
@@ -73,14 +78,20 @@ SOURCE_NAME_OVERRIDES = {"14158": "Ode of Resurrected Wings"}
 # It scores 53 against the nearest existing engine, well under normalize_engine's 80 floor,
 # so before this entry it was dropped as unknown_engine rather than mismatched.
 #
+# The 2026-08-09 refresh repeats the pattern with five w_engines rows (all LR
+# roster_uncovered in fairy's kit validator, so no modifier file for any of them).  Four
+# carry real names and are listed below; the fifth, hakushin_id 14162, is still the "..."
+# placeholder and is deliberately NOT listed — "..." is not a name the client ever prints,
+# and to_zod_key("...") is the empty string, which would poison the table.  Add it here
+# once fairy resolves the name, exactly as 14159 was.
+#
 # name -> rarity.  Remove an entry once fairy ships its modifier file; the duplicate check
 # below fails loudly if you forget, rather than letting the two sources drift.
 EXTRA_ENGINES = {
-    "Boisterous Echoes": "A",
-    "Chief Sidekick": "S",
-    "Joyau Dore": "S",
-    "Knight's Extolment": "S",
-    "Sol Exuvia": "S",
+    "Bloodmarrow Coffer": "A",
+    "Catty Luck": "A",
+    "Crimson Thirst": "S",
+    "[Lunar] Semiluna": "B",
 }
 
 
