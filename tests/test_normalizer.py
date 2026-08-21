@@ -578,11 +578,14 @@ def test_normalize_engine_rejects_the_unnamed_placeholder():
     key that fails the caller's empty-key gate in a way that looks like a normal match.
     Pin that the table has no such entry and that the text is rejected outright.
     """
-    from youkai_ocr.normalizer import _engines, _load
+    # Import the module, not the names: _load() rebinds the module globals to new
+    # dicts, so `from ... import _engines` captures the pre-load empty dict and the
+    # assertions below pass vacuously whenever this test runs in isolation.
+    import youkai_ocr.normalizer as norm
 
-    _load()
-    assert "..." not in _engines
-    assert "" not in _engines.values()
+    norm._load()
+    assert "..." not in norm._engines
+    assert "" not in norm._engines.values()
     key, _score = normalize_engine("...")
     assert key == ""
 
@@ -607,11 +610,11 @@ def test_claret_is_not_keyed_off_her_codename():
     """Guards the deliberate omission above: a guessed key cannot be corrected later,
     because optimizer data persists ZOD keys by value.
     """
-    from youkai_ocr.normalizer import _agents, _load
+    import youkai_ocr.normalizer as norm  # module, not names — see the note above
 
-    _load()
-    assert "Claret" not in _agents
-    assert "Claret" not in _agents.values()
+    norm._load()
+    assert "Claret" not in norm._agents
+    assert "Claret" not in norm._agents.values()
 
 
 def test_every_known_name_maps_to_itself():
@@ -738,12 +741,12 @@ def test_deglued_retry_recovers_velina(raw):
 
 def test_deglue_never_alters_a_real_name():
     """No table entry starts with two consecutive capitals, so the retry is inert."""
-    from youkai_ocr.normalizer import _agents, _deglue_agent_name, _load
+    import youkai_ocr.normalizer as norm  # module, not names — see the note above
 
-    _load()
-    for display in _agents:
+    norm._load()
+    for display in norm._agents:
         cleaned = " ".join(t for t in display.split() if len(t) >= 2)
-        assert _deglue_agent_name(cleaned) == cleaned, display
+        assert norm._deglue_agent_name(cleaned) == cleaned, display
 
 
 def test_deglue_does_not_lower_the_floor():
@@ -754,8 +757,8 @@ def test_deglue_does_not_lower_the_floor():
 
 
 def test_every_table_name_still_maps_to_itself():
-    from youkai_ocr.normalizer import _agents, _load
+    import youkai_ocr.normalizer as norm  # module, not names — see the note above
 
-    _load()
-    for display, expected in _agents.items():
+    norm._load()
+    for display, expected in norm._agents.items():
         assert normalize_agent(display)[0] == expected, display
