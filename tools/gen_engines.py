@@ -49,8 +49,13 @@ NEWER_THAN_REF = {
     "Joyau Dore",
     "Ode of Resurrected Wings",
     "Sol Exuvia",
-    # Named in fairy's 2026-07-28 refresh; see EXTRA_ENGINES.
+    # Named in fairy's 2026-07-28 refresh; shipped as a modifier file on 2026-08-09.
     "Knight's Extolment",
+    # ZZZ 3.2, added by fairy's 2026-08-09 roster refresh; see EXTRA_ENGINES.
+    "Bloodmarrow Coffer",
+    "Catty Luck",
+    "Crimson Thirst",
+    "[Lunar] Semiluna",
 }
 
 # Modifier files are named from whatever fairy's kit curation captured first, which for
@@ -73,14 +78,30 @@ SOURCE_NAME_OVERRIDES = {"14158": "Ode of Resurrected Wings"}
 # It scores 53 against the nearest existing engine, well under normalize_engine's 80 floor,
 # so before this entry it was dropped as unknown_engine rather than mismatched.
 #
-# name -> rarity.  Remove an entry once fairy ships its modifier file; the duplicate check
-# below fails loudly if you forget, rather than letting the two sources drift.
+# The 2026-08-09 refresh repeats the pattern with five w_engines rows (all LR
+# roster_uncovered in fairy's kit validator, so no modifier file for any of them).  Four
+# carry real names and are listed below; the fifth, hakushin_id 14162, is still the "..."
+# placeholder and is deliberately NOT listed — "..." is not a name the client ever prints,
+# and to_zod_key("...") is the empty string, which would poison the table.  Add it here
+# once fairy resolves the name, exactly as 14159 was.
+#
+# Keyed by hakushin_id (fairy's modifier files call the same number source_id), NOT by
+# display name, for the same reason SOURCE_NAME_OVERRIDES is: the id is stable across a
+# rename and the name by definition is not.  A name-keyed guard cannot fire on the case
+# it exists for — fairy shipping the modifier file under a *different* name, as 14158 did
+# ("Poem of the Empty Feather Return" -> "Ode of Resurrected Wings") — and would emit both
+# spellings under two different ZOD keys with no error.  That matters here: every entry
+# below is an UNRELEASED row in fairy's coverage ledger (beta index only), which is exactly
+# the population most likely to be renamed at release.
+#
+# id -> (display name, rarity).  Remove an entry once fairy ships its modifier file; the
+# duplicate check below fails loudly if you forget, rather than letting the two sources
+# drift.
 EXTRA_ENGINES = {
-    "Boisterous Echoes": "A",
-    "Chief Sidekick": "S",
-    "Joyau Dore": "S",
-    "Knight's Extolment": "S",
-    "Sol Exuvia": "S",
+    "12016": ("[Lunar] Semiluna", "B"),
+    "13017": ("Catty Luck", "A"),
+    "13021": ("Bloodmarrow Coffer", "A"),
+    "14161": ("Crimson Thirst", "S"),
 }
 
 
@@ -89,9 +110,11 @@ def main() -> None:
 
     # name -> (key, rarity)
     engines: dict[str, tuple[str, str]] = {}
+    modifier_ids: dict[str, str] = {}  # source_id -> name, for the EXTRA_ENGINES guard
     for f in sorted(glob.glob(str(W_ENGINES / "*.json"))):
         d = json.loads(Path(f).read_text())
-        name = SOURCE_NAME_OVERRIDES.get(str(d.get("source_id")), d["source_name"])
+        source_id = str(d.get("source_id"))
+        name = SOURCE_NAME_OVERRIDES.get(source_id, d["source_name"])
         rarity = d["rarity"]
         key = KEY_OVERRIDES.get(name, to_zod_key(name))
         if key not in ref_keys and name not in NEWER_THAN_REF:
@@ -99,13 +122,22 @@ def main() -> None:
                 f"ERROR: key {key!r} for {name!r} not in fairy canonical keyset "
                 f"and not in NEWER_THAN_REF allowlist. Resolve before generating."
             )
+        modifier_ids[source_id] = name
         engines[name] = (key, rarity)
 
-    for name, rarity in EXTRA_ENGINES.items():
+    for source_id, (name, rarity) in EXTRA_ENGINES.items():
+        if source_id in modifier_ids:
+            shipped = modifier_ids[source_id]
+            renamed = "" if shipped == name else f" — it shipped as {shipped!r}, not {name!r}"
+            raise SystemExit(
+                f"ERROR: hakushin_id {source_id} ({name!r}) is in EXTRA_ENGINES but fairy "
+                f"now has a modifier file for it{renamed}. Drop it from EXTRA_ENGINES so "
+                f"fairy stays the single source."
+            )
         if name in engines:
             raise SystemExit(
-                f"ERROR: {name!r} is in EXTRA_ENGINES but fairy now has a modifier file "
-                f"for it. Drop it from EXTRA_ENGINES so fairy stays the single source."
+                f"ERROR: EXTRA_ENGINES name {name!r} (id {source_id}) collides with a "
+                f"modifier-file engine carrying a different id. Resolve before generating."
             )
         key = KEY_OVERRIDES.get(name, to_zod_key(name))
         if key not in ref_keys and name not in NEWER_THAN_REF:

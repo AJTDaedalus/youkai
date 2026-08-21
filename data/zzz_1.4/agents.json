@@ -2,10 +2,11 @@
   "_meta": {
     "game_version": "1.4+",
     "description": "ZZZ agent display names (English PC client) → ZOD key. Both short names and full in-game names are accepted. ZOD keys are sourced from the fairy DB (to_zod_key of the canonical short name). Patch by adding entries; do not change existing keys (optimizer data will reference them).",
-    "last_updated": "2026-07-30",
+    "last_updated": "2026-08-21",
     "source": "fairy PostgreSQL agents table",
     "2026-07-27_update": "Added Remielle + Sigrid from the fairy agents table. No full-name aliases: Remielle's full_name equals her short name, and Sigrid's is the raw asset codename (Avatar_Female_Size03_Sigrid_En), which never appears on screen. Also added Norma (hakushin_id 1571), a pre-existing omission rather than new 3.1 content: she was created in fairy 2026-05-21 alongside Velina/Pyrois/Promeia/Cissia/Nangong Yu/Aria/Sunna/Dialyn/Starlight - Billy, all nine of which were already present, and was the only member of that batch missed by the 2026-06-09 regeneration. She scored 61.5 against the nearest existing agent, below the 85 floor, so she was rejected as unknown_agent rather than mismatched. full_name equals her short name, so no alias.",
-    "2026-07-30_update": "Live-client corrections from live_20260730_085008. Added full name \"Remielle Dan\": the 2026-07-27 note claimed her full_name equals her short name, but the English PC client renders \"Remielle Dan\" on the agent detail page, so every scan read a name absent from this table and scored 84.0 against the 85 floor -> unknown_agent. Added OCR alias \"Gingyi\" alongside the existing Ginayi/Oinayi: Tesseract reads Qingyi's Q as G, scoring 83.3 and dropping her from the export."
+    "2026-07-30_update": "Live-client corrections from live_20260730_085008. Added full name \"Remielle Dan\": the 2026-07-27 note claimed her full_name equals her short name, but the English PC client renders \"Remielle Dan\" on the agent detail page, so every scan read a name absent from this table and scored 84.0 against the 85 floor -> unknown_agent. Added OCR alias \"Gingyi\" alongside the existing Ginayi/Oinayi: Tesseract reads Qingyi's Q as G, scoring 83.3 and dropping her from the export.",
+    "2026-08-21_update": "Added Roxy from fairy's 2026-08-09 roster refresh (hakushin_id 1621, S/wind/stun, Roscaelifer). Her agents-table `name` is the raw asset codename Avatar_Female_Size01_Pryce and `full_name` is the English name Roxy \u2014 the reverse of the usual layout, so the short name here comes from full_name and there is no alias to add. She scored 45.0 against the nearest existing agent, far below the 85 floor, so before this entry she was rejected as unknown_agent. The same refresh added hakushin_id 1611, whose `name` AND `full_name` are both the codename Avatar_Female_Size02_Claret (S/electric/attack, Roscaelifer); no English display name exists in fairy yet, and Pryce -> Roxy proves the codename is not a safe stand-in for it, so 1611 is deliberately omitted rather than keyed off a guess (a wrong key here cannot be corrected later \u2014 optimizer data persists keys by value). Add her when fairy resolves the name."
   },
   "agents": {
     "Alice": "Alice",
@@ -66,6 +67,7 @@
     "Remielle Dan": "Remielle",
     "Rina": "Rina",
     "Alexandrina": "Rina",
+    "Roxy": "Roxy",
     "Seed": "Seed",
     "Seth": "Seth",
     "Seth Lowe": "Seth",

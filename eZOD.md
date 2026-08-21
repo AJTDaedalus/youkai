@@ -83,7 +83,7 @@ Importers that ignore unknown fields are unaffected. Importers that read `talent
 
 ### Disc set keys
 
-All disc set keys for ZZZ v1.4:
+All disc set keys for ZZZ v1.4+ (30 sets):
 
 | Key | Display name |
 |-----|-------------|
@@ -94,12 +94,13 @@ All disc set keys for ZZZ v1.4:
 | `ChaoticMetal` | Chaotic Metal |
 | `DawnsBloom` | Dawn's Bloom |
 | `FangedMetal` | Fanged Metal |
+| `FeatheredFate` | Feathered Fate |
 | `FreedomBlues` | Freedom Blues |
 | `HormonePunk` | Hormone Punk |
 | `InfernoMetal` | Inferno Metal |
 | `KingOfTheSummit` | King of the Summit |
 | `MoonlightLullaby` | Moonlight Lullaby |
-| `NotesFromTheChained` | Notes from the Chained |
+| `NotesFromTheChained` | Notes From the Chained |
 | `PhaethonsMelody` | Phaethon's Melody |
 | `PolarMetal` | Polar Metal |
 | `ProtoPunk` | Proto Punk |
@@ -109,9 +110,12 @@ All disc set keys for ZZZ v1.4:
 | `ShockstarDisco` | Shockstar Disco |
 | `SoulRock` | Soul Rock |
 | `SwingJazz` | Swing Jazz |
+| `TheSkyAblaze` | The Sky Ablaze |
+| `ThornedRose` | Thorned Rose |
 | `ThunderMetal` | Thunder Metal |
 | `WhiteWaterBallad` | White Water Ballad |
 | `WoodpeckerElectro` | Woodpecker Electro |
+| `WutheringSalon` | Wuthering Salon |
 | `YunkuiTales` | Yunkui Tales |
 
 ### Slot keys
@@ -196,9 +200,9 @@ for 18 Anomaly Proficiency (`anomProf`), `19` for flat ATK (`atk`).
 
 ### Engine keys
 
-All W-Engine ZOD keys for ZZZ v1.4 (46 engines):
+All W-Engine ZOD keys for ZZZ v1.4+ (99 engines):
 
-`BashfulDemon`, `BigCylinder`, `BoxCutter`, `BunnyBand`, `CannibalGrin`, `DeepSeaVisitor`, `DemaraBatteryMarkII`, `DoorOfLimitation`, `ElectroLipGloss`, `FinalCurtain`, `FusionCompiler`, `GildedBlossom`, `GrillOWisp`, `HailstormShrine`, `HellfireGears`, `Housekeeper`, `IdentityBase`, `IdentityInflection`, `KaboomTheCannon`, `LunarDecrescent`, `LunarNoviluna`, `LunarPleniluna`, `MagneticStormAlpha`, `MagneticStormBravo`, `MagneticStormCharlie`, `OriginalTransmorpher`, `Peacekeeper`, `PreciousFossilizedCore`, `RainforestGourmet`, `ReverbMarkI`, `ReverbMarkII`, `ReverbMarkIII`, `RoaringRide`, `SharpenedStinger`, `SliceOfTime`, `SpringEmbrace`, `StarlightEngine`, `SteamOven`, `TheBrimstone`, `TheRestrained`, `TheVault`, `TusksOfFury`, `VortexArrow`, `VortexHatchet`, `VortexRevolver`, `WeepingCradle`
+`AngelInTheShell`, `BashfulDemon`, `BellicoseBlaze`, `BigCylinder`, `BlazingLaurel`, `BloodmarrowCoffer`, `BoisterousEchoes`, `BoxCutter`, `BunnyBand`, `CannonRotor`, `CattyLuck`, `CauldronOfClarity`, `ChiefSidekick`, `CinderCobalt`, `CloudcleaveRadiance`, `CordisGermina`, `CrimsonThirst`, `DeepSeaVisitor`, `DemaraBatteryMarkII`, `DreamlitHearth`, `DrillRigRedAxis`, `ElectroLipGloss`, `ElegantVanity`, `FlamemakerShaker`, `FlightOfFancy`, `FrostfallSickle`, `FusionCompiler`, `GildedBlossom`, `GrillOWisp`, `HailstormShrine`, `HalfSugarBunny`, `HeartstringNocturne`, `HellfireGears`, `Housekeeper`, `IceJadeTeapot`, `IdentityBase`, `IdentityInflection`, `JoyauDore`, `KaboomTheCannon`, `KnightsExtolment`, `KrakensCradle`, `LunarDecrescent`, `LunarNoviluna`, `LunarPleniluna`, `LunarSemiluna`, `MagneticStormAlpha`, `MagneticStormBravo`, `MagneticStormCharlie`, `MarcatoDesire`, `Metanukimorphosis`, `MyriadEclipse`, `NeonFantasies`, `OdeOfResurrectedWings`, `OriginalTransmorpher`, `PeacekeeperSpecialized`, `PracticedPerfection`, `PreciousFossilizedCore`, `PuzzleSphere`, `QingmingBirdcage`, `RadiowaveJourney`, `RainforestGourmet`, `ReelProjector`, `ReverbMarkI`, `ReverbMarkII`, `ReverbMarkIII`, `RiotSuppressorMarkVI`, `RoaringFurnace`, `RoaringRide`, `SerpentineSeeker`, `SeveredInnocence`, `SharpenedStinger`, `SixShooter`, `SliceOfTime`, `SolExuvia`, `SpectralGaze`, `SpringEmbrace`, `StarlightEngine`, `StarlightEngineReplica`, `StarlightRiderFaceplate`, `SteamOven`, `SteelCushion`, `StreetSuperstar`, `TheBrimstone`, `TheRestrained`, `TheSimmeringPot`, `TheVault`, `Thoughtbop`, `Timeweaver`, `TremorTrigramVessel`, `TusksOfFury`, `UnfetteredGameBall`, `VortexArrow`, `VortexHatchet`, `VortexRevolver`, `WeepingCradle`, `WeepingGemini`, `WrathfulVajra`, `YesterdayCalls`, `ZanshinHerbCase`
 
 ---
 
@@ -269,9 +273,9 @@ Standard ZOD defines the base four fields. Youkai adds `talent`.
 
 ### Agent keys
 
-All agent ZOD keys for ZZZ v1.4 (54 agents):
+All agent ZOD keys for ZZZ v1.4+ (59 agents):
 
-`Alice`, `Anby`, `Anton`, `Aria`, `Astra`, `Banyue`, `Ben`, `Billy`, `Burnice`, `Caesar`, `Cissia`, `Corin`, `Dialyn`, `Ellen`, `Evelyn`, `Grace`, `Harumasa`, `Hugo`, `Jane`, `JuFufu`, `Koleda`, `Lighter`, `Lucia`, `Lucy`, `Lycaon`, `Manato`, `Miyabi`, `NangongYu`, `Nekomata`, `Nicole`, `OrphieMagus`, `PanYinhu`, `Piper`, `Promeia`, `Pulchra`, `Pyrois`, `Qingyi`, `Rina`, `Seed`, `Seth`, `Soldier0Anby`, `Soldier11`, `Soukaku`, `StarlightBilly`, `Sunna`, `Trigger`, `Vivian`, `Yanagi`, `YeShunguang`, `Yidhari`, `Yixuan`, `Yuzuha`, `Zhao`, `ZhuYuan`
+`Alice`, `Anby`, `Anton`, `Aria`, `Astra`, `Banyue`, `Ben`, `Billy`, `Burnice`, `Caesar`, `Cissia`, `Corin`, `Dialyn`, `Ellen`, `Evelyn`, `Grace`, `Harumasa`, `Hugo`, `Jane`, `JuFufu`, `Koleda`, `Lighter`, `Lucia`, `Lucy`, `Lycaon`, `Manato`, `Miyabi`, `NangongYu`, `Nekomata`, `Nicole`, `Norma`, `OrphieMagus`, `PanYinhu`, `Piper`, `Promeia`, `Pulchra`, `Pyrois`, `Qingyi`, `Remielle`, `Rina`, `Roxy`, `Seed`, `Seth`, `Sigrid`, `Soldier0Anby`, `Soldier11`, `Soukaku`, `StarlightBilly`, `Sunna`, `Trigger`, `Velina`, `Vivian`, `Yanagi`, `YeShunguang`, `Yidhari`, `Yixuan`, `Yuzuha`, `Zhao`, `ZhuYuan`
 
 ---
 
@@ -298,6 +302,11 @@ Examples:
 
 Agent and engine keys are derived from canonical short names in the Youkai data files (`data/zzz_1.4/agents.json`, `data/zzz_1.4/engines.json`). **Do not recompute keys from raw display strings** — use the data files as the authority.
 
+> **Keeping the lists honest:** the disc-set, engine and agent enumerations above are
+> copies of `data/zzz_1.4/*.json` as of the last content sync, kept for readability.
+> Regenerate all three from the data files whenever content is added — a partial update
+> leaves the doc advertising keys the scanner never emits.
+>
 > **Downstream note:** these keys are Youkai-canonical. They follow the ZOD
 > PascalCase convention but are **not** guaranteed byte-identical to any other
 > tool's character/engine keys. To build a `key → display name` map, read
