@@ -446,6 +446,24 @@ def _extract_disc(
         t1 = recognizer.read_line(val_crop, "white_text_on_dark").strip()
         t2 = recognizer.read_line(val_big, "white_text_on_dark").strip()
         v1, v2 = parse_numeric(t1), parse_numeric(t2)
+        if name_text and v1 is None and v2 is None:
+            # A 0-roll substat shows its bare base value, so the crop holds one glyph
+            # ("PEN 9"), and read_line's psm 7 discards a lone glyph as noise however
+            # clean the pixels are. Both scales then fail identically, the row kept its
+            # name and took val=0.0, and the disc failed the lattice check and was
+            # dropped from the export entirely (T13) — 65 discs on the 2026-08-22 live
+            # run, every failing value a bare base. psm 8 reads the same crop exactly.
+            # Re-vote across both scales so the arbitration below is unchanged: this
+            # only supplies numbers where there were none.
+            #
+            # Guarded on name_text because the loop terminates on a row with NEITHER a
+            # name nor a value, and psm 8 is aggressive enough to read a number out of
+            # an empty row's noise (unguarded, it turned golden disc_0600's two absent
+            # rows into substats keyed ""). A row that produced no name through all
+            # three passes of the name ladder is the end of the list.
+            t1 = recognizer.read_digits_word(val_crop, "white_text_on_dark").strip()
+            t2 = recognizer.read_digits_word(val_big, "white_text_on_dark").strip()
+            v1, v2 = parse_numeric(t1), parse_numeric(t2)
         pct_seen = "%" in t1 or "%" in t2
 
         if not name_text and v1 is None and v2 is None:

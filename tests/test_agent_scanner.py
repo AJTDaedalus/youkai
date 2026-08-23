@@ -65,6 +65,9 @@ class _MockRecognizer:
     def read_digits(self, img: Image.Image, profile: str) -> str:
         return self._lines.pop(0) if self._lines else ""
 
+    def read_digits_word(self, img: Image.Image, profile: str) -> str:
+        return self._lines.pop(0) if self._lines else ""
+
     def read_slot(self, img: Image.Image, profile: str) -> str:
         return self._lines.pop(0) if self._lines else ""
 

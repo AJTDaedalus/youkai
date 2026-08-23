@@ -302,6 +302,9 @@ class _FakeRecognizer:
     def read_digits(self, img, profile):
         return ""
 
+    def read_digits_word(self, img, profile):
+        return ""
+
     def read_slot(self, img, profile):
         return ""
 
@@ -395,6 +398,9 @@ class _ScriptedRecognizer:
         return ""
 
     def read_digits(self, img, profile):
+        return ""
+
+    def read_digits_word(self, img, profile):
         return ""
 
     def read_slot(self, img, profile):
@@ -501,6 +507,9 @@ class _EquipStubRecognizer:
         return "Lv.15"
 
     def read_digits(self, img, profile):
+        return ""
+
+    def read_digits_word(self, img, profile):
         return ""
 
     def read_slot(self, img, profile):
@@ -744,12 +753,16 @@ def test_scan_single_frame_t12_ocr_reliability_fixes(disc_id, review_conf_key):
         )
 
 
-def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():
-    """disc_0696: crit_dmg_ 48.0->4.8 is a repairable decimal-loss misread, but
-    pen 0.0 has no roll-suffix/lattice discriminator — DESIGN's repair policy
-    forbids inventing a value for an unreadable zero row. Both must come out
-    of the real call path correctly: one repaired, one left at value 0 but
-    flagged low-confidence (never silently exported as a real 0-roll pen)."""
+def test_scan_single_frame_repairs_decimal_loss_and_reads_the_lone_digit():
+    """disc_0696: crit_dmg_ 48.0->4.8 is a repairable decimal-loss misread, and
+    pen is a 0-roll row whose bare "9" psm 7 could not see at all.
+
+    This test used to assert pen came out at 0.0 — the value the repair policy
+    correctly refused to guess, since no roll-suffix or lattice evidence pins it.
+    The premise was that the pixels were unreadable; they were not, only psm 7's
+    line assumption was. The psm 8 fallback reads the glyph directly, so pen now
+    lands on the fixture's own ground truth (labels.json records "pen 0.0->true 9")
+    without anything being inferred. The crit_dmg_ repair must still fire."""
     from youkai_ocr.disc_scanner import scan_single_frame
 
     item = _load_repair_case("disc_0696")
@@ -768,9 +781,11 @@ def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():
 
     pen_sub = disc.substats[1]
     assert pen_sub.key == "pen"
-    assert pen_sub.value == 0.0  # left untouched — never a silent guess
-    assert pen_sub.value != next(s["value"] for s in expect["substats"] if s["key"] == "pen")
-    assert conf["substat_2"] < 70.0  # but flagged, not silently wrong
+    # Read from the pixels by the psm 8 fallback, not inferred: it equals the
+    # fixture's labelled true value.
+    assert pen_sub.value == next(s["value"] for s in expect["substats"] if s["key"] == "pen")
+    assert pen_sub.value == 9.0
+    assert not [r for r in conf.get("_repairs", []) if r["field"] == "substat[1]"]
 
 
 def test_scan_single_frame_dropped_rows_no_repair_but_residual_violation():

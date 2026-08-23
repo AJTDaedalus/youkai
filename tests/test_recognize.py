@@ -170,6 +170,9 @@ class _StubRecognizer:
     def read_digits(self, img: Image.Image, profile: str) -> str:
         return "42"
 
+    def read_digits_word(self, img: Image.Image, profile: str) -> str:
+        return "42"
+
     def read_slot(self, img: Image.Image, profile: str) -> str:
         return "[3]"
 

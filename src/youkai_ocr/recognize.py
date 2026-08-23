@@ -111,6 +111,10 @@ class TextRecognizer(Protocol):
         """Digit-optimized pass; returns only ``[0-9.%+]`` characters."""
         ...
 
+    def read_digits_word(self, img: Image.Image, profile: str) -> str:
+        """Single-*word* digit pass (psm 8), for a crop holding one glyph."""
+        ...
+
     def read_slot(self, img: Image.Image, profile: str) -> str:
         """Sparse-text pass whitelisted to digits + brackets (psm 11).
 
@@ -179,6 +183,11 @@ def resolve_tesseract() -> tuple[str | None, Path | None]:
 _GENERAL_CONFIG = "--oem 1 --psm 6"
 _LINE_CONFIG = "--oem 1 --psm 7"
 _DIGIT_CONFIG = "--oem 1 --psm 7 -c tessedit_char_whitelist=0123456789.%+"
+# PSM 7 assumes a *line* and drops a lone glyph as noise: a substat value of "9" alone
+# in its crop reads as "" no matter how clean the pixels are (verified on the 2026-08-22
+# live run — 77 such values, every one empty at both scales, all 77 read correctly by
+# PSM 8). PSM 8 treats the crop as a single word.
+_DIGIT_WORD_CONFIG = "--oem 1 --psm 8 -c tessedit_char_whitelist=0123456789.%+"
 # Sparse-text pass restricted to digits + brackets — used by the disc slot
 # panel fallback (G5), where the slot "[N]" sits alone in a noisy sub-region.
 _SLOT_CONFIG = "--oem 1 --psm 11 -c tessedit_char_whitelist=0123456789[]"
@@ -229,6 +238,18 @@ class TesseractRecognizer:
     def read_digits(self, img: Image.Image, profile: str) -> str:
         processed = preprocess(img, profile)
         raw = self._tess.image_to_string(processed, lang=self._lang, config=_DIGIT_CONFIG).strip()
+        return _DIGIT_STRIP.sub("", raw)
+
+    def read_digits_word(self, img: Image.Image, profile: str) -> str:
+        """Read a numeric field as a single *word* (psm 8) rather than a line.
+
+        The fallback for a value crop holding one glyph, which ``read_line``'s psm 7
+        discards. Keeps the digit whitelist so a stray icon edge cannot become a letter.
+        """
+        processed = preprocess(img, profile)
+        raw = self._tess.image_to_string(
+            processed, lang=self._lang, config=_DIGIT_WORD_CONFIG
+        ).strip()
         return _DIGIT_STRIP.sub("", raw)
 
     def read_slot(self, img: Image.Image, profile: str) -> str:
