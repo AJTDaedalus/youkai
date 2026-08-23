@@ -231,3 +231,35 @@ def test_make_recognizer_tesseract_raises_runtime_when_missing(monkeypatch):
     )
     with pytest.raises(RuntimeError):
         make_recognizer("tesseract")
+
+
+def test_protocol_stays_satisfiable_without_read_digits_word():
+    """read_digits_word is an optional capability, not part of the Protocol.
+
+    TextRecognizer is @runtime_checkable and both scanners dispatch on
+    isinstance(engine, TextRecognizer), so requiring a new method here would make
+    every recognizer written against the previous interface fail that check and fall
+    through to make_recognizer(<object>) -> "ValueError: Unknown OCR engine". The disc
+    scanner probes with getattr instead; a recognizer without it just does not get the
+    psm-8 value fallback.
+    """
+    from youkai_ocr.recognize import TextRecognizer
+
+    class LegacyRecognizer:
+        def read_text(self, img, profile):
+            return ""
+
+        def read_line(self, img, profile):
+            return ""
+
+        def read_digits(self, img, profile):
+            return ""
+
+        def read_slot(self, img, profile):
+            return ""
+
+        def read_cinema(self, img):
+            return ""
+
+    assert isinstance(LegacyRecognizer(), TextRecognizer)
+    assert not hasattr(LegacyRecognizer(), "read_digits_word")

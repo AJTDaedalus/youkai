@@ -97,7 +97,16 @@ def _upscale(arr: np.ndarray) -> np.ndarray:
 
 @runtime_checkable
 class TextRecognizer(Protocol):
-    """Engine-agnostic text recognition interface."""
+    """Engine-agnostic text recognition interface.
+
+    ``read_digits_word`` is deliberately absent: this Protocol is
+    ``@runtime_checkable`` and both scanners dispatch on
+    ``isinstance(engine, TextRecognizer)``, so adding a method here would make every
+    recognizer written against the previous interface fail that check and fall through
+    to ``make_recognizer(<object>)`` — a ``ValueError: Unknown OCR engine`` rather than
+    anything diagnosable. The disc scanner probes for it with ``getattr`` instead, and
+    an implementation without it simply does not get the psm-8 value fallback.
+    """
 
     def read_text(self, img: Image.Image, profile: str) -> str:
         """Return raw recognized text from *img* after preprocessing *profile*."""
@@ -109,10 +118,6 @@ class TextRecognizer(Protocol):
 
     def read_digits(self, img: Image.Image, profile: str) -> str:
         """Digit-optimized pass; returns only ``[0-9.%+]`` characters."""
-        ...
-
-    def read_digits_word(self, img: Image.Image, profile: str) -> str:
-        """Single-*word* digit pass (psm 8), for a crop holding one glyph."""
         ...
 
     def read_slot(self, img: Image.Image, profile: str) -> str:
