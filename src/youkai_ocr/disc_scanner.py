@@ -421,6 +421,8 @@ def _extract_disc(
     # Never break on a single empty OCR read — short names ("HP") and dim rows
     # ("PEN") read empty on the bright pass and were silently dropped pre-F2.
     substats: list[ZodSubstat] = []
+    # Optional capability, not part of the TextRecognizer Protocol — see the note there.
+    read_digits_word = getattr(recognizer, "read_digits_word", None)
     for i, (name_rel, val_rel) in enumerate(_SUBSTAT_RELS):
         name_bbox = _abs_bbox(name_rel, panel_origin)
         val_bbox = _abs_bbox(val_rel, panel_origin)
@@ -447,6 +449,33 @@ def _extract_disc(
         t2 = recognizer.read_line(val_big, "white_text_on_dark").strip()
         v1, v2 = parse_numeric(t1), parse_numeric(t2)
         pct_seen = "%" in t1 or "%" in t2
+        psm8_value = False
+        if v1 is None and v2 is None and read_digits_word is not None:
+            # A 0-roll substat shows its bare base value, so the crop holds one glyph
+            # ("PEN 9"), and read_line's psm 7 discards a lone glyph as noise however
+            # clean the pixels are. Both scales then fail identically, the row kept its
+            # name and took val=0.0, and the disc failed the lattice check and was
+            # dropped from the export entirely (T13) — 65 discs on the 2026-08-22 live
+            # run, every failing value a bare base. psm 8 reads the same crop exactly.
+            # Re-vote across both scales so the arbitration below is unchanged: this
+            # only supplies numbers where there were none.
+            #
+            # Deliberately NOT guarded on name_text. The row whose name is too dim for
+            # all three passes of the name ladder is not necessarily the end of the list
+            # — golden disc_0600's third row is a real "PEN 9" with an unreadable name
+            # and a clean value — and guarding here made the empty-value break below
+            # fire on it, discarding that row *and* the fully legible "ATK 3%" after it.
+            # Probing every golden panel: psm 8 returns nothing on a blank crop, nothing
+            # on all 24 "Set Effect" footer rows, and a number on exactly one nameless
+            # row — that real PEN. It does not invent values out of an empty row.
+            f1 = read_digits_word(val_crop, "white_text_on_dark").strip()
+            f2 = read_digits_word(val_big, "white_text_on_dark").strip()
+            v1, v2 = parse_numeric(f1), parse_numeric(f2)
+            # OR, never overwrite: psm 7 can return a digit-free string that still
+            # carries the '%' ("%", ".%"), and pct_seen is the flat-vs-percent tie-break
+            # in disc_rules._resolve_candidates — losing it can flip atk <-> atk_.
+            pct_seen = pct_seen or "%" in f1 or "%" in f2
+            psm8_value = v1 is not None or v2 is not None
 
         if not name_text and v1 is None and v2 is None:
             break  # genuinely empty row — end of the substat list
@@ -492,6 +521,12 @@ def _extract_disc(
                 key = flat_key
         if val is not None and not _value_plausible(key, val):
             stat_conf = min(stat_conf, 30.0)  # out-of-range — never silent
+        if psm8_value:
+            # Same policy as every other fallback in this file (dim main value, dim
+            # substat name): a value only the most aggressive pass could read is never
+            # fully trusted, so it surfaces in the issues report for review rather than
+            # being indistinguishable from a clean dual-scale agreement.
+            stat_conf = min(stat_conf, 65.0)
 
         conf[f"substat_{i + 1}"] = stat_conf
         substats.append(ZodSubstat(key=key, value=val))

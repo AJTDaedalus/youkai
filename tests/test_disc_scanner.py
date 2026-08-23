@@ -302,6 +302,9 @@ class _FakeRecognizer:
     def read_digits(self, img, profile):
         return ""
 
+    def read_digits_word(self, img, profile):
+        return ""
+
     def read_slot(self, img, profile):
         return ""
 
@@ -395,6 +398,9 @@ class _ScriptedRecognizer:
         return ""
 
     def read_digits(self, img, profile):
+        return ""
+
+    def read_digits_word(self, img, profile):
         return ""
 
     def read_slot(self, img, profile):
@@ -501,6 +507,9 @@ class _EquipStubRecognizer:
         return "Lv.15"
 
     def read_digits(self, img, profile):
+        return ""
+
+    def read_digits_word(self, img, profile):
         return ""
 
     def read_slot(self, img, profile):
@@ -744,12 +753,16 @@ def test_scan_single_frame_t12_ocr_reliability_fixes(disc_id, review_conf_key):
         )
 
 
-def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():
-    """disc_0696: crit_dmg_ 48.0->4.8 is a repairable decimal-loss misread, but
-    pen 0.0 has no roll-suffix/lattice discriminator — DESIGN's repair policy
-    forbids inventing a value for an unreadable zero row. Both must come out
-    of the real call path correctly: one repaired, one left at value 0 but
-    flagged low-confidence (never silently exported as a real 0-roll pen)."""
+def test_scan_single_frame_repairs_decimal_loss_and_reads_the_lone_digit():
+    """disc_0696: crit_dmg_ 48.0->4.8 is a repairable decimal-loss misread, and
+    pen is a 0-roll row whose bare "9" psm 7 could not see at all.
+
+    This test used to assert pen came out at 0.0 — the value the repair policy
+    correctly refused to guess, since no roll-suffix or lattice evidence pins it.
+    The premise was that the pixels were unreadable; they were not, only psm 7's
+    line assumption was. The psm 8 fallback reads the glyph directly, so pen now
+    lands on the fixture's own ground truth (labels.json records "pen 0.0->true 9")
+    without anything being inferred. The crit_dmg_ repair must still fire."""
     from youkai_ocr.disc_scanner import scan_single_frame
 
     item = _load_repair_case("disc_0696")
@@ -768,20 +781,34 @@ def test_scan_single_frame_partial_repair_leaves_unreadable_row_flagged():
 
     pen_sub = disc.substats[1]
     assert pen_sub.key == "pen"
-    assert pen_sub.value == 0.0  # left untouched — never a silent guess
-    assert pen_sub.value != next(s["value"] for s in expect["substats"] if s["key"] == "pen")
-    assert conf["substat_2"] < 70.0  # but flagged, not silently wrong
+    # Read from the pixels by the psm 8 fallback, not inferred: it equals the
+    # fixture's labelled true value.
+    assert pen_sub.value == next(s["value"] for s in expect["substats"] if s["key"] == "pen")
+    assert pen_sub.value == 9.0
+    assert not [r for r in conf.get("_repairs", []) if r["field"] == "substat[1]"]
+    # Fallback-sourced, so still capped for review like every other fallback in the
+    # file — a psm-8-only read must never look like a clean dual-scale agreement.
+    assert conf["substat_2"] <= 65.0
 
 
-def test_scan_single_frame_dropped_rows_no_repair_but_residual_violation():
-    """disc_0600: two substat rows are genuinely absent from the panel, not
-    misread — repair_disc has no value to repair (there's no row to snap onto
-    the lattice), only validate_disc's sub_count/roll_budget violations fire.
-    Must surface as a residual low-confidence flag, never silently accepted
-    as a valid 2-substat disc."""
+def test_scan_single_frame_recovers_the_row_behind_an_unreadable_name():
+    """disc_0600's third row is a real "PEN 9" whose *name* no pass of the name
+    ladder can read, and whose value is a lone digit psm 7 cannot see either.
+
+    This test used to assert the disc came out with 2 substats, on the premise
+    that rows 3 and 4 were absent from the panel. They are not: labels.json gives
+    the true substats as def_ 9.6 / hp 336 / pen 9.0 / atk_ 3.0, and all four rows
+    are visible in the fixture. Terminating on row 3 also discarded row 4's
+    "ATK 3%", which reads perfectly at both name and value — two ground-truth
+    substats lost, one of them fully legible.
+
+    So the empty-value break must consider the psm 8 fallback before deciding a row
+    is the end of the list. Row 3's key still comes out "" (the name really is
+    unreadable) at conf 0, so it surfaces for review rather than being silently
+    dropped or silently mis-keyed."""
     from youkai_ocr.disc_scanner import scan_single_frame
 
-    _load_repair_case("disc_0600")
+    item = _load_repair_case("disc_0600")
     panel_path = _GOLDEN_FIXTURES / "discs" / "disc_0600.png"
     if not panel_path.exists():
         pytest.skip(f"panel missing: {panel_path}")
@@ -790,9 +817,14 @@ def test_scan_single_frame_dropped_rows_no_repair_but_residual_violation():
     disc, conf = scan_single_frame(frame, _identity_calib())
 
     assert disc is not None, conf.get("_fail_reason")
-    assert len(disc.substats) == 2  # rows genuinely missing, nothing to repair
-    assert not conf.get("_repairs")
-    assert conf["substats"] < 70.0  # aggregate sub_count/roll_budget violation
+    assert len(disc.substats) == 4  # row 3 recovered, and row 4 no longer cut off
+    expect = {s["key"]: s["value"] for s in item["expect"]["substats"]}
+    # Every value matches ground truth; only row 3's key is unreadable.
+    assert [s.value for s in disc.substats] == [9.6, 336.0, 9.0, 3.0]
+    assert [s.key for s in disc.substats] == ["def_", "hp", "", "atk_"]
+    assert expect["pen"] == disc.substats[2].value  # the "" row is the true PEN row
+    assert conf["substat_3"] == 0.0  # unreadable name — flagged, never silent
+    assert conf["substat_4"] > 70.0  # the legible row is not penalised by its neighbour
 
 
 def test_scan_equipped_disc_frame_repairs_through_real_call_path():

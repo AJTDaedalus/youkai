@@ -97,7 +97,16 @@ def _upscale(arr: np.ndarray) -> np.ndarray:
 
 @runtime_checkable
 class TextRecognizer(Protocol):
-    """Engine-agnostic text recognition interface."""
+    """Engine-agnostic text recognition interface.
+
+    ``read_digits_word`` is deliberately absent: this Protocol is
+    ``@runtime_checkable`` and both scanners dispatch on
+    ``isinstance(engine, TextRecognizer)``, so adding a method here would make every
+    recognizer written against the previous interface fail that check and fall through
+    to ``make_recognizer(<object>)`` — a ``ValueError: Unknown OCR engine`` rather than
+    anything diagnosable. The disc scanner probes for it with ``getattr`` instead, and
+    an implementation without it simply does not get the psm-8 value fallback.
+    """
 
     def read_text(self, img: Image.Image, profile: str) -> str:
         """Return raw recognized text from *img* after preprocessing *profile*."""
@@ -179,6 +188,11 @@ def resolve_tesseract() -> tuple[str | None, Path | None]:
 _GENERAL_CONFIG = "--oem 1 --psm 6"
 _LINE_CONFIG = "--oem 1 --psm 7"
 _DIGIT_CONFIG = "--oem 1 --psm 7 -c tessedit_char_whitelist=0123456789.%+"
+# PSM 7 assumes a *line* and drops a lone glyph as noise: a substat value of "9" alone
+# in its crop reads as "" no matter how clean the pixels are (verified on the 2026-08-22
+# live run — 77 such values, every one empty at both scales, all 77 read correctly by
+# PSM 8). PSM 8 treats the crop as a single word.
+_DIGIT_WORD_CONFIG = "--oem 1 --psm 8 -c tessedit_char_whitelist=0123456789.%+"
 # Sparse-text pass restricted to digits + brackets — used by the disc slot
 # panel fallback (G5), where the slot "[N]" sits alone in a noisy sub-region.
 _SLOT_CONFIG = "--oem 1 --psm 11 -c tessedit_char_whitelist=0123456789[]"
@@ -229,6 +243,18 @@ class TesseractRecognizer:
     def read_digits(self, img: Image.Image, profile: str) -> str:
         processed = preprocess(img, profile)
         raw = self._tess.image_to_string(processed, lang=self._lang, config=_DIGIT_CONFIG).strip()
+        return _DIGIT_STRIP.sub("", raw)
+
+    def read_digits_word(self, img: Image.Image, profile: str) -> str:
+        """Read a numeric field as a single *word* (psm 8) rather than a line.
+
+        The fallback for a value crop holding one glyph, which ``read_line``'s psm 7
+        discards. Keeps the digit whitelist so a stray icon edge cannot become a letter.
+        """
+        processed = preprocess(img, profile)
+        raw = self._tess.image_to_string(
+            processed, lang=self._lang, config=_DIGIT_WORD_CONFIG
+        ).strip()
         return _DIGIT_STRIP.sub("", raw)
 
     def read_slot(self, img: Image.Image, profile: str) -> str:
