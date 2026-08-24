@@ -141,30 +141,35 @@ disc_inventory:
         bbox: [1421, 490, 1720, 527]
         preprocess: white_text_on_dark
 
+      # Stops at x=1848, not the panel edge 1855: the panel border runs down 1851-1855,
+      # white_text_on_dark thresholds with Otsu (adaptive), so in a crop whose only other
+      # content is a short number the border binarises as ink and Tesseract reads it as a
+      # glyph — "4.5%" came back "45%" and "82" came back "2". Real value ink never
+      # passes x=1814, measured over 80 panels. Same for every substat value_bbox below.
       main_stat_value:
-        bbox: [1720, 490, 1855, 527]
+        bbox: [1720, 490, 1848, 527]
         preprocess: white_text_on_dark
 
       # ── Sub-stats (up to 4 rows) ───────────────────────────
       # Name field contains orange "+N" upgrade-count suffix — strip it before matching.
       substat_1:
         name_bbox:  [1421, 566, 1760, 607]
-        value_bbox: [1760, 566, 1855, 607]
+        value_bbox: [1760, 566, 1848, 607]
         preprocess: white_text_on_dark
 
       substat_2:
         name_bbox:  [1421, 617, 1760, 658]
-        value_bbox: [1760, 617, 1855, 658]
+        value_bbox: [1760, 617, 1848, 658]
         preprocess: white_text_on_dark
 
       substat_3:
         name_bbox:  [1421, 668, 1760, 709]
-        value_bbox: [1760, 668, 1855, 709]
+        value_bbox: [1760, 668, 1848, 709]
         preprocess: white_text_on_dark
 
       substat_4:
         name_bbox:  [1421, 720, 1760, 760]
-        value_bbox: [1760, 720, 1855, 760]
+        value_bbox: [1760, 720, 1848, 760]
         preprocess: white_text_on_dark
 
       # ── Lock state ─────────────────────────────────────────

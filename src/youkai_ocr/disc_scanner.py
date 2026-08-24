@@ -92,12 +92,22 @@ _TITLE_REL = (0, 170, 239, 285)  # abs: (1421,270,1660,385)
 _RARITY_REL = (0, 302, 31, 336)  # abs: (1421,402,1452,436)
 _LEVEL_REL = (30, 302, 161, 336)  # abs: (1451,402,1582,436)
 _MAIN_NAME_REL = (0, 390, 299, 427)  # abs: (1421,490,1720,527)
-_MAIN_VAL_REL = (299, 390, 434, 427)  # abs: (1720,490,1855,527)
+# Value crops stop at rel x 427 (abs 1848), not the panel's own 434 (abs 1855).  The
+# panel border runs down abs x 1851-1855, and _white_text_on_dark thresholds with Otsu,
+# which is adaptive: in a crop whose only other content is a short number the border
+# binarises as ink (it is the trailing " |" in the raw reads).  Tesseract then treats it
+# as a glyph and its layout analysis degrades — the 2026-08-22 run has "4.5%" read as
+# "45%" (decimal point dropped) and "82" read as "2" (leading digit dropped), at every
+# scale and every psm, from crops that are otherwise pixel-clean.  Measured over 80
+# panels: real value ink never passes abs 1814, and the border reaches abs 1853 on 6 of
+# them, so cutting at 1848 drops the border with 34px of margin to spare.
+_VALUE_RIGHT_EDGE = 427  # rel; abs 1848
+_MAIN_VAL_REL = (299, 390, _VALUE_RIGHT_EDGE, 427)  # abs: (1720,490,1848,527)
 _SUBSTAT_RELS: list[tuple[tuple, tuple]] = [
-    ((0, 466, 339, 507), (339, 466, 434, 507)),  # abs rows: 566-607
-    ((0, 517, 339, 558), (339, 517, 434, 558)),  # abs rows: 617-658
-    ((0, 568, 339, 609), (339, 568, 434, 609)),  # abs rows: 668-709
-    ((0, 620, 339, 660), (339, 620, 434, 660)),  # abs rows: 720-760
+    ((0, 466, 339, 507), (339, 466, _VALUE_RIGHT_EDGE, 507)),  # abs rows: 566-607
+    ((0, 517, 339, 558), (339, 517, _VALUE_RIGHT_EDGE, 558)),  # abs rows: 617-658
+    ((0, 568, 339, 609), (339, 568, _VALUE_RIGHT_EDGE, 609)),  # abs rows: 668-709
+    ((0, 620, 339, 660), (339, 620, _VALUE_RIGHT_EDGE, 660)),  # abs rows: 720-760
 ]
 
 
