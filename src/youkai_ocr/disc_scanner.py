@@ -754,9 +754,7 @@ def scan_discs(
     # writes the disc_NNNN/ panel directories — so the map always ships with the panels
     # it describes.
     if archive_dir is not None:
-        (archive_dir / "disc_cells.json").write_text(
-            json.dumps(exported_cells), encoding="utf-8"
-        )
+        (archive_dir / "disc_cells.json").write_text(json.dumps(exported_cells), encoding="utf-8")
 
     return discs, issues
 
