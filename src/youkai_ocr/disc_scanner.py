@@ -7,6 +7,7 @@ C3: export_discs() writes a ZodExport JSON ready for import.
 
 from __future__ import annotations
 
+import json
 import os
 import queue
 import re
@@ -678,6 +679,11 @@ def scan_discs(
     # Assemble in scan order from the parallel results.
     discs: list[ZodDisc] = []
     issues: list[dict] = []
+    # Cell index of each entry in `discs`, positionally parallel to it. The archive
+    # numbers its panel directories by grid cell while `discs` holds only what survived
+    # the T13 gate below, so the two line up only when nothing was excluded. Recording
+    # the mapping is what lets `revalidate` pair a disc with its own panel.
+    exported_cells: list[int] = []
     for cell_idx in sorted(results):
         disc, conf = results[cell_idx]
         if disc is None:
@@ -718,6 +724,7 @@ def scan_discs(
                     entry["repairs"] = repairs
                 issues.append(entry)
             discs.append(disc)
+            exported_cells.append(cell_idx)
 
     # Traversal that ended early is silent data loss — surface it as an issue so it
     # reaches issues.json and the run summary instead of only a line in scan.log.
@@ -740,6 +747,15 @@ def scan_discs(
                     "than recorded as a copy of the previous item"
                 ),
             }
+        )
+
+    # Sidecar for `revalidate`: which cell each exported disc came from. Written here
+    # rather than next to discs.json because scan_discs owns the archive layout — it
+    # writes the disc_NNNN/ panel directories — so the map always ships with the panels
+    # it describes.
+    if archive_dir is not None:
+        (archive_dir / "disc_cells.json").write_text(
+            json.dumps(exported_cells), encoding="utf-8"
         )
 
     return discs, issues

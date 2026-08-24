@@ -1120,3 +1120,89 @@ def test_arbitrate_falls_back_to_2x_when_neither_matches():
 )
 def test_arbitrate_falls_back_when_the_table_cannot_answer(rarity, key, level):
     assert _arbitrate_main_value(7.2, 1.2, rarity, key, level) == 1.2
+
+
+def test_scan_discs_writes_the_panel_cell_sidecar(monkeypatch, tmp_path):
+    """The archive numbers panel dirs by grid cell while `discs` holds only what
+    survived the T13 gate, so position == cell only until the first exclusion.
+    disc_cells.json records the real mapping; without it `revalidate` pairs each
+    disc with a different disc's panel from that point on.
+    """
+    import json as _json
+    from threading import Event
+
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k):
+            pass
+
+        def scan(self, total):
+            yield 0, 0, "f0"
+            yield 1, 1, "f1"
+            yield 2, 2, "f2"
+
+    class FakeListener:
+        def stop(self):
+            pass
+
+    class Stub:
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        # Cell 1 fails validation and is excluded, so cells 0 and 2 are exported.
+        if cell_idx == 1:
+            return Stub(), {
+                "_violations": [{"field": "substat[0]", "code": "x", "severity": "error"}]
+            }
+        return Stub(), {"set": 99.0}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 3)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    discs, issues = ds.scan_discs(
+        lambda: "preflight", calib=None, grid=DEFAULT_GRID, archive_dir=tmp_path
+    )
+
+    assert len(discs) == 2
+    cells = _json.loads((tmp_path / "disc_cells.json").read_text(encoding="utf-8"))
+    assert cells == [0, 2]  # NOT [0, 1] — position 1 is cell 2
+    assert len(cells) == len(discs)
+
+
+def test_scan_discs_writes_no_sidecar_without_an_archive(monkeypatch, tmp_path):
+    """No archive dir means no panels to map onto, so nothing is written."""
+    from threading import Event
+
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k):
+            pass
+
+        def scan(self, total):
+            yield 0, 0, "f0"
+
+    class FakeListener:
+        def stop(self):
+            pass
+
+    class Stub:
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 1)
+    monkeypatch.setattr(ds, "_extract_disc", lambda *a, **k: (Stub(), {"set": 99.0}))
+
+    ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+
+    assert not (tmp_path / "disc_cells.json").exists()

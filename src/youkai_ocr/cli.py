@@ -1097,12 +1097,81 @@ def _revalidate_panel_to_frame(panel_path):
     return frame
 
 
+_EXCLUDED_STATUSES = frozenset({"failed_validation", "critical_fail"})
+
+
+def _resolve_panel_cells(archive_dir: Path, n_discs: int) -> list[int]:
+    """Map each position in discs.json to the grid cell whose panel it came from.
+
+    These are not the same numbering. The archive writes one ``disc_NNNN/`` directory
+    per grid *cell*, while discs.json holds only the discs that survived the T13 gate,
+    so position == cell only until the first exclusion. Pairing them positionally
+    revalidates each disc against a *different* disc's panel from that point on, and
+    merges location/lock off the wrong disc — silently, because both sides are
+    well-formed. On live_20260822_150816 (65 exclusions), discs.json[139] is a replay
+    of cell 140.
+
+    Resolution order, most authoritative first:
+
+    1. ``disc_cells.json``, the sidecar scan_discs now writes alongside the panels.
+    2. No sidecar, but the cell directories and discs.json are the same length —
+       nothing was excluded, so positional pairing is provably correct.
+    3. Reconstruct: every cell, minus the ones issues.json records as excluded.
+    4. Refuse. A wrong pairing is worse than no run, and the caller cannot tell.
+
+    Steps 2 and 3 exist so archives written before the sidecar still revalidate.
+    """
+    sidecar = archive_dir / "disc_cells.json"
+    if sidecar.exists():
+        cells = json.loads(sidecar.read_text(encoding="utf-8"))
+        if len(cells) != n_discs:
+            raise SystemExit(
+                f"ERROR: {sidecar} lists {len(cells)} cells but discs.json holds "
+                f"{n_discs} discs. The archive is inconsistent; re-scan rather than "
+                f"revalidate against panels that may not match."
+            )
+        return cells
+
+    cell_dirs = sorted(
+        int(d.name[len("disc_") :])
+        for d in archive_dir.glob("disc_*")
+        if d.is_dir() and d.name[len("disc_") :].isdigit()
+    )
+    if len(cell_dirs) == n_discs:
+        return cell_dirs
+
+    issues_path = archive_dir / "issues.json"
+    if issues_path.exists():
+        issues = json.loads(issues_path.read_text(encoding="utf-8"))
+        excluded = {
+            i["cell"]
+            for i in issues
+            if i.get("status") in _EXCLUDED_STATUSES and "cell" in i and "engine" not in i
+        }
+        kept = [c for c in cell_dirs if c not in excluded]
+        if len(kept) == n_discs:
+            print(
+                f"  No disc_cells.json; reconstructed the panel map from issues.json "
+                f"({len(excluded)} excluded cell(s))."
+            )
+            return kept
+
+    raise SystemExit(
+        f"ERROR: cannot map discs.json onto the archived panels. "
+        f"{n_discs} disc(s) in discs.json, {len(cell_dirs)} panel director(ies), and "
+        f"issues.json does not account for the difference. Revalidating positionally "
+        f"would pair discs with the wrong panels, so this is a hard stop."
+    )
+
+
 def _cmd_revalidate(args: argparse.Namespace) -> None:
     """T10: replay an archived scan offline through the current validator/repair
     tables and write a corrected export + repair report — no game, no pynput.
 
-    Preserves location/lock by merging from the archive's discs.json on
-    matching index (a static panel.png has no thumbnail strip to read lock from).
+    Preserves location/lock by merging from the archive's discs.json entry for the
+    same disc (a static panel.png has no thumbnail strip to read lock from) — paired
+    through _resolve_panel_cells, since discs.json position is not the panel's cell
+    number once the T13 gate has excluded anything.
     """
     from youkai_ocr.capture import CalibrationResult
     from youkai_ocr.disc_rules import evidence_from_conf, validate_disc
@@ -1110,8 +1179,12 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
 
     archive_dir = Path(args.archive)
     raw_discs = json.loads((archive_dir / "discs.json").read_text(encoding="utf-8"))
+    # Resolve against the FULL list before --limit truncates it: the mapping is a
+    # property of the whole archive, not of the slice being replayed.
+    panel_cells = _resolve_panel_cells(archive_dir, len(raw_discs))
     if args.limit is not None:
         raw_discs = raw_discs[: args.limit]
+        panel_cells = panel_cells[: args.limit]
 
     calib = CalibrationResult(scale_x=1.0, scale_y=1.0, frame_width=1920, frame_height=1080)
 
@@ -1120,16 +1193,17 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
     clean = repaired = unrepairable = 0
 
     t0 = time.perf_counter()
-    for i, raw in enumerate(raw_discs):
+    for i, (raw, cell) in enumerate(zip(raw_discs, panel_cells, strict=True)):
         # T13: a disc that can't be read or doesn't validate is EXCLUDED from
         # the export — a known-wrong value poisons downstream optimizers, and
         # the pre-T13 critical-fail path even passed the *old uncorrected*
         # discs.json entry through. Failed discs live only in the report.
-        panel_path = archive_dir / f"disc_{i:04d}" / "panel.png"
+        panel_path = archive_dir / f"disc_{cell:04d}" / "panel.png"
         if not panel_path.exists():
             disc_reports.append(
                 {
                     "index": i,
+                    "cell": cell,
                     "status": "missing_panel",
                     "excluded_from_export": True,
                     "disc": raw,
@@ -1147,6 +1221,7 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
             disc_reports.append(
                 {
                     "index": i,
+                    "cell": cell,
                     "status": "critical_fail",
                     "excluded_from_export": True,
                     "disc": raw,
@@ -1162,6 +1237,7 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
             disc_reports.append(
                 {
                     "index": i,
+                    "cell": cell,
                     "status": "critical_fail",
                     "excluded_from_export": True,
                     "disc": raw,
@@ -1189,6 +1265,7 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
 
         report_entry = {
             "index": i,
+            "cell": cell,
             "status": "unrepairable" if final_violations else ("repaired" if repairs else "clean"),
             "repairs": repairs,
             "violations": [
