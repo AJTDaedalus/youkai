@@ -753,16 +753,21 @@ def test_scan_single_frame_t12_ocr_reliability_fixes(disc_id, review_conf_key):
         )
 
 
-def test_scan_single_frame_repairs_decimal_loss_and_reads_the_lone_digit():
-    """disc_0696: crit_dmg_ 48.0->4.8 is a repairable decimal-loss misread, and
-    pen is a 0-roll row whose bare "9" psm 7 could not see at all.
+def test_scan_single_frame_reads_disc_0696_without_needing_any_repair():
+    """disc_0696 used to need a repair and used to lose a value; now it needs neither.
 
-    This test used to assert pen came out at 0.0 — the value the repair policy
-    correctly refused to guess, since no roll-suffix or lattice evidence pins it.
-    The premise was that the pixels were unreadable; they were not, only psm 7's
-    line assumption was. The psm 8 fallback reads the glyph directly, so pen now
-    lands on the fixture's own ground truth (labels.json records "pen 0.0->true 9")
-    without anything being inferred. The crit_dmg_ repair must still fire."""
+    Two independent defects met on this panel. Its crit_dmg_ "4.8%" was read as 48.0 and
+    then snapped back to 4.8 by the decimal-loss repair, and its 0-roll pen "9" was not
+    read at all (psm 7 discards a lone glyph), left at 0.0 and flagged unrepairable.
+    Both had the same cause on the value side: the crop ran to abs 1855 and swallowed the
+    panel border, whose ink Otsu keeps and Tesseract treats as a glyph.
+
+    With the crop trimmed to 1848 every substat reads correctly straight from the pixels,
+    so the disc matches labels.json exactly with an empty repair list. The repair path
+    itself is still proven through the real call path by
+    test_scan_single_frame_repairs_disc_through_real_call_path and its equip-view
+    counterpart; this fixture simply no longer needs it.
+    """
     from youkai_ocr.disc_scanner import scan_single_frame
 
     item = _load_repair_case("disc_0696")
@@ -775,20 +780,15 @@ def test_scan_single_frame_repairs_decimal_loss_and_reads_the_lone_digit():
 
     assert disc is not None, conf.get("_fail_reason")
     expect = item["expect"]
+    assert [(s.key, s.value) for s in disc.substats] == [
+        (s["key"], s["value"]) for s in expect["substats"]
+    ]
+    assert not conf.get("_repairs")  # read right the first time, nothing to snap
 
-    repaired = [r for r in conf.get("_repairs", []) if r["field"] == "substat[2]"]
-    assert repaired and repaired[0]["after"] == {"key": "crit_dmg_", "value": 4.8}
-
-    pen_sub = disc.substats[1]
-    assert pen_sub.key == "pen"
-    # Read from the pixels by the psm 8 fallback, not inferred: it equals the
-    # fixture's labelled true value.
-    assert pen_sub.value == next(s["value"] for s in expect["substats"] if s["key"] == "pen")
-    assert pen_sub.value == 9.0
-    assert not [r for r in conf.get("_repairs", []) if r["field"] == "substat[1]"]
-    # Fallback-sourced, so still capped for review like every other fallback in the
-    # file — a psm-8-only read must never look like a clean dual-scale agreement.
+    # pen is still the psm-8 fallback's work, so it stays capped for review; crit_dmg_
+    # is now an ordinary clean read and must NOT be penalised.
     assert conf["substat_2"] <= 65.0
+    assert conf["substat_3"] > 70.0
 
 
 def test_scan_single_frame_recovers_the_row_behind_an_unreadable_name():

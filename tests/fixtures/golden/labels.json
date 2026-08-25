@@ -1679,7 +1679,7 @@
   },
   {
    "id": "disc_0696",
-   "note": "E5 zero-value (pen 0.0->true 9, unrepairable without evidence) + E2 decimal-loss (crit_dmg_ 48.0->true 4.8) combo",
+   "note": "HISTORICAL: was an E5 zero-value (pen 0.0->true 9, unrepairable without evidence) + E2 decimal-loss (crit_dmg_ 48.0->true 4.8) combo. Both had the same cause on the value side -- the crop ran to abs 1855 and swallowed the panel border -- and both are now read correctly at source, so this panel's raw scan MATCHES expect with an empty repair list and no longer exercises E2 or E5. Kept here as the regression anchor for that fix (test_scan_single_frame_reads_disc_0696_without_needing_any_repair); do not cite it as a live repair case.",
    "expect": {
     "set_key": "AstralVoice",
     "slot_key": "1",
