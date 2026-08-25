@@ -98,9 +98,13 @@ _MAIN_NAME_REL = (0, 390, 299, 427)  # abs: (1421,490,1720,527)
 # binarises as ink (it is the trailing " |" in the raw reads).  Tesseract then treats it
 # as a glyph and its layout analysis degrades — the 2026-08-22 run has "4.5%" read as
 # "45%" (decimal point dropped) and "82" read as "2" (leading digit dropped), at every
-# scale and every psm, from crops that are otherwise pixel-clean.  Measured over 80
-# panels: real value ink never passes abs 1814, and the border reaches abs 1853 on 6 of
-# them, so cutting at 1848 drops the border with 34px of margin to spare.
+# scale and every psm, from crops that are otherwise pixel-clean.  Measured across the
+# golden panels and 80 live ones: values are right-aligned and their ink never passes abs
+# 1814, while the border's left edge sits at abs 1849-1850.  1848 is chosen to sit inside
+# that gap -- note the two margins are NOT symmetric.  The crop's last included column is
+# 1847 (PIL's right edge is exclusive), which leaves ~33px of slack before the ink but
+# only ~2px of clearance from the border.  Widening this edge re-introduces the defect
+# almost immediately; narrowing it has room to spare.
 _VALUE_RIGHT_EDGE = 427  # rel; abs 1848
 _MAIN_VAL_REL = (299, 390, _VALUE_RIGHT_EDGE, 427)  # abs: (1720,490,1848,527)
 _SUBSTAT_RELS: list[tuple[tuple, tuple]] = [

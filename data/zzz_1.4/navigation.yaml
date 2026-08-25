@@ -141,11 +141,15 @@ disc_inventory:
         bbox: [1421, 490, 1720, 527]
         preprocess: white_text_on_dark
 
-      # Stops at x=1848, not the panel edge 1855: the panel border runs down 1851-1855,
+      # Stops at x=1848, not the panel edge 1855: the panel border's left edge is x=1849,
       # white_text_on_dark thresholds with Otsu (adaptive), so in a crop whose only other
       # content is a short number the border binarises as ink and Tesseract reads it as a
       # glyph — "4.5%" came back "45%" and "82" came back "2". Real value ink never
-      # passes x=1814, measured over 80 panels. Same for every substat value_bbox below.
+      # passes x=1814, measured over 80 panels. Same for every substat value_bbox below,
+      # and for the W-Engine detail panel's two value boxes — it is the same panel border
+      # (engine_inventory.detail_panel.panel_bbox ends at 1860 too). wengine_scanner does
+      # not read those two today, so this is pre-emptive: the first consumer to OCR them
+      # through fields.crop_fields would hit the identical misread.
       main_stat_value:
         bbox: [1720, 490, 1848, 527]
         preprocess: white_text_on_dark
@@ -232,7 +236,7 @@ engine_inventory:
 
       # "Base ATK   684" — primary stat, always ATK for W-Engines.
       base_atk_value:
-        bbox: [1720, 490, 1855, 527]
+        bbox: [1720, 490, 1848, 527]
         preprocess: white_text_on_dark
 
       # Secondary stat — name varies by engine (Impact, PEN Ratio, CRIT Rate, etc.)
@@ -241,7 +245,7 @@ engine_inventory:
         preprocess: white_text_on_dark
 
       secondary_stat_value:
-        bbox: [1720, 565, 1855, 603]
+        bbox: [1720, 565, 1848, 603]
         preprocess: white_text_on_dark
 
       # W-Engine effect label — e.g. "Passionate Construction", "Data Flood".
