@@ -414,3 +414,58 @@ def test_revalidate_reads_the_panel_the_disc_actually_came_from(tmp_path):
     report = json.loads((tmp_path / "r.json").read_text())
     assert [d["cell"] for d in report["discs"]] == [0, 2]
     assert [d["index"] for d in report["discs"]] == [0, 1]
+
+
+def test_resolve_panel_cells_ignores_engine_failures_in_a_shared_issues_json(tmp_path):
+    """A full scan writes ONE issues.json for every phase, and cell numbers restart per
+    phase, so an engine failure at cell N looks exactly like a disc failure at cell N.
+
+    Legacy shape: neither entry is tagged, and a bare critical_fail carries no payload
+    key at all. Counting the engine failure as an excluded disc leaves `kept` one short
+    and used to fall through to the hard stop — disabling the very legacy-archive path
+    this resolver exists to provide.
+    """
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 5, [0, 1, 2, 3, 4, 5])
+    (archive / "issues.json").write_text(
+        json.dumps(
+            [
+                {"cell": 2, "status": "failed_validation", "disc": _raw_disc()},
+                {"cell": 4, "status": "critical_fail", "confidence": {}},  # engine phase
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert _resolve_panel_cells(archive, 5) == [0, 1, 3, 4, 5]
+
+
+def test_resolve_panel_cells_trusts_the_type_tag_over_guessing(tmp_path):
+    """Once entries are tagged at the source, an untagged critical_fail is not a disc
+    issue and must not be considered at all — no candidate-set guessing."""
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 5, [0, 1, 2, 3, 4, 5])
+    (archive / "issues.json").write_text(
+        json.dumps(
+            [
+                {"cell": 2, "type": "disc", "status": "failed_validation", "disc": _raw_disc()},
+                {"cell": 4, "status": "critical_fail", "confidence": {}},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert _resolve_panel_cells(archive, 5) == [0, 1, 3, 4, 5]
+
+
+def test_resolve_panel_cells_counts_a_tagged_disc_critical_fail(tmp_path):
+    """A disc that failed OCR outright is excluded too, and carries no "disc" payload —
+    the tag is what makes it recognisable."""
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 2, [0, 1, 2])
+    (archive / "issues.json").write_text(
+        json.dumps([{"cell": 1, "type": "disc", "status": "critical_fail", "confidence": {}}]),
+        encoding="utf-8",
+    )
+    assert _resolve_panel_cells(archive, 2) == [0, 2]

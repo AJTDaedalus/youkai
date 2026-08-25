@@ -687,7 +687,12 @@ def scan_discs(
     for cell_idx in sorted(results):
         disc, conf = results[cell_idx]
         if disc is None:
-            entry: dict = {"cell": cell_idx, "status": "critical_fail", "confidence": conf}
+            entry: dict = {
+                "cell": cell_idx,
+                "type": "disc",
+                "status": "critical_fail",
+                "confidence": conf,
+            }
             if "_fail_reason" in conf:
                 entry["reason"] = conf.pop("_fail_reason")
             issues.append(entry)
@@ -701,6 +706,7 @@ def scan_discs(
                 # shipping data that would poison downstream optimizers.
                 entry = {
                     "cell": cell_idx,
+                    "type": "disc",
                     "disc": disc.to_dict(),
                     "status": "failed_validation",
                     "violations": violations,
@@ -715,6 +721,7 @@ def scan_discs(
             if low or repairs:
                 entry = {
                     "cell": cell_idx,
+                    "type": "disc",
                     "disc": disc.to_dict(),
                     "status": "low_confidence" if low else "repaired",
                 }

@@ -1206,3 +1206,56 @@ def test_scan_discs_writes_no_sidecar_without_an_archive(monkeypatch, tmp_path):
     ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
 
     assert not (tmp_path / "disc_cells.json").exists()
+
+
+def test_scan_discs_tags_every_issue_with_its_phase(monkeypatch):
+    """A full scan merges disc, engine and agent issues into one issues.json, and cell
+    numbers restart per phase. Without a phase tag an engine failure at cell N is
+    indistinguishable from a disc failure at cell N, which is what made
+    _resolve_panel_cells miscount excluded disc cells.
+    """
+    from threading import Event
+
+    import youkai_ocr.disc_scanner as ds
+    from youkai_ocr.grid import DEFAULT_GRID
+
+    class FakeNav:
+        def __init__(self, *a, **k):
+            pass
+
+        def scan(self, total):
+            yield 0, 0, "f0"
+            yield 1, 1, "f1"
+            yield 2, 2, "f2"
+
+    class FakeListener:
+        def stop(self):
+            pass
+
+    class Stub:
+        def to_dict(self):
+            return {"setKey": "AstralVoice"}
+
+    def fake_extract(frame, calib, cx, cy, rec, arch, cell_idx):
+        if cell_idx == 0:
+            return None, {"_fail_reason": "unreadable"}  # critical_fail
+        if cell_idx == 1:
+            return Stub(), {
+                "_violations": [{"field": "substat[0]", "code": "x", "severity": "error"}]
+            }  # failed_validation
+        return Stub(), {"set": 10.0}  # low_confidence
+
+    monkeypatch.setattr(ds, "GridNavigator", FakeNav)
+    monkeypatch.setattr(ds, "make_recognizer", lambda *a, **k: object())
+    monkeypatch.setattr(ds, "make_kill_listener", lambda: (Event(), FakeListener()))
+    monkeypatch.setattr(ds, "read_disc_count", lambda *a, **k: 3)
+    monkeypatch.setattr(ds, "_extract_disc", fake_extract)
+
+    _discs, issues = ds.scan_discs(lambda: "preflight", calib=None, grid=DEFAULT_GRID)
+
+    assert {i["status"] for i in issues} == {
+        "critical_fail",
+        "failed_validation",
+        "low_confidence",
+    }
+    assert all(i["type"] == "disc" for i in issues)

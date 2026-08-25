@@ -1100,6 +1100,41 @@ def _revalidate_panel_to_frame(panel_path):
 _EXCLUDED_STATUSES = frozenset({"failed_validation", "critical_fail"})
 
 
+def _excluded_cell_candidates(issues: list[dict]) -> list[set[int]]:
+    """Candidate sets of disc cells the T13 gate excluded, best interpretation first.
+
+    A full ``scan`` writes one issues.json for every phase, and the per-cell entries
+    were untagged before this was fixed at the source, so a legacy archive cannot always
+    say whether a bare ``critical_fail`` came from the disc phase or the engine phase —
+    both emit ``{"cell": N, "status": "critical_fail", ...}`` with no payload key. Cell
+    numbers restart per phase, so an engine failure at cell N is indistinguishable from a
+    disc failure at cell N by inspection alone.
+
+    Rather than guess, offer each reading and let the caller keep the one whose kept-cell
+    count actually matches discs.json:
+
+    * archives tagged at the source — trust ``type == "disc"`` and stop there;
+    * legacy — the entries carrying a ``"disc"`` payload are certain, and the bare
+      ``critical_fail`` entries are offered both excluded and not.
+    """
+    tagged = [i for i in issues if i.get("type") == "disc" and "cell" in i]
+    if tagged:
+        return [{i["cell"] for i in tagged if i.get("status") in _EXCLUDED_STATUSES}]
+
+    certain: set[int] = set()
+    ambiguous: set[int] = set()
+    for i in issues:
+        if "cell" not in i or i.get("status") not in _EXCLUDED_STATUSES:
+            continue
+        if "disc" in i:
+            certain.add(i["cell"])
+        elif not ({"engine", "agent"} & i.keys()):
+            ambiguous.add(i["cell"])
+    if not ambiguous:
+        return [certain]
+    return [certain, certain | ambiguous]
+
+
 def _resolve_panel_cells(archive_dir: Path, n_discs: int) -> list[int]:
     """Map each position in discs.json to the grid cell whose panel it came from.
 
@@ -1143,18 +1178,14 @@ def _resolve_panel_cells(archive_dir: Path, n_discs: int) -> list[int]:
     issues_path = archive_dir / "issues.json"
     if issues_path.exists():
         issues = json.loads(issues_path.read_text(encoding="utf-8"))
-        excluded = {
-            i["cell"]
-            for i in issues
-            if i.get("status") in _EXCLUDED_STATUSES and "cell" in i and "engine" not in i
-        }
-        kept = [c for c in cell_dirs if c not in excluded]
-        if len(kept) == n_discs:
-            print(
-                f"  No disc_cells.json; reconstructed the panel map from issues.json "
-                f"({len(excluded)} excluded cell(s))."
-            )
-            return kept
+        for excluded in _excluded_cell_candidates(issues):
+            kept = [c for c in cell_dirs if c not in excluded]
+            if len(kept) == n_discs:
+                print(
+                    f"  No disc_cells.json; reconstructed the panel map from issues.json "
+                    f"({len(excluded)} excluded cell(s))."
+                )
+                return kept
 
     raise SystemExit(
         f"ERROR: cannot map discs.json onto the archived panels. "
@@ -1172,6 +1203,12 @@ def _cmd_revalidate(args: argparse.Namespace) -> None:
     same disc (a static panel.png has no thumbnail strip to read lock from) — paired
     through _resolve_panel_cells, since discs.json position is not the panel's cell
     number once the T13 gate has excluded anything.
+
+    That merge is only as good as the cache: discs.json is written by the disc phase,
+    before scan_agents runs, so its locations were empty until scan-all learned to
+    re-write the phase caches after reconciliation. An archive produced before that
+    fix carries location="" for every disc, and revalidating it will drop the
+    equipped-agent assignments its original export had.
     """
     from youkai_ocr.capture import CalibrationResult
     from youkai_ocr.disc_rules import evidence_from_conf, validate_disc
@@ -2177,6 +2214,21 @@ def _cmd_scan_all(args: argparse.Namespace) -> None:
                 "not found in inventory — appended to export."
             )
         all_issues.extend(reconcile_orphans)
+
+        # Re-write the disc/engine phase caches now that reconciliation has assigned
+        # equipped-agent locations. They were written straight after their own phase,
+        # before scan_agents ran, so every `location` in them was "" — and `revalidate`
+        # merges location/lock from discs.json, which meant a corrected export silently
+        # dropped every equipped-agent assignment the original export had (204 of 2390
+        # on the 2026-08-22 run). Locations live in the caches only after this point.
+        if "discs" in phases and discs_cache.exists():
+            discs_cache.write_text(
+                _json.dumps([d.to_dict() for d in discs], indent=2), encoding="utf-8"
+            )
+        if "engines" in phases and engines_cache.exists():
+            engines_cache.write_text(
+                _json.dumps([e.to_dict() for e in engines], indent=2), encoding="utf-8"
+            )
 
         # ── Dedupe + stable sort ─────────────────────────────────────────────
         seen_agents: set[str] = set()
