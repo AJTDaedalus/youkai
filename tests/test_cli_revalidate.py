@@ -305,3 +305,167 @@ def test_revalidate_limit_processes_only_first_n_discs(tmp_path, capsys):
     assert mock_scan.call_count == 1
     data = json.loads(out.read_text())
     assert len(data["discs"]) == 1
+
+
+# ── Panel-cell resolution (discs.json position is NOT the panel's cell) ──────
+
+
+def _cell_archive(tmp_path: Path, raw_discs: list[dict], cells: list[int]) -> Path:
+    """Archive whose panel directories are numbered by grid cell, not list position."""
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    (archive / "discs.json").write_text(json.dumps(raw_discs), encoding="utf-8")
+    for c in cells:
+        cell_dir = archive / f"disc_{c:04d}"
+        cell_dir.mkdir()
+        Image.new("RGB", (439, 770), color=(50, 50, 50)).save(cell_dir / "panel.png")
+    return archive
+
+
+def test_resolve_panel_cells_prefers_the_sidecar(tmp_path):
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 3, [0, 2, 7])
+    (archive / "disc_cells.json").write_text(json.dumps([0, 2, 7]), encoding="utf-8")
+    assert _resolve_panel_cells(archive, 3) == [0, 2, 7]
+
+
+def test_resolve_panel_cells_positional_when_nothing_was_excluded(tmp_path):
+    """No sidecar, but one panel dir per disc — position really is the cell."""
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 3, [0, 1, 2])
+    assert _resolve_panel_cells(archive, 3) == [0, 1, 2]
+
+
+def test_resolve_panel_cells_reconstructs_from_issues_json(tmp_path):
+    """The shape that made this a bug: cell 1 was excluded by the T13 gate, so
+    discs.json position 1 is cell 2 and everything after it is shifted."""
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 3, [0, 1, 2, 3])
+    (archive / "issues.json").write_text(
+        json.dumps(
+            [
+                {"cell": 1, "status": "failed_validation", "disc": _raw_disc()},
+                {"cell": 3, "status": "low_confidence", "disc": _raw_disc()},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    # cell 1 excluded; cell 3 is only low-confidence, so it is still exported.
+    assert _resolve_panel_cells(archive, 3) == [0, 2, 3]
+
+
+def test_resolve_panel_cells_refuses_rather_than_mispairing(tmp_path):
+    """Counts disagree and nothing explains the gap — a wrong pairing is silent
+    corruption, so the run must stop instead of guessing."""
+    import pytest
+
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 3, [0, 1, 2, 3])
+    with pytest.raises(SystemExit, match="cannot map discs.json"):
+        _resolve_panel_cells(archive, 3)
+
+
+def test_resolve_panel_cells_rejects_a_sidecar_of_the_wrong_length(tmp_path):
+    import pytest
+
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 3, [0, 1, 2])
+    (archive / "disc_cells.json").write_text(json.dumps([0, 1]), encoding="utf-8")
+    with pytest.raises(SystemExit, match="lists 2 cells"):
+        _resolve_panel_cells(archive, 3)
+
+
+def test_revalidate_reads_the_panel_the_disc_actually_came_from(tmp_path):
+    """End to end: with cell 1 excluded, position 1 must replay disc_0002/panel.png.
+
+    Before the fix it replayed disc_0001 — a different disc's panel — and merged
+    this disc's location/lock onto whatever that panel produced.
+    """
+    from youkai_ocr.cli import _cmd_revalidate
+
+    raw = [_raw_disc(location="A"), _raw_disc(location="B")]
+    archive = _cell_archive(tmp_path, raw, [0, 1, 2])
+    (archive / "issues.json").write_text(
+        json.dumps([{"cell": 1, "status": "failed_validation", "disc": _raw_disc()}]),
+        encoding="utf-8",
+    )
+    out = tmp_path / "export.json"
+    seen: list[str] = []
+
+    def _fake_scan(frame, calib, engine="tesseract"):
+        return _sample_disc(), {}
+
+    with (
+        patch("youkai_ocr.disc_scanner.scan_single_frame", side_effect=_fake_scan),
+        patch("youkai_ocr.disc_rules.validate_disc", return_value=[]),
+        patch(
+            "youkai_ocr.cli._revalidate_panel_to_frame",
+            side_effect=lambda path: seen.append(str(path)) or Image.new("RGB", (1920, 1080)),
+        ),
+    ):
+        _cmd_revalidate(_args(archive, out, report=tmp_path / "r.json"))
+
+    assert [Path(p).parent.name for p in seen] == ["disc_0000", "disc_0002"]
+    report = json.loads((tmp_path / "r.json").read_text())
+    assert [d["cell"] for d in report["discs"]] == [0, 2]
+    assert [d["index"] for d in report["discs"]] == [0, 1]
+
+
+def test_resolve_panel_cells_ignores_engine_failures_in_a_shared_issues_json(tmp_path):
+    """A full scan writes ONE issues.json for every phase, and cell numbers restart per
+    phase, so an engine failure at cell N looks exactly like a disc failure at cell N.
+
+    Legacy shape: neither entry is tagged, and a bare critical_fail carries no payload
+    key at all. Counting the engine failure as an excluded disc leaves `kept` one short
+    and used to fall through to the hard stop — disabling the very legacy-archive path
+    this resolver exists to provide.
+    """
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 5, [0, 1, 2, 3, 4, 5])
+    (archive / "issues.json").write_text(
+        json.dumps(
+            [
+                {"cell": 2, "status": "failed_validation", "disc": _raw_disc()},
+                {"cell": 4, "status": "critical_fail", "confidence": {}},  # engine phase
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert _resolve_panel_cells(archive, 5) == [0, 1, 3, 4, 5]
+
+
+def test_resolve_panel_cells_trusts_the_type_tag_over_guessing(tmp_path):
+    """Once entries are tagged at the source, an untagged critical_fail is not a disc
+    issue and must not be considered at all — no candidate-set guessing."""
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 5, [0, 1, 2, 3, 4, 5])
+    (archive / "issues.json").write_text(
+        json.dumps(
+            [
+                {"cell": 2, "type": "disc", "status": "failed_validation", "disc": _raw_disc()},
+                {"cell": 4, "status": "critical_fail", "confidence": {}},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert _resolve_panel_cells(archive, 5) == [0, 1, 3, 4, 5]
+
+
+def test_resolve_panel_cells_counts_a_tagged_disc_critical_fail(tmp_path):
+    """A disc that failed OCR outright is excluded too, and carries no "disc" payload —
+    the tag is what makes it recognisable."""
+    from youkai_ocr.cli import _resolve_panel_cells
+
+    archive = _cell_archive(tmp_path, [_raw_disc()] * 2, [0, 1, 2])
+    (archive / "issues.json").write_text(
+        json.dumps([{"cell": 1, "type": "disc", "status": "critical_fail", "confidence": {}}]),
+        encoding="utf-8",
+    )
+    assert _resolve_panel_cells(archive, 2) == [0, 2]

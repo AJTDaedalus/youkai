@@ -1516,3 +1516,46 @@ def test_reconcile_widens_to_set_slot_on_main_mismatch():
     orphans = _reconcile_locations(eq, [], inv, [])
     assert inv[0].location == "Agent1"
     assert len(orphans) == 0
+
+
+def test_scan_all_rewrites_disc_cache_with_reconciled_locations(tmp_path):
+    """discs.json must carry the equipped-agent locations, not the empty strings the
+    disc phase produced.
+
+    The phase caches are written straight after their own phase, before scan_agents has
+    run, so every `location` in them is "". Reconciliation assigns locations afterwards
+    but used to leave the caches untouched — and `revalidate` merges location/lock from
+    discs.json, so a corrected export silently dropped every equipped-agent assignment
+    the original export had (204 of 2390 discs on the 2026-08-22 run).
+    """
+    calib = _identity_calib()
+    inv_disc = _sample_disc()
+    equipped = _sample_disc()
+    equipped.location = "Ellen"
+
+    args = _make_args(tmp_path)
+    with (
+        patch("youkai_ocr.capture.calibrate_window", return_value=(calib, MagicMock())),
+        patch("youkai_ocr.disc_scanner.scan_discs", return_value=([inv_disc], [])),
+        patch("youkai_ocr.wengine_scanner.scan_engines", return_value=([_sample_engine()], [])),
+        patch(
+            "youkai_ocr.agent_scanner.scan_agents",
+            return_value=([_sample_agent()], [], [equipped], []),
+        ),
+        patch("youkai_ocr.cli._preflight_frame", return_value=_fake_frame()),
+        patch("youkai_ocr.cli._countdown"),
+        patch("youkai_ocr.cli._check_disc_screen", lambda *a, **k: None),
+        patch("youkai_ocr.cli._check_engine_screen", lambda *a, **k: None),
+        patch("youkai_ocr.cli._check_agent_screen", lambda *a, **k: None),
+        patch("builtins.input", return_value=""),
+    ):
+        _cmd_scan_all(args)
+
+    run_dir = _find_run_dir(args.archive_dir)
+    cached = json.loads((run_dir / "discs.json").read_text())
+    exported = json.loads(Path(args.output).read_text())["discs"]
+    assert exported[0]["location"] == "Ellen"
+    assert cached[0]["location"] == "Ellen", (
+        "discs.json still holds the pre-reconciliation location; revalidate would "
+        "strip it from the corrected export"
+    )
